@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include <limits>
+#include "Compute.h"
 #include "Memory.h"
 
 using namespace std;
@@ -14,19 +15,17 @@ using namespace std;
 // PipeArch
 //-------------------------------------------
 class PipeArch {
-	// std::list<Unit*> m_remoteMemories;
-	// std::list<Unit*> m_localMemories;
-	// std::list<Unit*> m_localComputations;
 protected:
 	Unit* m_load;
 	Unit* m_writeback;
+	unsigned m_numOps;
 
 	void DirectLink(Unit* destination, Unit* source) {
 		source->AddOutput(destination);
 		destination->AddInput(source);
 	}
 
-	void LeftRightLink(Unit* result, Unit* left, Unit* right) {
+	void LeftRightLink(Compute* result, Unit* left, Unit* right) {
 		left->AddOutput(result);
 		right->AddOutput(result);
 		result->AddLeftInput(left);
@@ -35,8 +34,9 @@ protected:
 
 public:
 	PipeArch() {
-		m_load = new RemoteVector("load");
-		m_writeback = new RemoteVector("writeback");
+		m_load = new Load("load");
+		m_writeback = new WriteBack("writeback");
+		m_numOps = 2;
 	}
 
 	void PrintInfo() {
@@ -60,14 +60,15 @@ public:
 		system("mkdir output");
 
 		string path(skeletonPath);
-		FileCopy(path + "/pipearch_top.sv", "./output/pipearch_top.sv");
+		string pipearch_top("./output/pipearch_top.sv");
+		FileCopy(path + "/pipearch_top.sv", pipearch_top);
 		FileCopy(path + "/sim_sources.txt", "./output/sim_sources.txt");
 		FileCopy(path + "/Instruction.h", "../sw");
 
-		FindAndInstert("./output/pipearch_top.sv", "//?LOAD", "parameter NUM_LOAD_CHANNELS = " + to_string(numLoadChannels) + ";");
-		FindAndInstert("./output/pipearch_top.sv", "//?WRITEBACK", "parameter NUM_WRITEBACK_CHANNELS = " + to_string(numWriteBackChannels) + ";");
+		FindAndInstert(pipearch_top, "//?LOAD", "parameter NUM_LOAD_CHANNELS = " + to_string(numLoadChannels) + ";");
+		FindAndInstert(pipearch_top, "//?WRITEBACK", "parameter NUM_WRITEBACK_CHANNELS = " + to_string(numWriteBackChannels) + ";");
 
-		m_load->Instantiate("./output/pipearch_top.sv");
-		m_writeback->Instantiate("./output/pipearch_top.sv");
+		m_load->Instantiate(pipearch_top);
+		m_writeback->Instantiate(pipearch_top);
 	}
 };

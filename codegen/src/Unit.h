@@ -1,117 +1,62 @@
 #pragma once
 
-#include <stdlib.h>
-#include <iostream>
-#include <list>
-#include <string>
-
-#include "Compute.h"
-
-using namespace std;
-
-//-------------------------------------------
-// File operations
-//-------------------------------------------
-static void FileCopy(string sourceFile, string destinationFile) {
-	string command = "cp " + sourceFile + " " + destinationFile;
-	int res = system(command.c_str());
-	if (res != 0) {
-		cout << "Could not copy " << sourceFile << " to " << destinationFile << endl;
-		exit(1);
-	}
-}
-
-static void FindAndInstert(string fileName, string keyword, string newPhrase) {
-	ifstream orgFile(fileName);
-	ofstream newFile(fileName + "_temp");
-
-	unsigned BufferLength = keyword.length();
-	char buffer[BufferLength+1];
-	buffer[BufferLength] = '\0';
-	char c;
-	while(orgFile.get(c)) {
-		for (unsigned i = 0; i < BufferLength-1; i++) {
-			buffer[i] = buffer[i+1];
-		}
-		buffer[BufferLength-1] = c;
-
-		if (strcmp(buffer, keyword.c_str()) == 0) {
-			cout << "Found: " << buffer << endl;
-			long pos = newFile.tellp();
-			newFile.seekp(pos-BufferLength);
-			newFile << endl << newPhrase << endl;
-			newFile << keyword;
-			break;
-		}
-		else{
-			newFile.put(c);
-		}
-	}
-	while(orgFile.get(c)) {
-		newFile.put(c);
-	}
-
-	orgFile.close();
-	newFile.close();
-
-	string temp = "cp " + fileName + "_temp " + fileName;
-	system(temp.c_str());
-	temp = "rm " + fileName + "_temp";
-	system(temp.c_str());
-}
+#include "FileOps.h"
 
 //-------------------------------------------
 // Unit
 //-------------------------------------------
 enum OutputWidth {t_scalar, t_vector};
-enum Location {t_remote, t_local, t_temporary};
+enum UnitType {t_remote, t_local, t_temporary, t_compute};
 class Unit {
 protected:
-	list<Unit*> m_leftInputs;
-	list<Unit*> m_rightInputs;
+	list<Unit*> m_inputs;
 	list<Unit*> m_outputs;
 
 	string m_name;
 	string m_interfaceName;
 	OutputWidth m_outputWidth;
-	Location m_location;
-	Compute* m_compute;
+	UnitType m_unitType;
 	bool m_printed;
 	bool m_instantiated;
 
 public:
-	Unit(string name, OutputWidth outputWidth, Location location) {
+	static bool CheckVector(Unit& unit, string opName) {
+		if (unit.GetOutputWidth() != t_vector) {
+			cout << opName << ", " << unit.GetName() << " is not a vector" << endl;
+			exit(1);
+		}
+	}
+
+	static bool CheckScalar(Unit& unit, string opName) {
+		if (unit.GetOutputWidth() != t_scalar) {
+			cout << opName << ", " << unit.GetName() << " is not a scalar" << endl;
+			exit(1);
+		}
+	}
+
+	Unit(string name, OutputWidth outputWidth, UnitType unitType) {
 		m_name = name;
 		m_interfaceName = name + "_interface";
 		m_outputWidth = outputWidth;
-		m_location = location;
-		m_compute = nullptr;
+		m_unitType = unitType;
 		m_printed = false;
 		m_instantiated = false;
 	}
 
 	void AddInput(Unit* input) {
-		m_leftInputs.push_back(input);
-	}
-
-	void AddLeftInput(Unit* input) {
-		m_leftInputs.push_back(input);
-	}
-
-	void AddRightInput(Unit* input) {
-		m_rightInputs.push_back(input);
+		m_inputs.push_back(input);
 	}
 
 	void AddOutput(Unit* output) {
 		m_outputs.push_back(output);
 	}
 
-	list<Unit*> GetOutputs() {
-		return m_outputs;
+	list<Unit*> GetInputs() {
+		return m_inputs;
 	}
 
-	list<Unit*> GetInputs() {
-		return m_leftInputs;
+	list<Unit*> GetOutputs() {
+		return m_outputs;
 	}
 
 	string GetName() {
@@ -135,48 +80,34 @@ public:
 		}
 	}
 
-	string GetLocationAsString() {
-		switch(m_location) {
+	UnitType GetUnitType() {
+		return m_unitType;
+	}
+
+	string GetUnitTypeAsString() {
+		switch(m_unitType) {
 			case t_remote:
 				return "t_remote";
 			case t_local:
 				return "t_local";
 			case t_temporary:
 				return "t_temporary";
+			case t_compute:
+				return "t_compute";
 		}
 	}
 
-	Location GetLocation() {
-		return m_location;
-	}
-
-	void AddCompute(Compute* compute) {
-		m_compute = compute;
-	}
-
-	Compute* GetCompute() {
-		return m_compute;
-	}
-
-	void PrintInfo(string tab) {
+	virtual void PrintInfo(string tab) {
 		if (!m_printed) {
 			m_printed = true;
 			cout << tab << "--------------------Name: " << m_name << endl;
 
 			cout << tab << "OutputWidth: " << GetOutputWidthAsString();
-			cout << ", Location: " << GetLocationAsString();
-			if (m_compute != nullptr) {
-				cout << ", Compute: " << m_compute->GetName();
-			}
+			cout << ", UnitType: " << GetUnitTypeAsString();
 			cout << endl;
 
-			cout << tab << "Left Inputs (" << m_leftInputs.size() << "): ";
-			for (Unit* input: m_leftInputs) {
-				cout << input->GetName() << " ";
-			}
-			cout << endl;
-			cout << tab << "Right Inputs (" << m_rightInputs.size() << "): ";
-			for (Unit* input: m_rightInputs) {
+			cout << tab << "Inputs (" << m_inputs.size() << "): ";
+			for (Unit* input: m_inputs) {
 				cout << input->GetName() << " ";
 			}
 			cout << endl;
@@ -193,7 +124,7 @@ public:
 		}
 	}
 
-	virtual string Instantiate(string fileName) {
+	virtual void Instantiate(string& fileName) {
 		cout << "Unit object cannot be instantiated" << endl;
 		exit(1);
 	}
