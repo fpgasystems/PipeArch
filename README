@@ -1,0 +1,20 @@
+# PipeArch
+
+## Loopback Example (Simulation)
+- cd ./apps/loopback/hw
+- make
+- ./loopback_gen ../../../codegen/skeleton/ (populates files in skeleton and copies them)
+
+- cd ./apps/loopback
+- ./hw/setup_ase build_sim
+- cd build_sim
+> In Makefile in build_sim: MENT_VSIM_OPT+= -l run.log -dpioutoftheblue 1 -novopt
+> In ase.cfg change to ASE_MODE = 1 for continuous simulation
+> In vsim_run.tcl uncomment: run -all
+- make
+- make sim
+
+- cd ./apps/loopback/sw
+- export ASE_WORKDIR=../build_sim/work
+- make
+- main_ase

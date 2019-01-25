@@ -1,0 +1,14 @@
+C:../opae/base/hw/rtl/base_sources.txt
+
++incdir+.
+top.sv
+pipearch_prefetch.sv
+pipearch_load.sv
+pipearch_writeback.sv
+
+memory/bram.sv
+memory/fifo.sv
+memory/read_bram.sv
+memory/read_fifo.sv
+memory/write_bram.sv
+memory/write_fifo.sv
