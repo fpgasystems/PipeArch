@@ -30,6 +30,20 @@ module pipearch_load
     t_readstate request_state;
     t_readstate receive_state;
 
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) prefetch_fifo_access();
+    fifo
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)
+    )
+    prefetch_fifo
+    (
+        .clk,
+        .reset,
+        .access(prefetch_fifo_access.fifo_source)
+    );
+    assign prefetch_fifo_access.we = cci_c0Rx_isReadRsp(cp2af_sRx_c0) && (receive_state == STATE_READ);
+    assign prefetch_fifo_access.wdata = cp2af_sRx_c0.data;
+    assign prefetch_fifo_access.re = !(prefetch_fifo_access.empty) && !(into_write.almostfull);
+
     t_ccip_clAddr DRAM_load_offset;
     logic [31:0] DRAM_load_length;
 
@@ -49,12 +63,15 @@ module pipearch_load
     logic [31:0] num_requested_lines;
     logic [31:0] num_received_lines;
     logic [31:0] num_lines_in_flight;
+    logic signed [31:0] prefetch_fifo_free_count;
     logic signed [31:0] num_allowed_lines_to_request;
 
     always_ff @(posedge clk)
     begin
         num_lines_in_flight <= num_requested_lines - num_received_lines;
-        num_allowed_lines_to_request <= PREFETCH_SIZE - $signed(num_lines_in_flight);
+        prefetch_fifo_free_count <= PREFETCH_SIZE - prefetch_fifo_access.count[LOG2_PREFETCH_SIZE-1:0];
+        num_allowed_lines_to_request <= prefetch_fifo_free_count - $signed(num_lines_in_flight);
+
         if (reset)
         begin
             request_state <= STATE_IDLE;
@@ -141,10 +158,10 @@ module pipearch_load
 
                 STATE_READ:
                 begin
-                    if (cci_c0Rx_isReadRsp(cp2af_sRx_c0))
+                    if (prefetch_fifo_access.rvalid)
                     begin
                         into_write.we <= 1'b1;
-                        into_write.wdata <= cp2af_sRx_c0.data;
+                        into_write.wdata <= prefetch_fifo_access.rdata;
                         num_received_lines <= num_received_lines + 1;
                         if (num_received_lines == DRAM_load_length-1)
                         begin

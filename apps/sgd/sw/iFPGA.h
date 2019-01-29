@@ -19,8 +19,6 @@ using namespace std;
 using namespace opae::fpga::types;
 using namespace opae::fpga::bbb::mpf::types;
 
-#define FPGA_MEMORY_SIZE_IN_CL 1024
-
 struct MemoryChunk {
 	uint32_t m_offsetInCL;
 	uint32_t m_lenghtInCL;
@@ -58,7 +56,7 @@ public:
 		assert(NULL != input);
 
 		for (uint32_t i = 0; i < numLines*16; i++) {
-			input[i] = i;
+			input[i] = 1;
 		}
 
 		auto outputHandle = m_fpga->allocBuffer((numLines+1)*64);
@@ -68,9 +66,6 @@ public:
 		for (uint32_t i = 0; i < numLines*16; i++) {
 			output[i] = 0;
 		}
-
-		uint32_t numIterations = numLines/FPGA_MEMORY_SIZE_IN_CL + (numLines%FPGA_MEMORY_SIZE_IN_CL > 0);
-		cout << "numIterations : " << numIterations << endl;
 
 		std::vector<Instruction> instructions;
 
@@ -84,7 +79,7 @@ public:
 
 		access_t accessInternal[2];
 		accessInternal[0].m_offsetInCL = 0;
-		accessInternal[0].m_lengthInCL = 0;
+		accessInternal[0].m_lengthInCL = numLines;
 		accessInternal[1].m_offsetInCL = 0;
 		accessInternal[1].m_lengthInCL = numLines;
 
@@ -92,14 +87,21 @@ public:
 		loadInst.Load(0, numLines, 0, 0, 0, accessInternal, 2);
 		loadInst.MakeNonBlocking();
 
+		Instruction dotInst;
+		dotInst.Dot(numLines, 0, 0);
+
+		access_t accessWriteback[1];
+		accessWriteback[0].m_offsetInCL = 0;
+		accessWriteback[0].m_lengthInCL = 1;
 		Instruction writebackInst;
-		writebackInst.WriteBack(1, numLines, 0, 0, 0, 1, accessInternal, 2);
+		writebackInst.WriteBack(1, 1, 0, 0, 0, 0, accessInternal, 1);
 
 		Instruction exitInst;
 		exitInst.Jump(2, 0, 0, 0xFFFFFFFF);
 
 		instructions.push_back(prefetchInst);
 		instructions.push_back(loadInst);
+		instructions.push_back(dotInst);
 		instructions.push_back(writebackInst);
 		instructions.push_back(exitInst);
 
@@ -130,14 +132,17 @@ public:
 
 		// Check values
 		bool pass = true;
+		float dot = 0.0;
 		for (uint32_t i = 0; i < numLines*16; i++) {
-			if (input[i] != output[i+16]) {
-				cout << "Mismatch at index " << i << ". input: " << input[i] << ", output: " << output[i+16] << endl;
-				pass = false;
-			}
+			dot += input[i]*input[i];
 		}
-		if (pass) {
+		if (dot == output[16]) {
 			cout << "PASS!" << endl;
+		}
+		else {
+			cout << "dot: " << dot << endl;
+			cout << "output[16]: " << output[16] << endl;
+			cout << "FAIL!" << endl;
 		}
 
 		// Reads CSRs to get some statistics

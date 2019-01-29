@@ -13,6 +13,7 @@ module write_bram
     internal_interface.commonwrite_source into_write,
     fifobram_interface.bram_write memory_access
 );
+    assign into_write.almostfull = 1'b0;
 
     typedef enum logic [1:0]
     {

@@ -124,7 +124,7 @@ public:
 		}
 	}
 
-	virtual void Instantiate(string& fileName) {
+	virtual void Instantiate() {
 		cout << "Unit object cannot be instantiated" << endl;
 		exit(1);
 	}

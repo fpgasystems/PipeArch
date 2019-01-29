@@ -60,15 +60,15 @@ public:
 		system("mkdir output");
 
 		string path(skeletonPath);
-		string pipearch_top("./output/pipearch_top.sv");
-		FileCopy(path + "/pipearch_top.sv", pipearch_top);
-		FileCopy(path + "/sim_sources.txt", "./output/sim_sources.txt");
-		FileCopy(path + "/Instruction.h", "../sw");
 
-		FindAndInstert(pipearch_top, "//?LOAD", "parameter NUM_LOAD_CHANNELS = " + to_string(numLoadChannels) + ";");
-		FindAndInstert(pipearch_top, "//?WRITEBACK", "parameter NUM_WRITEBACK_CHANNELS = " + to_string(numWriteBackChannels) + ";");
+		FileOps::FileCopy(path + "/pipearch_top.sv", FileOps::m_svTopFileName);
+		FileOps::FileCopy(path + "/Instruction.h", FileOps::m_instructionsHeaderFileName);
+		FileOps::FileCopy(path + "/sim_sources.txt", "./output/sim_sources.txt");
 
-		m_load->Instantiate(pipearch_top);
-		m_writeback->Instantiate(pipearch_top);
+		FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOAD", "parameter NUM_LOAD_CHANNELS = " + to_string(numLoadChannels) + ";");
+		FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?WRITEBACK", "parameter NUM_WRITEBACK_CHANNELS = " + to_string(numWriteBackChannels) + ";");
+
+		m_load->Instantiate();
+		m_writeback->Instantiate();
 	}
 };

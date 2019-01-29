@@ -15,6 +15,11 @@ module pipearch_dot
     internal_interface.to_commonwrite result
 );
 
+    logic [31:0] num_lines_to_process;
+    logic [31:0] num_lines_left;
+    logic [31:0] num_lines_right;
+    logic [31:0] num_processed_lines;
+
     typedef enum logic [1:0]
     {
         STATE_IDLE,
@@ -23,9 +28,9 @@ module pipearch_dot
     } t_dotstate;
     t_dotstate dot_state;
 
-    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(6)) leftoperand_fifo_access();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(6)) leftoperand_fifo_access();
     fifo
-    #(.WIDTH(32), .LOG2_DEPTH(6)
+    #(.WIDTH(512), .LOG2_DEPTH(6)
     )
     leftoperand_fifo
     (
@@ -33,13 +38,13 @@ module pipearch_dot
         .reset,
         .access(leftoperand_fifo_access.fifo_source)
     );
-    assign leftoperand_fifo_access.we = left_input.we;
-    assign leftoperand_fifo_access.wdata = left_input.wdata;
+    assign leftoperand_fifo_access.we = left_input.rvalid;
+    assign leftoperand_fifo_access.wdata = left_input.rdata;
     assign left_input.almostfull = leftoperand_fifo_access.almostfull;
 
-    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(6)) rightoperand_fifo_access();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(6)) rightoperand_fifo_access();
     fifo
-    #(.WIDTH(32), .LOG2_DEPTH(6)
+    #(.WIDTH(512), .LOG2_DEPTH(6)
     )
     rightoperand_fifo
     (
@@ -47,8 +52,8 @@ module pipearch_dot
         .reset,
         .access(rightoperand_fifo_access.fifo_source)
     );
-    assign rightoperand_fifo_access.we = right_input.we;
-    assign rightoperand_fifo_access.wdata = right_input.wdata;
+    assign rightoperand_fifo_access.we = right_input.rvalid;
+    assign rightoperand_fifo_access.wdata = right_input.rdata;
     assign right_input.almostfull = rightoperand_fifo_access.almostfull;
 
     logic dot_trigger;
@@ -71,12 +76,6 @@ module pipearch_dot
     );
     assign dot_trigger = leftoperand_fifo_access.rvalid && rightoperand_fifo_access.rvalid;
 
-
-    logic [31:0] num_lines_to_process;
-    logic [31:0] num_lines_left;
-    logic [31:0] num_lines_right;
-    logic [31:0] num_processed_lines;
-
     always_ff @(posedge clk)
     begin
         if (reset)
@@ -90,6 +89,7 @@ module pipearch_dot
             leftoperand_fifo_access.re <= 1'b0;
             rightoperand_fifo_access.re <= 1'b0;
             result.we <= 1'b0;
+            op_done <= 1'b0;
         end
         else
         begin
@@ -97,13 +97,14 @@ module pipearch_dot
             leftoperand_fifo_access.re <= 1'b0;
             rightoperand_fifo_access.re <= 1'b0;
             result.we <= 1'b0;
+            op_done <= 1'b0;
             case (dot_state)
                 STATE_IDLE:
                 begin
                     if (op_start)
                     begin
                         dot_state <= STATE_READ;
-                        num_lines_to_process <= regs0;
+                        num_lines_to_process <= regs0 >> 16;
                         num_lines_left <= 32'b0;
                         num_lines_right <= 32'b0;
                         num_processed_lines <= 32'b0;
@@ -120,7 +121,7 @@ module pipearch_dot
 
                     if (leftoperand_fifo_access.rvalid)
                     begin
-                        num_lines_left <= num_lines_left + 1:
+                        num_lines_left <= num_lines_left + 1;
                     end
                     if (rightoperand_fifo_access.rvalid)
                     begin

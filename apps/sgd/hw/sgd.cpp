@@ -15,9 +15,9 @@ int main(int argc, char* argv[]) {
 
 
 	TempVector input1("input1", 128);
-	TempVector input2("input2", 32);
+	TempVector input2("input2", 128);
 
-	TempScalar dot("dot", 32);
+	TempScalar dot("dot", 128);
 	pipeArch.Dot(dot, input1, input2);
 
 

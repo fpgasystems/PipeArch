@@ -15,7 +15,34 @@ public:
 		m_log2size = (unsigned)(temp+0.5);
 	}
 
-	void Instantiate(string& fileName) {
+	virtual void PrintInfo(string tab) {
+		if (!m_printed) {
+			m_printed = true;
+			cout << tab << "--------------------Name: " << m_name << endl;
+
+			cout << tab << "OutputWidth: " << GetOutputWidthAsString();
+			cout << ", UnitType: " << GetUnitTypeAsString() << ", size: " << to_string(m_size);
+			cout << endl;
+
+			cout << tab << "Inputs (" << m_inputs.size() << "): ";
+			for (Unit* input: m_inputs) {
+				cout << input->GetName() << " ";
+			}
+			cout << endl;
+			cout << tab << "Outputs (" << m_outputs.size() << "): ";
+			for (Unit* output: m_outputs) {
+				cout << output->GetName() << " ";
+			}
+			cout << endl;
+			for (Unit* output: m_outputs) {
+				if (output->GetName().compare("writeback") != 0) {
+					output->PrintInfo(tab + "\t");
+				}
+			}
+		}
+	}
+
+	virtual void Instantiate() {
 		if (!m_instantiated) {
 			cout << "Instantiate " << m_name << endl;
 			string width;
@@ -33,10 +60,10 @@ public:
 			instantiation += ".clk,\n";
 			instantiation += ".access(" + m_interfaceName + ".bram_source)\n";
 			instantiation += ");\n";
-			FindAndInstert(fileName, "//?LOCALMEM", instantiation);
+			FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOCALMEM", instantiation);
 			for (Unit* output: m_outputs) {
 				if (output->GetName().compare("writeback") != 0) {
-					output->Instantiate(fileName);
+					output->Instantiate();
 				}
 			}
 			m_instantiated = true;
@@ -49,19 +76,19 @@ public:
 
 class LocalVector : public LocalMemory{
 public:
-	LocalVector(string name, unsigned size) : LocalMemory(name, t_vector, t_local) {}
+	LocalVector(string name, unsigned size) : LocalMemory(name, t_vector, size) {}
 
-	void Instantiate(string& fileName) {
-		LocalMemory::Instantiate(fileName);
+	void Instantiate() {
+		LocalMemory::Instantiate();
 	}
 };
 
 class LocalScalar : public LocalMemory{
 public:
-	LocalScalar(string name, unsigned size) : LocalMemory(name, t_scalar, t_local) {}
+	LocalScalar(string name, unsigned size) : LocalMemory(name, t_scalar, size) {}
 
-	void Instantiate(string& fileName) {
-		LocalMemory::Instantiate(fileName);
+	void Instantiate() {
+		LocalMemory::Instantiate();
 	}
 };
 
@@ -77,7 +104,34 @@ public:
 		m_log2size = (unsigned)(temp+0.5);
 	}
 
-	void Instantiate(string& fileName) {
+	virtual void PrintInfo(string tab) {
+		if (!m_printed) {
+			m_printed = true;
+			cout << tab << "--------------------Name: " << m_name << endl;
+
+			cout << tab << "OutputWidth: " << GetOutputWidthAsString();
+			cout << ", UnitType: " << GetUnitTypeAsString() << ", size: " << to_string(m_size);
+			cout << endl;
+
+			cout << tab << "Inputs (" << m_inputs.size() << "): ";
+			for (Unit* input: m_inputs) {
+				cout << input->GetName() << " ";
+			}
+			cout << endl;
+			cout << tab << "Outputs (" << m_outputs.size() << "): ";
+			for (Unit* output: m_outputs) {
+				cout << output->GetName() << " ";
+			}
+			cout << endl;
+			for (Unit* output: m_outputs) {
+				if (output->GetName().compare("writeback") != 0) {
+					output->PrintInfo(tab + "\t");
+				}
+			}
+		}
+	}
+
+	virtual void Instantiate() {
 		if (!m_instantiated) {
 			cout << "Instantiate " << m_name << endl;
 			string width;
@@ -95,11 +149,11 @@ public:
 			instantiation += ".clk, .reset,\n";
 			instantiation += ".access(" + m_interfaceName + ".fifo_source)\n";
 			instantiation += ");\n";
-			FindAndInstert(fileName, "//?LOCALMEM", instantiation);
+			FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOCALMEM", instantiation);
 
 			for (Unit* output: m_outputs) {
 				if (output->GetName().compare("writeback") != 0) {
-					output->Instantiate(fileName);
+					output->Instantiate();
 				}
 			}
 
@@ -113,18 +167,18 @@ public:
 
 class TempVector : public TempMemory{
 public:
-	TempVector(string name, unsigned size) : TempMemory(name, t_vector, t_temporary) {}
+	TempVector(string name, unsigned size) : TempMemory(name, t_vector, size) {}
 
-	void Instantiate(string& fileName) {
-		TempMemory::Instantiate(fileName);
+	void Instantiate() {
+		TempMemory::Instantiate();
 	}
 };
 
 class TempScalar : public TempMemory{
 public:
-	TempScalar(string name, unsigned size) : TempMemory(name, t_scalar, t_temporary) {}
+	TempScalar(string name, unsigned size) : TempMemory(name, t_scalar, size) {}
 
-	void Instantiate(string& fileName) {
-		TempMemory::Instantiate(fileName);
+	void Instantiate() {
+		TempMemory::Instantiate();
 	}
 };

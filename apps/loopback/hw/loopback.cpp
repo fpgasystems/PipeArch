@@ -13,18 +13,14 @@ int main(int argc, char* argv[]) {
 
 	PipeArchBase pipeArch;
 
-	RemoteVector inputData("input");
-
 	LocalVector localMemory("local", 1000);
-	pipeArch.Copy(localMemory, inputData);
+	pipeArch.Load(localMemory);
 
 	TempVector localFifo("fifo", 128);
-	pipeArch.Copy(localFifo, inputData);
+	pipeArch.Load(localFifo);
 
 	pipeArch.WriteBack(localMemory);
 	pipeArch.WriteBack(localFifo);
-
-	pipeArch.Load(inputData);
 
 	pipeArch.PrintInfo();
 	pipeArch.GenerateVerilog(skeletonPath);

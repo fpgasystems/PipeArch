@@ -6,16 +6,17 @@ class Load : public Operation{
 public:
 	Load(string name) : Operation(1, 5, name, t_vector, t_remote) {}
 
-	void Instantiate(string& fileName) {
+	void Instantiate() {
 		if (!m_instantiated) {
 			cout << "Instantiate " << m_name << endl;
 			unsigned loadChannelNumber = 0;
 			for (Unit* output: m_outputs) {
-				string channel = WriteChannel(output, loadChannelNumber);
+				string channel = WriteChannel(output, 5+loadChannelNumber);
 				loadChannelNumber++;
-				FindAndInstert(fileName, "//?LOADCH", channel);
-				output->Instantiate(fileName);
+				FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOADCH", channel);
+				output->Instantiate();
 			}
+			FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOADCH", WriteChannelSelection(m_outputs));
 			m_instantiated = true;
 		}
 	}
@@ -47,16 +48,16 @@ class WriteBack : public Operation{
 public:
 	WriteBack(string name) : Operation(2, 6, name, t_vector, t_remote) {}
 
-	void Instantiate(string& fileName) {
+	void Instantiate() {
 		if (!m_instantiated) {
 			cout << "Instantiate " << m_name << endl;
 			unsigned storeChannelNumber = 0;
 			for (Unit* input: m_inputs) {
-				string channel = ReadChannel(input, storeChannelNumber);
+				string channel = ReadChannel(input, 6+storeChannelNumber);
 				storeChannelNumber++;
-				FindAndInstert(fileName, "//?STORECH", channel);
+				FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?STORECH", channel);
 			}
-			FindAndInstert(fileName, "//?STORECH", ReadChannelSelection(m_inputs.size()));
+			FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?STORECH", ReadChannelSelection("to_" + m_name, m_inputs, 5, 0));
 			m_instantiated = true;
 		}
 	}
@@ -80,7 +81,7 @@ public:
 };
 
 class Compute : public Operation {
-private:
+protected:
 	list<Unit*> m_leftInputs;
 	list<Unit*> m_rightInputs;
 
@@ -97,7 +98,7 @@ public:
 		m_rightInputs.push_back(input);
 	}
 
-	void Instantiate(string& fileName) {
+	virtual void Instantiate() {
 		if (!m_instantiated) {
 			cout << "Instantiate " << m_name << endl;
 
@@ -105,22 +106,22 @@ public:
 			for (Unit* input: m_inputs) {
 				string channel = ReadChannel(input, readChannelNumber);
 				readChannelNumber++;
-				FindAndInstert(fileName, "//?LOCALC", channel);
+				FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOCALC", channel);
 			}
 
 			unsigned writeChannelNumber = 0;
 			for (Unit* output: m_outputs) {
 				string channel = WriteChannel(output, writeChannelNumber);
 				writeChannelNumber++;
-				FindAndInstert(fileName, "//?LOCALC", channel);
-				output->Instantiate(fileName);
+				FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOCALC", channel);
+				output->Instantiate();
 			}
 
 			m_instantiated = true;
 		}
 	}
 
-	void PrintInfo(string tab){
+	virtual void PrintInfo(string tab){
 		if (!m_printed) {
 			m_printed = true;
 			cout << tab << "--------------------Name: " << m_name << endl;
