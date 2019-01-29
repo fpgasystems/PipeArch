@@ -6,8 +6,8 @@ module bram
 	parameter LOG2_DEPTH = 5
 )
 (
-    input logic clk,
-    fifobram_interface.bram_source access
+	input logic clk,
+	fifobram_interface.bram_source access
 );
 
 logic [WIDTH-1:0] memory [2**LOG2_DEPTH-1:0];

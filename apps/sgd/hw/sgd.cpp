@@ -14,16 +14,22 @@ int main(int argc, char* argv[]) {
 	PipeArchBase pipeArch;
 
 
-	TempVector input1("input1", 128);
-	TempVector input2("input2", 128);
+	TempVector input("input", 128);
+	LocalVector model("modelMem", 128);
+	LocalScalar labels("labelsMem", 128, 0);
+
+	pipeArch.Load(input);
+	pipeArch.Load(model);
+	pipeArch.Load(labels);
 
 	TempScalar dot("dot", 128);
-	pipeArch.Dot(dot, input1, input2);
+	pipeArch.Dot(dot, input, model);
 
 
-	pipeArch.WriteBack(dot);
-	pipeArch.Load(input1);
-	pipeArch.Load(input2);
+	TempScalar error("error", 32);
+	pipeArch.ScalarSubtract(error, dot, labels);
+
+	pipeArch.WriteBack(error);
 
 	pipeArch.PrintInfo();
 	pipeArch.GenerateVerilog(skeletonPath);

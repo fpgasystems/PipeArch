@@ -9,7 +9,7 @@ CFLAGS += -I./$(OBJDIR)
 CPPFLAGS += -I./$(OBJDIR) -march=native
 
 # Files and folders
-SRCS = $(TEST).cpp $(BASE_FILE_SRC) 
+SRCS = $(BASE_FILE_SRC) $(wildcard ./*.cpp)
 OBJS = $(addprefix $(OBJDIR)/,$(patsubst %.cpp,%.o,$(SRCS)))
 DEPS = $(wildcard ./*.h)
 

@@ -1,6 +1,6 @@
 `include "pipearch_common.vh"
 
-module pipearch_dot
+module pipearch_scalar_subtract
 (
     input  logic clk,
     input  logic reset,
@@ -14,10 +14,7 @@ module pipearch_dot
     internal_interface.from_commonread right_input,
     internal_interface.to_commonwrite result
 );
-
     logic [31:0] num_lines_to_process;
-    logic [31:0] num_lines_left;
-    logic [31:0] num_lines_right;
     logic [31:0] num_processed_lines;
 
     typedef enum logic [1:0]
@@ -25,12 +22,12 @@ module pipearch_dot
         STATE_IDLE,
         STATE_READ,
         STATE_DONE
-    } t_dotstate;
-    t_dotstate dot_state;
+    } t_state;
+    t_state state;
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(6)) leftoperand_fifo_access();
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(6)) leftoperand_fifo_access();
     fifo
-    #(.WIDTH(512), .LOG2_DEPTH(6)
+    #(.WIDTH(32), .LOG2_DEPTH(6)
     )
     leftoperand_fifo
     (
@@ -42,9 +39,9 @@ module pipearch_dot
     assign leftoperand_fifo_access.wdata = left_input.rdata;
     assign left_input.almostfull = leftoperand_fifo_access.almostfull;
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(6)) rightoperand_fifo_access();
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(6)) rightoperand_fifo_access();
     fifo
-    #(.WIDTH(512), .LOG2_DEPTH(6)
+    #(.WIDTH(32), .LOG2_DEPTH(6)
     )
     rightoperand_fifo
     (
@@ -59,88 +56,75 @@ module pipearch_dot
     assign leftoperand_fifo_access.re = !leftoperand_fifo_access.empty && !rightoperand_fifo_access.empty && !result.almostfull;
     assign rightoperand_fifo_access.re = !leftoperand_fifo_access.empty && !rightoperand_fifo_access.empty && !result.almostfull;
 
-    logic dot_trigger;
-    logic dot_done;
-    logic [31:0] dot_result;
-    hybrid_dot_product
-    #(
-        .LOG2_VALUES_PER_LINE(4)
-    )
-    dot_compute
+    localparam OP_LATENCY = 2;
+    logic [OP_LATENCY-1:0] localop_status = 0;
+    logic localop_trigger;
+    logic localop_done;
+    logic [31:0] op_result;
+    always_ff @(posedge clk)
+    begin
+        localop_status[0] <= localop_trigger;
+        for (int i = 1; i < OP_LATENCY; i++)
+        begin
+            localop_status[i] <= localop_status[i-1];
+        end
+        localop_done <= localop_status[OP_LATENCY-1];
+    end
+    fp_subtract_arria10
+    subtract
     (
         .clk,
-        .resetn(!reset),
-        .trigger(dot_trigger),
-        .accumulation_count(32'(num_lines_to_process)),
-        .vector1(leftoperand_fifo_access.rdata),
-        .vector2(rightoperand_fifo_access.rdata),
-        .result_valid(dot_done),
-        .result(dot_result)
+        .areset(reset),
+        .a(leftoperand_fifo_access.rdata),
+        .b(rightoperand_fifo_access.rdata),
+        .q(op_result)
     );
-    assign dot_trigger = leftoperand_fifo_access.rvalid && rightoperand_fifo_access.rvalid;
-    assign result.we = dot_done;
-    assign result.wdata = dot_result;
+    assign localop_trigger = leftoperand_fifo_access.rvalid && rightoperand_fifo_access.rvalid;
+    assign result.we = localop_done;
+    assign result.wdata = op_result;
 
     always_ff @(posedge clk)
     begin
         if (reset)
         begin
-            dot_state <= STATE_IDLE;
-            num_lines_to_process <= 32'b0;
-            num_lines_left <= 32'b0;
-            num_lines_right <= 32'b0;
-            num_processed_lines <= 32'b0;
-
-            op_done <= 1'b0;
+            state <= STATE_IDLE;
         end
         else
         begin
-
             op_done <= 1'b0;
-            case (dot_state)
+            case (state)
                 STATE_IDLE:
                 begin
                     if (op_start)
                     begin
-                        dot_state <= STATE_READ;
+                        state <= STATE_READ;
                         num_lines_to_process <= regs0 >> 16;
-                        num_lines_left <= 32'b0;
-                        num_lines_right <= 32'b0;
                         num_processed_lines <= 32'b0;
                     end
                 end
 
                 STATE_READ:
                 begin
-                    if (leftoperand_fifo_access.rvalid)
-                    begin
-                        num_lines_left <= num_lines_left + 1;
-                    end
-                    if (rightoperand_fifo_access.rvalid)
-                    begin
-                        num_lines_right <= num_lines_right + 1;
-                    end
-                    if (dot_trigger)
+                    if (localop_trigger)
                     begin
                         num_processed_lines <= num_processed_lines + 1;
                         if (num_processed_lines == num_lines_to_process-1)
                         begin
-                            dot_state <= STATE_DONE;
+                            state <= STATE_DONE;
                         end
                     end
                 end
 
                 STATE_DONE:
                 begin
-                    if (dot_done == 1'b1)
+                    if (localop_done)
                     begin
                         op_done <= 1'b1;
-                        dot_state <= STATE_IDLE;
+                        state <= STATE_IDLE;
                     end
                 end
-
             endcase
         end
     end
 
-endmodule // pipearch_dot
+endmodule // pipearch_scalar_subtract

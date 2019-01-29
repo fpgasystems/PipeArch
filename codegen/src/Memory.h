@@ -7,12 +7,18 @@ class LocalMemory : public Unit {
 private:
 	unsigned m_size;
 	unsigned m_log2size;
+	int m_offsetRegister;
 
 public:
-	LocalMemory(string name, OutputWidth outputWidth, unsigned size) : Unit(name, outputWidth, t_local) {
+	LocalMemory(string name, OutputWidth outputWidth, unsigned size, int offsetRegister) : Unit(name, outputWidth, t_local) {
 		m_size = size;
 		float temp = log2(size);
 		m_log2size = (unsigned)(temp+0.5);
+		m_offsetRegister = offsetRegister;
+	}
+
+	int GetOffsetRegister() {
+		return m_offsetRegister;
 	}
 
 	virtual void PrintInfo(string tab) {
@@ -76,7 +82,8 @@ public:
 
 class LocalVector : public LocalMemory{
 public:
-	LocalVector(string name, unsigned size) : LocalMemory(name, t_vector, size) {}
+	LocalVector(string name, unsigned size) : LocalMemory(name, t_vector, size, -1) {}
+	LocalVector(string name, unsigned size, int offsetRegister) : LocalMemory(name, t_vector, size, offsetRegister) {}
 
 	void Instantiate() {
 		LocalMemory::Instantiate();
@@ -85,7 +92,8 @@ public:
 
 class LocalScalar : public LocalMemory{
 public:
-	LocalScalar(string name, unsigned size) : LocalMemory(name, t_scalar, size) {}
+	LocalScalar(string name, unsigned size) : LocalMemory(name, t_scalar, size, -1) {}
+	LocalScalar(string name, unsigned size, int offsetRegister) : LocalMemory(name, t_scalar, size, offsetRegister) {}
 
 	void Instantiate() {
 		LocalMemory::Instantiate();

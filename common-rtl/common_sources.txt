@@ -6,13 +6,14 @@ pipearch_prefetch.sv
 pipearch_load.sv
 pipearch_writeback.sv
 pipearch_dot.sv
-pipearch_scalar2vector.sv
+pipearch_scalar_subtract.sv
 
 memory/bram.sv
 memory/fifo.sv
 memory/read_bram.sv
 memory/read_fifo.sv
 memory/write_bram.sv
+memory/write_bram_vector2scalar.sv
 memory/write_fifo.sv
 
 compute/fixed_adder_tree.vhd

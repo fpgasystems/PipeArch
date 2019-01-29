@@ -3,27 +3,34 @@
 class Operation : public Unit {
 protected:
 	unsigned m_opId;
-	unsigned m_numDefaultRegs;
 
 public:
 	Operation(
 		unsigned opId,
-		unsigned numDefaultRegs,
 		string name,
 		OutputWidth outputWidth,
 		UnitType unitType)
 	: Unit(name, outputWidth, unitType)
 	{
 		m_opId = opId;
-		m_numDefaultRegs = numDefaultRegs;
 	}
 
 	string WriteChannel(Unit* toWrite, unsigned regNumber) {
 		string channel("");
 		string fromName("from_" + m_name + "_to_" + toWrite->GetName());
-		channel += "internal_interface #(.WIDTH(512)) " + fromName + "();\n";
+		if (m_outputWidth == t_scalar) {
+			channel += "internal_interface #(.WIDTH(32)) " + fromName + "();\n";
+		}
+		else {
+			channel += "internal_interface #(.WIDTH(512)) " + fromName + "();\n";
+		}
 		if (toWrite->GetUnitType() == t_local) {
-			channel += "write_bram\n";
+			if (m_outputWidth == t_vector && toWrite->GetOutputWidth() == t_scalar) {
+				channel += "write_bram_vector2scalar\n";
+			}
+			else {
+				channel += "write_bram\n";
+			}
 		}
 		else {
 			channel += "write_fifo\n";
@@ -75,7 +82,12 @@ public:
 	string ReadChannel(Unit* toRead, unsigned regNumber) {
 		string channel("");
 		string toName("to_" + m_name + "_from_" + toRead->GetName());
-		channel += "internal_interface #(.WIDTH(512)) " + toName + "();\n";
+		if (toRead->GetOutputWidth() == t_scalar) {
+			channel += "internal_interface #(.WIDTH(32)) " + toName + "();\n";
+		}
+		else {
+			channel += "internal_interface #(.WIDTH(512)) " + toName + "();\n";
+		}
 		if (toRead->GetUnitType() == t_local) {
 			channel += "read_bram\n";
 		}
