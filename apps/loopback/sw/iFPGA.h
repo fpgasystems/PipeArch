@@ -62,7 +62,7 @@ public:
 			exit(1);
 		}
 
-		auto inputHandle = m_fpga->allocBuffer(numLines*64);
+		auto inputHandle = m_fpga->allocBuffer(numLines*numIterations*64);
 		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());
 		assert(NULL != input);
 
