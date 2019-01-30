@@ -19,8 +19,6 @@ using namespace std;
 using namespace opae::fpga::types;
 using namespace opae::fpga::bbb::mpf::types;
 
-#define FPGA_MEMORY_SIZE_IN_CL 1024
-
 struct MemoryChunk {
 	uint32_t m_offsetInCL;
 	uint32_t m_lenghtInCL;
@@ -69,31 +67,26 @@ public:
 			output[i] = 0;
 		}
 
-		uint32_t numIterations = numLines/FPGA_MEMORY_SIZE_IN_CL + (numLines%FPGA_MEMORY_SIZE_IN_CL > 0);
-		cout << "numIterations : " << numIterations << endl;
-
 		std::vector<Instruction> instructions;
-
-		Instruction resetInst;
-		resetInst.ResetIndex(0);
-		resetInst.ResetIndex(1);
-		resetInst.ResetIndex(2);
 
 		Instruction prefetchInst;
 		prefetchInst.Prefetch(0, numLines, 0, 0, 0);
+		prefetchInst.ResetIndex(0);
+		prefetchInst.ResetIndex(1);
+		prefetchInst.ResetIndex(2);
 
-		access_t accessInternal[2];
-		accessInternal[0].m_offsetInCL = 0;
-		accessInternal[0].m_lengthInCL = 0;
-		accessInternal[1].m_offsetInCL = 0;
-		accessInternal[1].m_lengthInCL = numLines;
-
+		access_t accessRead[1];
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = numLines;
 		Instruction loadInst;
-		loadInst.Load(0, numLines, 0, 0, 0, accessInternal, 2);
+		loadInst.Load(0, numLines, 0, 0, 0, accessRead, 1);
 		loadInst.MakeNonBlocking();
 
+		access_t accessWrite[1];
+		accessWrite[0].m_offsetInCL = 0;
+		accessWrite[0].m_lengthInCL = numLines;
 		Instruction writebackInst;
-		writebackInst.WriteBack(1, numLines, 0, 0, 0, 1, accessInternal, 2);
+		writebackInst.WriteBack(1, numLines, 0, 0, 0, 0, accessWrite, 1);
 
 		Instruction exitInst;
 		exitInst.Jump(2, 0, 0, 0xFFFFFFFF);
@@ -168,5 +161,4 @@ public:
 					<< vtp_stats.numTLBMisses2MB << endl;
 		}
 	}
-
 };

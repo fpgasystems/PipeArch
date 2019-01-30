@@ -63,7 +63,7 @@ public:
 
 		FileOps::FileCopy(path + "/pipearch_top.sv", FileOps::m_svTopFileName);
 		FileOps::FileCopy(path + "/Instruction.h", FileOps::m_instructionsHeaderFileName);
-		FileOps::FileCopy(path + "/sim_sources.txt", "./output/sim_sources.txt");
+		FileOps::FileCopy(path + "/sources_sim.txt", "./output/sources_sim.txt");
 
 		FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?LOAD", "parameter NUM_LOAD_CHANNELS = " + to_string(numLoadChannels) + ";");
 		FileOps::FindAndInstert(FileOps::m_svTopFileName, "//?WRITEBACK", "parameter NUM_WRITEBACK_CHANNELS = " + to_string(numWriteBackChannels) + ";");

@@ -13,13 +13,9 @@ int main(int argc, char* argv[]) {
 
 	PipeArchBase pipeArch;
 
-	LocalVector localMemory("local", 1000);
-	pipeArch.Load(localMemory);
-
-	TempVector localFifo("fifo", 128);
+	TempVector localFifo("fifo", 512);
 	pipeArch.Load(localFifo);
 
-	pipeArch.WriteBack(localMemory);
 	pipeArch.WriteBack(localFifo);
 
 	pipeArch.PrintInfo();

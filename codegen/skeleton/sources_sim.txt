@@ -1,0 +1,3 @@
+C:../../../../common-rtl/common_sources_sim.txt
+
+pipearch_top.sv
