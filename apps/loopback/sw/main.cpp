@@ -7,13 +7,15 @@
 int main(int argc, char* argv[]) {
 
 	uint32_t numLines = 0;
-	if (!(argc == 2)) {
-		cout << "Usage: ./app <numLines>" << endl;
+	uint32_t numIterations = 0;
+	if (!(argc == 3)) {
+		cout << "Usage: ./app <numLines> <numIterations>" << endl;
 		return 0;
 	}
 	numLines = atoi(argv[1]);
+	numIterations = atoi(argv[2]);
 
 	iFPGA myfpga(AFU_ACCEL_UUID);
 
-	myfpga.ExampleApp(numLines);
+	myfpga.ExampleApp(numLines, numIterations);
 }

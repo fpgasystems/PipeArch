@@ -19,6 +19,12 @@ using namespace std;
 using namespace opae::fpga::types;
 using namespace opae::fpga::bbb::mpf::types;
 
+static double get_time() {
+	struct timeval t;
+	gettimeofday(&t, NULL);
+	return t.tv_sec + t.tv_usec*1e-6;
+}
+
 struct MemoryChunk {
 	uint32_t m_offsetInCL;
 	uint32_t m_lenghtInCL;
@@ -49,7 +55,12 @@ public:
 		delete m_fpga;
 	}
 
-	uint32_t ExampleApp(uint32_t numLines) {
+	uint32_t ExampleApp(uint32_t numLines, uint32_t numIterations) {
+
+		if (numLines > 32768) {
+			cout << "max allowed numLines is 32768" << endl;
+			exit(1);
+		}
 
 		auto inputHandle = m_fpga->allocBuffer(numLines*64);
 		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());
@@ -70,7 +81,7 @@ public:
 		std::vector<Instruction> instructions;
 
 		Instruction prefetchInst;
-		prefetchInst.Prefetch(0, numLines, 0, 0, 0);
+		prefetchInst.Prefetch(0, numLines*numIterations, 0, 0, 0);
 		prefetchInst.ResetIndex(0);
 		prefetchInst.ResetIndex(1);
 		prefetchInst.ResetIndex(2);
@@ -87,9 +98,10 @@ public:
 		accessWrite[0].m_lengthInCL = numLines;
 		Instruction writebackInst;
 		writebackInst.WriteBack(1, numLines, 0, 0, 0, 0, accessWrite, 1);
+		writebackInst.IncrementIndex(2);
 
 		Instruction exitInst;
-		exitInst.Jump(2, 0, 0, 0xFFFFFFFF);
+		exitInst.Jump(2, numIterations, 1, 0xFFFFFFFF);
 
 		instructions.push_back(prefetchInst);
 		instructions.push_back(loadInst);
@@ -105,21 +117,26 @@ public:
 			k++;
 		}
 
+		// Spin, waiting for the value in memory to change to something non-zero.
+		struct timespec pause;
+		// Longer when simulating
+		pause.tv_sec = (m_fpga->hwIsSimulated() ? 1 : 0);
+		pause.tv_nsec = 100;
+
+		double start = get_time();
+
 		m_csrs->writeCSR(0, intptr_t(input));
 		m_csrs->writeCSR(1, intptr_t(output));
 		m_csrs->writeCSR(2, intptr_t(programMemory));
 		m_csrs->writeCSR(3, (uint64_t)instructions.size());
 
-		// Spin, waiting for the value in memory to change to something non-zero.
-		struct timespec pause;
-		// Longer when simulating
-		pause.tv_sec = (m_fpga->hwIsSimulated() ? 1 : 0);
-		pause.tv_nsec = 2500000;
-
 		output[0] = 0;
 		while (0 == output[0]) {
 			nanosleep(&pause, NULL);
 		};
+
+		double end = get_time();
+		cout << "Time: " << end-start << endl;
 
 		// Check values
 		bool pass = true;

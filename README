@@ -1,10 +1,11 @@
 # PipeArch
 
-## Loopback Example (Simulation)
+## Loopback Example
 - cd ./apps/loopback/hw
 - make
 - ./loopback_gen ../../../codegen/skeleton/ (populates files in skeleton and copies them)
 
+### Simulation
 - cd ./apps/loopback
 - ./hw/setup_ase build_sim
 - cd build_sim
@@ -18,3 +19,10 @@
 - export ASE_WORKDIR=../build_sim/work
 - make
 - main_ase
+
+### Synthesis
+- cd ./apps/loopback
+- afu_synth_setup --source ./hw/output.sources.txt build_synth
+- cd build_synth
+- chmod a+x ./build/generate_pr_bitstream.sh
+- ${OPAE_PLATFORM_ROOT}/bin/run.sh
