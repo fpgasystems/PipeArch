@@ -1,10 +1,10 @@
 #include "ColumnML.h"
 #include "iFPGA.h"
 
-class fsgd : public iFPGA, public ColumnML {
+class FPGA_ColumnML : public iFPGA, public ColumnML {
 
 public:
-	fsgd(const char* accel_uuid) : iFPGA(accel_uuid) {}
+	FPGA_ColumnML(const char* accel_uuid) : iFPGA(accel_uuid) {}
 
 	volatile float* m_memory = nullptr;
 	volatile float* m_model = nullptr;
@@ -105,47 +105,47 @@ public:
 			return;
 		}
 
-		const uint32_t numInstructions = 8;
+		const uint32_t numInstructions = 6;
 		Instruction inst[numInstructions];
 
 		uint32_t modelOffsetInBRAM = 0;
 		uint32_t labelOffsetInBRAM = 0;
 
-		access_t accessInternal[3];
+		access_t accessRead[3];
 
 		// Load model
-		accessInternal[0].m_offsetInCL = 0;
-		accessInternal[0].m_lengthInCL = 0;
-		accessInternal[1].m_offsetInCL = modelOffsetInBRAM;
-		accessInternal[1].m_lengthInCL = m_modelChunk.m_lengthInCL;
-		accessInternal[2].m_offsetInCL = 0;
-		accessInternal[2].m_lengthInCL = 0;
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = 0;
+		accessRead[1].m_offsetInCL = modelOffsetInBRAM;
+		accessRead[1].m_lengthInCL = m_modelChunk.m_lengthInCL;
+		accessRead[2].m_offsetInCL = 0;
+		accessRead[2].m_lengthInCL = 0;
 		inst[0].Load(
 			m_modelChunk.m_offsetInCL,
 			m_modelChunk.m_lengthInCL,
 			0,
 			0,
 			0,
-			accessInternal,
+			accessRead,
 			3);
 		inst[0].ResetIndex(0);
 		inst[0].ResetIndex(1);
 		inst[0].ResetIndex(2);
 
 		// Load labels
-		accessInternal[0].m_offsetInCL = 0;
-		accessInternal[0].m_lengthInCL = 0;
-		accessInternal[1].m_offsetInCL = 0;
-		accessInternal[1].m_lengthInCL = 0;
-		accessInternal[2].m_offsetInCL = labelOffsetInBRAM;
-		accessInternal[2].m_lengthInCL = m_numSamplesInCL;
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = 0;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = 0;
+		accessRead[2].m_offsetInCL = labelOffsetInBRAM;
+		accessRead[2].m_lengthInCL = m_numSamplesInCL;
 		inst[1].Load(
 			m_labelChunk.m_offsetInCL,
 			m_numSamplesInCL,
 			0,
 			0,
 			0,
-			accessInternal,
+			accessRead,
 			3);
 
 		// Prefetch all samples
@@ -159,54 +159,38 @@ public:
 		// Innermost loop
 
 		// Load samples
-		accessInternal[0].m_offsetInCL = 0;
-		accessInternal[0].m_lengthInCL = m_numFeaturesInCL;
-		accessInternal[1].m_offsetInCL = 0;
-		accessInternal[1].m_lengthInCL = 0;
-		accessInternal[2].m_offsetInCL = 0;
-		accessInternal[2].m_lengthInCL = 0;
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = m_numFeaturesInCL;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = 0;
+		accessRead[2].m_offsetInCL = 0;
+		accessRead[2].m_lengthInCL = 0;
 		inst[3].Load(
 			m_samplesChunk.m_offsetInCL,
 			m_numFeaturesInCL,
 			m_numFeaturesInCL, // Offset by index 0
 			0,
 			0,
-			accessInternal,
+			accessRead,
 			3);
-		inst[3].MakeNonBlocking();
-
-		// Dot
-		access_t accessPropertiesOut_dot;
-		accessPropertiesOut_dot.m_offsetInCL = 0;
-		accessPropertiesOut_dot.m_lengthInCL = 1;
-		inst[4].Dot_dot(
-			accessPropertiesOut_dot,
-			m_numFeaturesInCL);
-
-		// Subtract
-		access_t accessPropertiesIn_labelsMem;
-		accessPropertiesIn_labelsMem.m_offsetInCL = 0;
-		accessPropertiesIn_labelsMem.m_lengthInCL = 1;
-		inst[5].ScalarSubtract_error(
-			accessPropertiesIn_labelsMem,
-			1);
+		inst[3].IncrementIndex(0);
 
 		// WriteBack
 		access_t accessOut[1];
 		accessOut[0].m_offsetInCL = 0;
 		accessOut[0].m_lengthInCL = 1;
-		inst[6].WriteBack(
+		inst[4].WriteBack(
 			1,
 			1,
-			1, // Offset by index 0
+			0,
 			0,
 			0,
 			0,
 			accessOut,
 			1);
-		inst[6].IncrementIndex(0);
+		inst[4].IncrementIndex(0);
 
-		inst[7].Jump(0, m_cstore->m_numSamples, 3, 0xFFFFFFFF);
+		inst[5].Jump(0, m_cstore->m_numSamples, 3, 0xFFFFFFFF);
 
 
 		std::vector<Instruction> instructions;

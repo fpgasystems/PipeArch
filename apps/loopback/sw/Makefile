@@ -13,6 +13,10 @@ SRCS = $(TEST).cpp $(BASE_FILE_SRC)
 OBJS = $(addprefix $(OBJDIR)/,$(patsubst %.cpp,%.o,$(SRCS)))
 DEPS = $(wildcard ./*.h)
 
+$(info $$SRCS is [$(SRCS)])
+$(info $$OBJS is [$(OBJS)])
+$(info $$DEPS is [$(DEPS)])
+
 # Targets
 all: $(TEST) $(TEST)_ase
 

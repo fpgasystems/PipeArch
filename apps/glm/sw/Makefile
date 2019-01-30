@@ -5,13 +5,20 @@ TEST = main
 
 # Build directory
 OBJDIR = obj
+INCLUDE = include
 CFLAGS += -I./$(OBJDIR)
 CPPFLAGS += -I./$(OBJDIR) -march=native
 
 # Files and folders
-SRCS = $(BASE_FILE_SRC) $(wildcard ./*.cpp)
+LOCAL_SRCS = $(wildcard ./src/*.cpp)
+SRCS = $(patsubst ./src/%,%,$(LOCAL_SRCS))
+SRCS += $(BASE_FILE_SRC)
 OBJS = $(addprefix $(OBJDIR)/,$(patsubst %.cpp,%.o,$(SRCS)))
-DEPS = $(wildcard ./*.h)
+DEPS = $(wildcard $(INCLUDE)/*.h)
+
+$(info $$SRCS is [$(SRCS)])
+$(info $$OBJS is [$(OBJS)])
+$(info $$DEPS is [$(DEPS)])
 
 # Targets
 all: $(TEST) $(TEST)_ase
@@ -32,7 +39,10 @@ $(TEST)_ase: $(OBJS)
 	$(CXX) -o $@ $^ $(LDFLAGS) $(ASE_LIBS)
 
 $(OBJDIR)/%.o: %.cpp $(DEPS) | objdir
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE)
+
+$(OBJDIR)/%.o: ./src/%.cpp $(DEPS) | objdir
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE)
 
 clean:
 	rm -rf $(TEST) $(TEST)_ase $(OBJDIR)

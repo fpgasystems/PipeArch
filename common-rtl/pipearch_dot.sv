@@ -9,17 +9,18 @@ module pipearch_dot
     output logic op_done,
 
     input logic [31:0] regs0,
+    input logic [31:0] regs1,
 
-    internal_interface.from_commonread left_input,
-    internal_interface.from_commonread right_input,
-    internal_interface.to_commonwrite result
+    // samples input
+    fifobram_interface.fifo_read samples_input,
+
+    // model input
+    fifobram_interface.bram_read modelMem_input,
+    fifobram_interface.fifo_read modelForward_input,
+
+    // result
+    fifobram_interface.fifo_write result
 );
-
-    logic [31:0] num_lines_to_process;
-    logic [31:0] num_lines_left;
-    logic [31:0] num_lines_right;
-    logic [31:0] num_processed_lines;
-
     typedef enum logic [1:0]
     {
         STATE_IDLE,
@@ -28,38 +29,16 @@ module pipearch_dot
     } t_dotstate;
     t_dotstate dot_state;
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(6)) leftoperand_fifo_access();
-    fifo
-    #(.WIDTH(512), .LOG2_DEPTH(6)
-    )
-    leftoperand_fifo
-    (
-        .clk,
-        .reset,
-        .access(leftoperand_fifo_access.fifo_source)
-    );
-    assign leftoperand_fifo_access.we = left_input.rvalid;
-    assign leftoperand_fifo_access.wdata = left_input.rdata;
-    assign left_input.almostfull = leftoperand_fifo_access.almostfull;
+    logic [15:0] num_lines_to_process;
+    logic model_input_select;
+    logic [15:0] modelMem_load_offset;
+    logic [15:0] num_requested_lines;
+    logic [15:0] num_processed_lines;
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(6)) rightoperand_fifo_access();
-    fifo
-    #(.WIDTH(512), .LOG2_DEPTH(6)
-    )
-    rightoperand_fifo
-    (
-        .clk,
-        .reset,
-        .access(rightoperand_fifo_access.fifo_source)
-    );
-    assign rightoperand_fifo_access.we = right_input.rvalid;
-    assign rightoperand_fifo_access.wdata = right_input.rdata;
-    assign right_input.almostfull = rightoperand_fifo_access.almostfull;
-
-    assign leftoperand_fifo_access.re = !leftoperand_fifo_access.empty && !rightoperand_fifo_access.empty && !result.almostfull;
-    assign rightoperand_fifo_access.re = !leftoperand_fifo_access.empty && !rightoperand_fifo_access.empty && !result.almostfull;
 
     logic dot_trigger;
+    logic [511:0] dot_left;
+    logic [511:0] dot_right;
     logic dot_done;
     logic [31:0] dot_result;
     hybrid_dot_product
@@ -72,12 +51,14 @@ module pipearch_dot
         .resetn(!reset),
         .trigger(dot_trigger),
         .accumulation_count(32'(num_lines_to_process)),
-        .vector1(leftoperand_fifo_access.rdata),
-        .vector2(rightoperand_fifo_access.rdata),
+        .vector1(dot_left),
+        .vector2(dot_right),
         .result_valid(dot_done),
         .result(dot_result)
     );
-    assign dot_trigger = leftoperand_fifo_access.rvalid && rightoperand_fifo_access.rvalid;
+    assign dot_trigger = samples_input.rvalid;
+    assign dot_left = samples_input.rdata;
+    assign dot_right = (model_input_select == 1'b0) ? modelMem_input.rdata : modelForward_input.rdata;
     assign result.we = dot_done;
     assign result.wdata = dot_result;
 
@@ -86,16 +67,19 @@ module pipearch_dot
         if (reset)
         begin
             dot_state <= STATE_IDLE;
-            num_lines_to_process <= 32'b0;
-            num_lines_left <= 32'b0;
-            num_lines_right <= 32'b0;
-            num_processed_lines <= 32'b0;
-
+            num_lines_to_process <= 16'b0;
+            model_input_select <= 1'b0;
+            modelMem_load_offset <= 16'b0; 
+            num_requested_lines <= 16'b0;
+            num_processed_lines <= 16'b0;
             op_done <= 1'b0;
         end
         else
         begin
 
+            samples_input.re <= 1'b0;
+            modelMem_input.re <= 1'b0;
+            modelForward_input.re <= 1'b0;
             op_done <= 1'b0;
             case (dot_state)
                 STATE_IDLE:
@@ -103,23 +87,36 @@ module pipearch_dot
                     if (op_start)
                     begin
                         dot_state <= STATE_READ;
-                        num_lines_to_process <= regs0 >> 16;
-                        num_lines_left <= 32'b0;
-                        num_lines_right <= 32'b0;
+                        num_lines_to_process <= regs0[15:0];
+                        model_input_select <= regs0[16];
+                        modelMem_load_offset <= regs1[15:0];
+                        num_requested_lines <= 32'b0;
                         num_processed_lines <= 32'b0;
                     end
                 end
 
                 STATE_READ:
                 begin
-                    if (leftoperand_fifo_access.rvalid)
+                    if (model_input_select == 1'b0)
                     begin
-                        num_lines_left <= num_lines_left + 1;
+                        if (!samples_input.empty)
+                        begin
+                            samples_input.re <= 1'b1;
+                            modelMem_input.re <= 1'b1;
+                            modelMem_input.raddr <= modelMem_load_offset + num_requested_lines;
+                            num_requested_lines <= num_requested_lines + 1;
+                        end
                     end
-                    if (rightoperand_fifo_access.rvalid)
+                    else
                     begin
-                        num_lines_right <= num_lines_right + 1;
+                        if (!samples_input.empty && !modelForward_input.empty)
+                        begin
+                            samples_input.re <= 1'b1;
+                            modelForward_input.re <= 1'b1;
+                            num_requested_lines <= num_requested_lines + 1;
+                        end
                     end
+
                     if (dot_trigger)
                     begin
                         num_processed_lines <= num_processed_lines + 1;

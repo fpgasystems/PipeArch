@@ -21,29 +21,46 @@ assign access.almostfull = (count > 2**LOG2_DEPTH-16) ? 1'b1 : 1'b0;
 assign access.count = count;
 assign access.empty = empty;
 
+always_ff @(negedge clk)
+begin
+	if (reset)
+	begin
+		empty <= 1'b1;
+		count <= 0;
+	end
+	else
+	begin
+		if (access.we && !(access.re && empty == 1'b0))
+		begin
+			empty <= 1'b0;
+			count <= count + 1;
+		end
+		
+		if (access.re && empty == 1'b0 && !access.we)
+		begin
+			count <= count - 1;
+			if (count == 1)
+			begin
+				empty <= 1'b1;
+			end
+		end
+	end
+end
+
 always_ff @(posedge clk)
 begin
 	if (reset)
 	begin
 		waddr <= 0;
 		raddr <= 0;
-		count <= 0;
-		empty <= 1'b1;
 	end
 	else
 	begin
-
 		// Write
 		if (access.we)
 		begin
 			memory[waddr] <= access.wdata;
 			waddr <= waddr+1;
-
-			if (!(access.re && empty == 1'b0))
-			begin
-				count <= count + 1;
-				empty <= 1'b0;
-			end
 		end
 
 		// Read
@@ -53,15 +70,6 @@ begin
 			access.rvalid <= 1'b1;
 			access.rdata <= memory[raddr];
 			raddr <= raddr+1;
-
-			if (!access.we)
-			begin
-				count <= count - 1;
-				if (count == 1)
-				begin
-					empty <= 1'b1;
-				end
-			end
 		end
 	end
 end

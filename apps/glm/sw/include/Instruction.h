@@ -114,26 +114,6 @@ public:
 // *************************************************************************
 //   FILL: Instructions
 // *************************************************************************
-void Dot_dot(
-	access_t accessPropertiesOut_dot,
-	uint32_t numLinesToProcess)
-{
-	m_data[15] = 13;
-	m_data[3] = numLinesToProcess << 16;
-	m_data[4] = 0;
-	m_data[5] = (accessPropertiesOut_dot.m_lengthInCL << 16) | accessPropertiesOut_dot.m_offsetInCL;
-}
-
-void ScalarSubtract_error(
-	access_t accessPropertiesIn_labelsMem,
-	uint32_t numLinesToProcess)
-{
-	m_data[15] = 14;
-	m_data[3] = numLinesToProcess << 16;
-	m_data[5] = 0;
-	m_data[4] = (accessPropertiesIn_labelsMem.m_lengthInCL << 16) | accessPropertiesIn_labelsMem.m_offsetInCL;
-}
-
 //?INST
 
 	void Copy(volatile uint32_t* data) {
