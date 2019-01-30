@@ -21,17 +21,19 @@ module pipearch_top
     input  logic c1NotEmpty
 );
 
-// *************************************************************************
-//   FILL: NUM_LOAD_CHANNELS
-// *************************************************************************
-parameter NUM_LOAD_CHANNELS = 4;
-//?LOAD
+    // *************************************************************************
+    //
+    //   NUM_LOAD_CHANNELS
+    //
+    // *************************************************************************
+    parameter NUM_LOAD_CHANNELS = 4;
 
-// *************************************************************************
-//   FILL: NUM_WRITEBACK_CHANNELS
-// *************************************************************************
-parameter NUM_WRITEBACK_CHANNELS = 2;
-//?WRITEBACK
+    // *************************************************************************
+    //
+    //   NUM_WRITEBACK_CHANNELS
+    //
+    // *************************************************************************
+    parameter NUM_WRITEBACK_CHANNELS = 2;
 
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PROGRAM_SIZE)) program_access();
@@ -537,10 +539,12 @@ parameter NUM_WRITEBACK_CHANNELS = 2;
                             program_counter <= program_counter + 1;
                         end
 
-// *************************************************************************
-//   FILL: Additional opcodes
-// *************************************************************************
-//?OPCODES
+                        // *************************************************************************
+                        //
+                        //   Additional opcodes
+                        //
+                        // *************************************************************************
+
 
                     endcase
                 end
@@ -569,51 +573,108 @@ parameter NUM_WRITEBACK_CHANNELS = 2;
         end
     end
 
-// *************************************************************************
-//   FILL: Local Memories
-// *************************************************************************
-fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(9)) input_interface();
-fifo
-#(.WIDTH(512), .LOG2_DEPTH(9))
-input_inst (
-.clk, .reset,
-.access(input_interface.fifo_source)
-);
+    // *************************************************************************
+    //
+    //   Local Memories
+    //
+    // *************************************************************************
 
-fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(12)) samplesForward_interface();
-fifo
-#(.WIDTH(512), .LOG2_DEPTH(12))
-samplesForward_inst (
-.clk, .reset,
-.access(samplesForward_interface.fifo_source)
-);
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) modelMem_interface();
+    bram
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
+    modelMem_inst (
+        .clk,
+        .access(modelMem_interface.bram_source)
+    );
 
-fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(12)) modelMem_interface();
-bram
-#(.WIDTH(512), .LOG2_DEPTH(12))
-modelMem_inst (
-.clk,
-.access(modelMem_interface.bram_source)
-);
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(12)) modelMem2dot_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) labelsMem_interface();
+    bram
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
+    labelsMem_inst (
+        .clk,
+        .access(labelsMem_interface.bram_source)
+    );
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) input_interface();
+    fifo
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE))
+    input_inst (
+        .clk, .reset,
+        .access(input_interface.fifo_source)
+    );
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) samplesForward_interface();
+    fifo
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
+    samplesForward_inst (
+        .clk, .reset,
+        .access(samplesForward_interface.fifo_source)
+    );
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) modelForward_interface();
+    fifo
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_INTERNAL_SIZE))
+    modelForward_inst (
+        .clk, .reset,
+        .access(modelForward_interface.fifo_source)
+    );
+
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) dot_interface();
+    fifo
+    #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE))
+    dot_inst (
+        .clk, .reset,
+        .access(dot_interface.fifo_source)
+    );
+
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_modelMem_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_labelsMem_interface();
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) dot_modelMem_interface();
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_modelMem_interface();
+
+
+    assign writeback_modelMem_interface.rvalid = modelMem_interface.rvalid;
+    assign writeback_modelMem_interface.rdata = modelMem_interface.rdata;
+
+    assign dot_modelMem_interface.rvalid = modelMem_interface.rvalid;
+    assign dot_modelMem_interface.rdata = modelMem_interface.rdata;
+
     always_ff @(posedge clk)
     begin
-        modelMem_interface.re <= modelMem2dot_interface.re;
-        modelMem_interface.raddr <= modelMem2dot_interface.raddr;
+        // modelMem request arbitration
+        modelMem_interface.re <= 1'b0;
+        if (dot_modelMem_interface.re)
+        begin
+            modelMem_interface.re <= 1'b1;
+            modelMem_interface.raddr <= dot_modelMem_interface.raddr;
+        end
+        else if (writeback_modelMem_interface.re)
+        begin
+            modelMem_interface.re <= 1'b1;
+            modelMem_interface.raddr <= writeback_modelMem_interface.raddr;
+        end
+
+        // modelMem write arbitration
+        modelMem_interface.we <= 1'b0;
+        if (load2modelMem_interface.we)
+        begin
+            modelMem_interface.we <= 1'b1;
+            modelMem_interface.waddr <= load_modelMem_interface.waddr;
+            modelMem_interface.wdata <= load_modelMem_interface.wdata;
+        end
+
+        // labelsMem write arbitration
+        if (load2labelsMem_interface.we)
+        begin
+            labelsMem_interface.we <= 1'b1;
+            labelsMem_interface.waddr <= load_labelsMem_interface.waddr;
+            labelsMem_interface.wdata <= load_labelsMem_interface.wdata;
+        end
     end
-
-fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(11)) labelsMem_interface();
-bram
-#(.WIDTH(512), .LOG2_DEPTH(11))
-labelsMem_inst (
-.clk,
-.access(labelsMem_interface.bram_source)
-);
-
-    
-
-//?LOCALMEM
 
     // =========================================================================
     //
@@ -643,8 +704,6 @@ labelsMem_inst (
         .get_af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0)
     );
 
-
-    internal_interface #(.WIDTH(512)) from_load();
     pipearch_load
     execute_load
     (
@@ -658,108 +717,13 @@ labelsMem_inst (
         .c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
         .cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
         .af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0),
-        .into_write(from_load.to_commonwrite)
+        .input_interface(input_interface.fifo_write),
+        .samplesForward_output(samplesForward_interface.fifo_write),
+        .modelMem_output(load_modelMem_interface.bram_write),
+        .labelsMem_output(load_labelsMem_interface.bram_write)
     );
 
-// *************************************************************************
-//   FILL: Load Channels
-// *************************************************************************
-internal_interface #(.WIDTH(512)) from_load_to_input();
-write_fifo
-write_input_inst (
-.clk, .reset,
-.op_start(op_start[1]),
-.configreg(regs[5]),
-.into_write(from_load_to_input.commonwrite_source),
-.fifo_access(input_interface.fifo_write)
-);
-
-internal_interface #(.WIDTH(512)) from_load_to_samplesForward();
-write_fifo
-write_samplesForward_inst (
-.clk, .reset,
-.op_start(op_start[1]),
-.configreg(regs[6]),
-.into_write(from_load_to_samplesForward.commonwrite_source),
-.fifo_access(samplesForward_interface.fifo_write)
-);
-
-internal_interface #(.WIDTH(512)) from_load_to_modelMem();
-write_bram
-write_modelMem_inst (
-.clk, .reset,
-.op_start(op_start[1]),
-.configreg(regs[7]),
-.into_write(from_load_to_modelMem.commonwrite_source),
-.memory_access(modelMem_interface.bram_write)
-);
-
-internal_interface #(.WIDTH(512)) from_load_to_labelsMem();
-write_bram
-write_labelsMem_inst (
-.clk, .reset,
-.op_start(op_start[1]),
-.configreg(regs[8]),
-.into_write(from_load_to_labelsMem.commonwrite_source),
-.memory_access(labelsMem_interface.bram_write)
-);
-
-always_comb
-begin
-	from_load_to_input.we = from_load.we;
-	from_load_to_input.wdata = from_load.wdata;
-	from_load_to_samplesForward.we = from_load.we;
-	from_load_to_samplesForward.wdata = from_load.wdata;
-	from_load_to_modelMem.we = from_load.we;
-	from_load_to_modelMem.wdata = from_load.wdata;
-	from_load_to_labelsMem.we = from_load.we;
-	from_load_to_labelsMem.wdata = from_load.wdata;
-end
-assign from_load.almostfull = from_load_to_input.almostfull | from_load_to_samplesForward.almostfull | from_load_to_modelMem.almostfull | from_load_to_labelsMem.almostfull;
-
-//?LOADCH
-
-
-    internal_interface #(.WIDTH(512)) to_writeback();
-// *************************************************************************
-//   FILL: Store Channels
-// *************************************************************************
-internal_interface #(.WIDTH(512)) to_writeback_from_modelMem();
-read_bram
-read_modelMem_inst (
-.clk, .reset,
-.op_start(op_start[2]),
-.configreg(regs[6]),
-.memory_access(modelMem_interface.bram_read),
-.outfrom_read(to_writeback_from_modelMem.commonread_source)
-);
-
-internal_interface #(.WIDTH(512)) to_writeback_from_labelsMem();
-read_bram
-read_labelsMem_inst (
-.clk, .reset,
-.op_start(op_start[2]),
-.configreg(regs[7]),
-.memory_access(labelsMem_interface.bram_read),
-.outfrom_read(to_writeback_from_labelsMem.commonread_source)
-);
-
-always_comb
-begin
-	if (regs[5][3:0] == 0) begin
-		to_writeback.rvalid = to_writeback_from_modelMem.rvalid;
-		to_writeback.rdata = to_writeback_from_modelMem.rdata;
-		to_writeback_from_modelMem.almostfull = to_writeback.almostfull;
-	end
-	else if (regs[5][3:0] == 1) begin
-		to_writeback.rvalid = to_writeback_from_labelsMem.rvalid;
-		to_writeback.rdata = to_writeback_from_labelsMem.rdata;
-		to_writeback_from_labelsMem.almostfull = to_writeback.almostfull;
-	end
-end
-
-//?STORECH
- 
+    
     pipearch_writeback
     execute_writeback
     (
@@ -771,18 +735,18 @@ end
         .regs1(regs[4]),
         .in_addr,
         .out_addr,
-        .outfrom_read(to_writeback.from_commonread),
+        .modelMem_input(writeback_modelMem_interface.bram_read),
         .c1TxAlmFull(execute_writeback_c1TxAlmFull),
         .cp2af_sRx_c1(execute_writeback_cp2af_sRx_c1),
         .af2cp_sTx_c1(execute_writeback_af2cp_sTx_c1)
     );
 
-// *************************************************************************
-//   FILL: Local Computation
-// *************************************************************************
-//?LOCALC
-
-    assign modelMem2dot_interface.rvalid = modelMem_interface.rvalid;
+    // *************************************************************************
+    //
+    //   Local Computation
+    //
+    // *************************************************************************
+    
     pipearch_dot
     execute_dot
     (
@@ -793,9 +757,9 @@ end
         .regs0(regs[3]),
         .regs1(regs[4]),
         .samples_input(input_interface.fifo_read),
-        .modelMem_input()
-
-
-    )
+        .modelMem_input(dot_modelMem_interface.bram_read),
+        .modelForward_input(modelForward_interface.fifo_read),
+        .result(dot_interface)
+    );
 
 endmodule

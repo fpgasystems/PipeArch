@@ -9,18 +9,44 @@ module pipearch_writeback
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs0,
-    input logic [31:0] regs1,
+    input logic [31:0] regs [NUM_REGS],
     input t_ccip_clAddr in_addr,
     input t_ccip_clAddr out_addr,
 
-    internal_interface.from_commonread outfrom_read,
+    fifobram_interface.bram_read modelMem_input,
 
     // CCI-P request/response
     input  logic c1TxAlmFull,
     input  t_if_ccip_c1_Rx cp2af_sRx_c1,
     output t_if_ccip_c1_Tx af2cp_sTx_c1
 );
+
+    internal_interface #(.WIDTH(512)) to_writeback();
+    // *************************************************************************
+    //
+    //   Store Channels
+    //
+    // *************************************************************************
+    iinternal_interface #(.WIDTH(512)) to_writeback_from_modelMem();
+    read_bram
+    read_modelMem_inst (
+        .clk, .reset,
+        .op_start(op_start),
+        .configreg(regs[6]),
+        .memory_access(modelMem_input.bram_read),
+        .outfrom_read(to_writeback_from_modelMem.commonread_source)
+    );
+
+    always_comb
+    begin
+        if (regs[5][3:0] == 0)
+        begin
+            to_writeback.rvalid = to_writeback_from_modelMem.rvalid;
+            to_writeback.rdata = to_writeback_from_modelMem.rdata;
+            to_writeback_from_modelMem.almostfull = to_writeback.almostfull;
+        end
+    end
+
 
     typedef enum logic [1:0]
     {
@@ -52,7 +78,7 @@ module pipearch_writeback
     logic [15:0] num_sent_lines;
     logic [15:0] num_ack_lines;
 
-    assign outfrom_read.almostfull = c1TxAlmFull;
+    assign to_writeback.almostfull = c1TxAlmFull;
 
     always_ff @(posedge clk)
     begin
@@ -78,10 +104,10 @@ module pipearch_writeback
                 begin
                     if (op_start)
                     begin
-                        DRAM_store_offset <= (regs0[31] == 1'b0) ? out_addr + regs0 : in_addr + regs0;
-                        DRAM_store_length <= regs1;
+                        DRAM_store_offset <= (regs[3][31] == 1'b0) ? out_addr + regs[3] : in_addr + regs[3];
+                        DRAM_store_length <= regs[4];
                         num_sent_lines <= 16'b0;
-                        if (regs1 == 0)
+                        if (regs[4] == 0)
                         begin
                             send_state <= STATE_DONE;
                         end
@@ -94,10 +120,10 @@ module pipearch_writeback
 
                 STATE_WRITE:
                 begin
-                    if (outfrom_read.rvalid)
+                    if (to_writeback.rvalid)
                     begin
                         af2cp_sTx_c1.valid <= 1'b1;
-                        af2cp_sTx_c1.data <= outfrom_read.rdata;
+                        af2cp_sTx_c1.data <= to_writeback.rdata;
                         af2cp_sTx_c1.hdr <= wr_hdr;
                         af2cp_sTx_c1.hdr.address <= DRAM_store_offset + num_sent_lines;
                         num_sent_lines <= num_sent_lines + 1;
@@ -126,7 +152,7 @@ module pipearch_writeback
                     if (op_start)
                     begin
                         num_ack_lines <= 16'b0;
-                        if (regs1 == 0)
+                        if (regs[4] == 0)
                         begin
                             ack_state <= STATE_DONE;
                         end

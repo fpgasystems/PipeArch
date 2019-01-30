@@ -11,15 +11,11 @@ module pipearch_dot
     input logic [31:0] regs0,
     input logic [31:0] regs1,
 
-    // samples input
     fifobram_interface.fifo_read samples_input,
-
-    // model input
     fifobram_interface.bram_read modelMem_input,
     fifobram_interface.fifo_read modelForward_input,
 
-    // result
-    fifobram_interface.fifo_write result
+    fifobram_interface.fifo_write dot_output
 );
     typedef enum logic [1:0]
     {
@@ -59,8 +55,8 @@ module pipearch_dot
     assign dot_trigger = samples_input.rvalid;
     assign dot_left = samples_input.rdata;
     assign dot_right = (model_input_select == 1'b0) ? modelMem_input.rdata : modelForward_input.rdata;
-    assign result.we = dot_done;
-    assign result.wdata = dot_result;
+    assign dot_output.we = dot_done;
+    assign dot_output.wdata = dot_result;
 
     always_ff @(posedge clk)
     begin

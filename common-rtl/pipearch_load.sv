@@ -9,8 +9,7 @@ module pipearch_load
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs0,
-    input logic [31:0] regs1,
+    input logic [31:0] regs [NUM_REGS],
     input t_ccip_clAddr in_addr,
 
     // CCI-P request/response
@@ -18,7 +17,10 @@ module pipearch_load
     input  t_if_ccip_c0_Rx cp2af_sRx_c0,
     output t_if_ccip_c0_Tx af2cp_sTx_c0,
 
-    internal_interface.to_commonwrite into_write
+    fifobram_interface.fifo_write input_interface,
+    fifobram_interface.fifo_write samplesForward_output,
+    fifobram_interface.bram_write modelMem_output,
+    fifobram_interface.bram_write labelsMem_output
 );
 
     typedef enum logic [1:0]
@@ -29,6 +31,65 @@ module pipearch_load
     } t_readstate;
     t_readstate request_state;
     t_readstate receive_state;
+
+    internal_interface #(.WIDTH(512)) from_load();
+    // *************************************************************************
+    //
+    //   Load Channels
+    //
+    // *************************************************************************
+    internal_interface #(.WIDTH(512)) from_load_to_input();
+    write_fifo
+    write_input_inst (
+        .clk, .reset,
+        .op_start(op_start),
+        .configreg(regs[5]),
+        .into_write(from_load_to_input.commonwrite_source),
+        .fifo_access(input_interface.fifo_write)
+    );
+
+    internal_interface #(.WIDTH(512)) from_load_to_samplesForward();
+    write_fifo
+    write_samplesForward_inst (
+        .clk, .reset,
+        .op_start(op_start),
+        .configreg(regs[6]),
+        .into_write(from_load_to_samplesForward.commonwrite_source),
+        .fifo_access(samplesForward_output.fifo_write)
+    );
+
+    internal_interface #(.WIDTH(512)) from_load_to_modelMem();
+    write_bram
+    write_modelMem_inst (
+        .clk, .reset,
+        .op_start(op_start),
+        .configreg(regs[7]),
+        .into_write(from_load_to_modelMem.commonwrite_source),
+        .memory_access(modelMem_output.bram_write)
+    );
+
+    internal_interface #(.WIDTH(512)) from_load_to_labelsMem();
+    write_bram
+    write_labelsMem_inst (
+        .clk, .reset,
+        .op_start(op_start),
+        .configreg(regs[8]),
+        .into_write(from_load_to_labelsMem.commonwrite_source),
+        .memory_access(labelsMem_output.bram_write)
+    );
+
+    always_comb
+    begin
+        from_load_to_input.we = from_load.we;
+        from_load_to_input.wdata = from_load.wdata;
+        from_load_to_samplesForward.we = from_load.we;
+        from_load_to_samplesForward.wdata = from_load.wdata;
+        from_load_to_modelMem.we = from_load.we;
+        from_load_to_modelMem.wdata = from_load.wdata;
+        from_load_to_labelsMem.we = from_load.we;
+        from_load_to_labelsMem.wdata = from_load.wdata;
+    end
+    assign from_load.almostfull = from_load_to_input.almostfull | from_load_to_samplesForward.almostfull | from_load_to_modelMem.almostfull | from_load_to_labelsMem.almostfull;
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) prefetch_fifo_access();
     fifo
@@ -42,7 +103,7 @@ module pipearch_load
     );
     assign prefetch_fifo_access.we = cci_c0Rx_isReadRsp(cp2af_sRx_c0) && (receive_state == STATE_READ);
     assign prefetch_fifo_access.wdata = cp2af_sRx_c0.data;
-    assign prefetch_fifo_access.re = !(prefetch_fifo_access.empty) && !(into_write.almostfull);
+    assign prefetch_fifo_access.re = !(prefetch_fifo_access.empty) && !(from_load.almostfull);
 
     t_ccip_clAddr DRAM_load_offset;
     logic [31:0] DRAM_load_length;
@@ -79,7 +140,7 @@ module pipearch_load
             af2cp_sTx_c0.valid <= 1'b0;
             num_requested_lines <= 32'b0;
             num_received_lines <= 32'b0;
-            into_write.we <= 1'b0;
+            from_load.we <= 1'b0;
             op_done <= 1'b0;
         end
         else
@@ -95,10 +156,10 @@ module pipearch_load
                 begin
                     if (op_start)
                     begin
-                        DRAM_load_offset <= in_addr + regs0;
-                        DRAM_load_length <= regs1;
+                        DRAM_load_offset <= in_addr + regs[3];
+                        DRAM_load_length <= regs[4];
                         num_requested_lines <= 32'b0;
-                        if (regs1 == 0)
+                        if (regs[4] == 0)
                         begin
                             request_state <= STATE_DONE;
                         end
@@ -132,7 +193,7 @@ module pipearch_load
             endcase
 
 
-            into_write.we <= 1'b0;
+            from_load.we <= 1'b0;
             op_done <= 1'b0;
             // =================================
             //
@@ -145,7 +206,7 @@ module pipearch_load
                     if (op_start)
                     begin
                         num_received_lines <= 32'b0;
-                        if (regs1 == 0)
+                        if (regs[4] == 0)
                         begin
                             receive_state <= STATE_DONE;
                         end
@@ -160,8 +221,8 @@ module pipearch_load
                 begin
                     if (prefetch_fifo_access.rvalid)
                     begin
-                        into_write.we <= 1'b1;
-                        into_write.wdata <= prefetch_fifo_access.rdata;
+                        from_load.we <= 1'b1;
+                        from_load.wdata <= prefetch_fifo_access.rdata;
                         num_received_lines <= num_received_lines + 1;
                         if (num_received_lines == DRAM_load_length-1)
                         begin
