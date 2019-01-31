@@ -9,8 +9,7 @@ module pipearch_prefetch
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs0,
-    input logic [31:0] regs1,
+    input logic [31:0] regs [NUM_REGS],
     input t_ccip_clAddr in_addr,
 
     // CCI-P request/response
@@ -54,8 +53,11 @@ module pipearch_prefetch
         .reset,
         .access(wait_fifo_access.fifo_source)
     );
-    assign wait_fifo_access.re = (!wait_fifo_access.empty) && !(prefetch_fifo_access.empty);
-    assign prefetch_fifo_access.re = (!wait_fifo_access.empty) && !(prefetch_fifo_access.empty);
+    always_ff @(posedge clk)
+    begin
+        wait_fifo_access.re <= (!wait_fifo_access.empty) && !(prefetch_fifo_access.empty);
+        prefetch_fifo_access.re <= (!wait_fifo_access.empty) && !(prefetch_fifo_access.empty);
+    end
 
     t_cci_c0_ReqMemHdr rd_hdr;
     always_comb
@@ -128,8 +130,8 @@ module pipearch_prefetch
 
                     if (op_start)
                     begin
-                        DRAM_load_offset <= in_addr + regs0;
-                        DRAM_load_length <= regs1;
+                        DRAM_load_offset <= in_addr + regs[3];
+                        DRAM_load_length <= regs[4];
                         num_wait_fifo_lines <= 32'b0;
                         num_requested_lines <= 32'b0;
                         request_state <= STATE_READ;

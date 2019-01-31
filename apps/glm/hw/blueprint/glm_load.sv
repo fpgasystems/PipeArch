@@ -1,7 +1,7 @@
 `include "cci_mpf_if.vh"
 `include "pipearch_common.vh"
 
-module pipearch_load
+module glm_load
 (
     input  logic clk,
     input  logic reset,
@@ -17,10 +17,10 @@ module pipearch_load
     input  t_if_ccip_c0_Rx cp2af_sRx_c0,
     output t_if_ccip_c0_Tx af2cp_sTx_c0,
 
-    fifobram_interface.fifo_write input_interface,
-    fifobram_interface.fifo_write samplesForward_output,
-    fifobram_interface.bram_write modelMem_output,
-    fifobram_interface.bram_write labelsMem_output
+    fifobram_interface.fifo_write FIFO_input,
+    fifobram_interface.fifo_write FIFO_samplesforward,
+    fifobram_interface.bram_write MEM_model,
+    fifobram_interface.bram_write MEM_labels
 );
 
     typedef enum logic [1:0]
@@ -38,58 +38,58 @@ module pipearch_load
     //   Load Channels
     //
     // *************************************************************************
-    internal_interface #(.WIDTH(512)) from_load_to_input();
+    internal_interface #(.WIDTH(512)) from_load_to_FIFO_input();
     write_fifo
-    write_input_inst (
+    write_FIFO_input_inst (
         .clk, .reset,
         .op_start(op_start),
         .configreg(regs[5]),
-        .into_write(from_load_to_input.commonwrite_source),
-        .fifo_access(input_interface.fifo_write)
+        .into_write(from_load_to_FIFO_input.commonwrite_source),
+        .fifo_access(FIFO_input)
     );
 
-    internal_interface #(.WIDTH(512)) from_load_to_samplesForward();
+    internal_interface #(.WIDTH(512)) from_load_to_FIFO_samplesforward();
     write_fifo
-    write_samplesForward_inst (
+    write_FIFO_samplesforward_inst (
         .clk, .reset,
         .op_start(op_start),
         .configreg(regs[6]),
-        .into_write(from_load_to_samplesForward.commonwrite_source),
-        .fifo_access(samplesForward_output.fifo_write)
+        .into_write(from_load_to_FIFO_samplesforward.commonwrite_source),
+        .fifo_access(FIFO_samplesforward)
     );
 
-    internal_interface #(.WIDTH(512)) from_load_to_modelMem();
+    internal_interface #(.WIDTH(512)) from_load_to_MEM_model();
     write_bram
-    write_modelMem_inst (
+    write_MEM_model_inst (
         .clk, .reset,
         .op_start(op_start),
         .configreg(regs[7]),
-        .into_write(from_load_to_modelMem.commonwrite_source),
-        .memory_access(modelMem_output.bram_write)
+        .into_write(from_load_to_MEM_model.commonwrite_source),
+        .memory_access(MEM_model)
     );
 
-    internal_interface #(.WIDTH(512)) from_load_to_labelsMem();
+    internal_interface #(.WIDTH(512)) from_load_to_MEM_labels();
     write_bram
-    write_labelsMem_inst (
+    write_MEM_labels_inst (
         .clk, .reset,
         .op_start(op_start),
         .configreg(regs[8]),
-        .into_write(from_load_to_labelsMem.commonwrite_source),
-        .memory_access(labelsMem_output.bram_write)
+        .into_write(from_load_to_MEM_labels.commonwrite_source),
+        .memory_access(MEM_labels)
     );
 
     always_comb
     begin
-        from_load_to_input.we = from_load.we;
-        from_load_to_input.wdata = from_load.wdata;
-        from_load_to_samplesForward.we = from_load.we;
-        from_load_to_samplesForward.wdata = from_load.wdata;
-        from_load_to_modelMem.we = from_load.we;
-        from_load_to_modelMem.wdata = from_load.wdata;
-        from_load_to_labelsMem.we = from_load.we;
-        from_load_to_labelsMem.wdata = from_load.wdata;
+        from_load_to_FIFO_input.we = from_load.we;
+        from_load_to_FIFO_input.wdata = from_load.wdata;
+        from_load_to_FIFO_samplesforward.we = from_load.we;
+        from_load_to_FIFO_samplesforward.wdata = from_load.wdata;
+        from_load_to_MEM_model.we = from_load.we;
+        from_load_to_MEM_model.wdata = from_load.wdata;
+        from_load_to_MEM_labels.we = from_load.we;
+        from_load_to_MEM_labels.wdata = from_load.wdata;
     end
-    assign from_load.almostfull = from_load_to_input.almostfull | from_load_to_samplesForward.almostfull | from_load_to_modelMem.almostfull | from_load_to_labelsMem.almostfull;
+    assign from_load.almostfull = from_load_to_FIFO_input.almostfull | from_load_to_FIFO_samplesforward.almostfull | from_load_to_MEM_model.almostfull | from_load_to_MEM_labels.almostfull;
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) prefetch_fifo_access();
     fifo
@@ -103,7 +103,10 @@ module pipearch_load
     );
     assign prefetch_fifo_access.we = cci_c0Rx_isReadRsp(cp2af_sRx_c0) && (receive_state == STATE_READ);
     assign prefetch_fifo_access.wdata = cp2af_sRx_c0.data;
-    assign prefetch_fifo_access.re = !(prefetch_fifo_access.empty) && !(from_load.almostfull);
+    always_ff @(posedge clk)
+    begin
+        prefetch_fifo_access.re <= !(prefetch_fifo_access.empty) && !(from_load.almostfull);
+    end
 
     t_ccip_clAddr DRAM_load_offset;
     logic [31:0] DRAM_load_length;
@@ -240,4 +243,4 @@ module pipearch_load
         end
     end
 
-endmodule // pipearch_load
+endmodule // glm_load

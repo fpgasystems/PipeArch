@@ -21,6 +21,12 @@ public:
 		m_data[2] = 0xFFFFFFFF;
 	}
 
+	void Copy(volatile uint32_t* data) {
+		for (uint32_t i = 0; i < NUM_WORDS; i++) {
+			data[i] = m_data[i];
+		}
+	}
+
 	void SetIndex(uint32_t whichIndex, uint32_t i) {
 		m_data[whichIndex] = i;
 	}
@@ -111,14 +117,46 @@ public:
 		}
 	}
 
-// *************************************************************************
-//   FILL: Instructions
-// *************************************************************************
-//?INST
+	// *************************************************************************
+	//
+	//   Instructions
+	//
+	// *************************************************************************
 
-	void Copy(volatile uint32_t* data) {
-		for (uint32_t i = 0; i < NUM_WORDS; i++) {
-			data[i] = m_data[i];
-		}
+	void Dot(
+		uint32_t numLinesToProcess,
+		bool readFromModelForward,
+		bool performSubtraction,
+		uint32_t memModelLoadOffset,
+		uint32_t memLabelsLoadOffset)
+	{
+		m_data[15] = 13; // opcode
+		m_data[3] = (((uint32_t)performSubtraction) << 17) | (((uint32_t)readFromModelForward) << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = ((memLabelsLoadOffset & 0xFFFF) << 16) | (memModelLoadOffset & 0xFFFF);
 	}
+
+	void Modify(
+		uint32_t memLabelsLoadOffset,
+		uint32_t type,
+		uint32_t algo,
+		float stepSize,
+		float lambda)
+	{
+		m_data[15] = 14; // opcode
+		m_data[3] = (memLabelsLoadOffset & 0xFFFF);
+		m_data[4] = (algo << 2) | (type & 0x3);
+		m_data[5] = *((uint32_t*)&stepSize);
+		m_data[6] = *((uint32_t*)&lambda);
+	}
+
+	void Update(
+		uint32_t memModelLoadOffset,
+		uint32_t loadLength,
+		bool modelForward)
+	{
+		m_data[15] = 15; // opcode
+		m_data[3] = (loadLength << 16) | (memModelLoadOffset & 0xFFFF);
+		m_data[4] = (uint32_t)modelForward;
+	}
+
 };

@@ -119,8 +119,8 @@ module app_afu
     end
 
     // Connect to the AFU
-    pipearch_top
-    pipearch_top_inst
+    glm_top
+    glm_top_inst
     (
     .clk,
     .reset,

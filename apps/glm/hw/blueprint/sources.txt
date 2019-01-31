@@ -1,3 +1,9 @@
 C:../../../../common-rtl/common_sources.txt
 
-pipearch_top.sv
+top.sv
+glm_top.sv
+glm_load.sv
+glm_writeback.sv
+glm_dot.sv
+glm_modify.sv
+glm_update.sv

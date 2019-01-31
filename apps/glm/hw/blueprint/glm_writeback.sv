@@ -1,7 +1,7 @@
 `include "cci_mpf_if.vh"
 `include "pipearch_common.vh"
 
-module pipearch_writeback
+module glm_writeback
 (
     input  logic clk,
     input  logic reset,
@@ -13,7 +13,7 @@ module pipearch_writeback
     input t_ccip_clAddr in_addr,
     input t_ccip_clAddr out_addr,
 
-    fifobram_interface.bram_read modelMem_input,
+    fifobram_interface.bram_read MEM_model,
 
     // CCI-P request/response
     input  logic c1TxAlmFull,
@@ -27,23 +27,23 @@ module pipearch_writeback
     //   Store Channels
     //
     // *************************************************************************
-    iinternal_interface #(.WIDTH(512)) to_writeback_from_modelMem();
+    internal_interface #(.WIDTH(512)) to_writeback_from_MEM_model();
     read_bram
-    read_modelMem_inst (
+    read_MEM_model_inst (
         .clk, .reset,
         .op_start(op_start),
         .configreg(regs[6]),
-        .memory_access(modelMem_input.bram_read),
-        .outfrom_read(to_writeback_from_modelMem.commonread_source)
+        .memory_access(MEM_model),
+        .outfrom_read(to_writeback_from_MEM_model.commonread_source)
     );
 
     always_comb
     begin
         if (regs[5][3:0] == 0)
         begin
-            to_writeback.rvalid = to_writeback_from_modelMem.rvalid;
-            to_writeback.rdata = to_writeback_from_modelMem.rdata;
-            to_writeback_from_modelMem.almostfull = to_writeback.almostfull;
+            to_writeback.rvalid = to_writeback_from_MEM_model.rvalid;
+            to_writeback.rdata = to_writeback_from_MEM_model.rdata;
+            to_writeback_from_MEM_model.almostfull = to_writeback.almostfull;
         end
     end
 
@@ -186,4 +186,4 @@ module pipearch_writeback
     end
 
 
-endmodule // pipearch_writeback
+endmodule // glm_writeback

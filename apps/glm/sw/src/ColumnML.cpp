@@ -698,8 +698,7 @@ void ColumnML::SCD(
 	uint32_t numEpochs, 
 	uint32_t minibatchSize, 
 	float stepSize, 
-	float lambda, 
-	uint32_t numMinibatchesAtATime, 
+	float lambda,
 	uint32_t residualUpdatePeriod, 
 	bool useEncrypted, 
 	bool useCompressed, 
@@ -729,11 +728,11 @@ void ColumnML::SCD(
 	float* transformedColumn1 = nullptr;
 	float* transformedColumn2 = nullptr;
 	if (useEncrypted && useCompressed) {
-		transformedColumn1 = (float*)aligned_alloc(64, numMinibatchesAtATime*minibatchSize*sizeof(float));
-		transformedColumn2 = (float*)aligned_alloc(64, numMinibatchesAtATime*minibatchSize*sizeof(float));
+		transformedColumn1 = (float*)aligned_alloc(64, minibatchSize*sizeof(float));
+		transformedColumn2 = (float*)aligned_alloc(64, minibatchSize*sizeof(float));
 	}
-	else if ( numMinibatchesAtATime > 1 ) {
-		transformedColumn2 = (float*)aligned_alloc(64, numMinibatchesAtATime*minibatchSize*sizeof(float));
+	else if (useEncrypted || useCompressed) {
+		transformedColumn2 = (float*)aligned_alloc(64, minibatchSize*sizeof(float));
 	}
 
 	float scaledStepSize = stepSize/minibatchSize;
@@ -747,38 +746,17 @@ void ColumnML::SCD(
 		double residualUpdateTime = 0;
 		double start = get_time();
 
-		for (uint32_t k = 0; k < numMinibatches/numMinibatchesAtATime; k++) {
+		for (uint32_t m = 0; m < numMinibatches; m++) {
 
-			if (numMinibatchesAtATime > 1) {
-				uint32_t m[numMinibatchesAtATime];
-				for (uint32_t l = 0; l < numMinibatchesAtATime; l++) {
-					m[l] = l*(numMinibatches/numMinibatchesAtATime) + k;
+			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+
+				m_cstore->ReturnDecompressedAndDecrypted(transformedColumn1, transformedColumn2, j, &m, 1, minibatchSize, useEncrypted, useCompressed, toIntegerScaler, decryptionTime, decompressionTime);
+
+				if ( (epoch+1)%(residualUpdatePeriod+1) == 0 ) {
+					UpdateResidual(residual, j, &m, 1, minibatchSize, transformedColumn2, xFinal);
 				}
-				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-
-					m_cstore->ReturnDecompressedAndDecrypted(transformedColumn1, transformedColumn2, j, m, numMinibatchesAtATime, minibatchSize, useEncrypted, useCompressed, toIntegerScaler, decryptionTime, decompressionTime);
-
-					if ( (epoch+1)%(residualUpdatePeriod+1) == 0 ) {
-						UpdateResidual(residual, j, m, numMinibatchesAtATime, minibatchSize, transformedColumn2, xFinal);
-					}
-					else {
-						DoStep(type, residual, j, m, numMinibatchesAtATime, minibatchSize, m_cstore, transformedColumn2, x, scaledStepSize, scaledLambda, dotTime, residualUpdateTime);
-					}
-				}
-			}
-			else {
-				uint32_t m = k;
-
-				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-
-					m_cstore->ReturnDecompressedAndDecrypted(transformedColumn1, transformedColumn2, j, &m, 1, minibatchSize, useEncrypted, useCompressed, toIntegerScaler, decryptionTime, decompressionTime);
-
-					if ( (epoch+1)%(residualUpdatePeriod+1) == 0 ) {
-						UpdateResidual(residual, j, &m, 1, minibatchSize, transformedColumn2, xFinal);
-					}
-					else {
-						DoStep(type, residual, j, &m, 1, minibatchSize, m_cstore, transformedColumn2, x, scaledStepSize, scaledLambda, dotTime, residualUpdateTime);
-					}
+				else {
+					DoStep(type, residual, j, &m, 1, minibatchSize, m_cstore, transformedColumn2, x, scaledStepSize, scaledLambda, dotTime, residualUpdateTime);
 				}
 			}
 		}
@@ -788,7 +766,7 @@ void ColumnML::SCD(
 		}
 		else {
 			double timeStamp1 = get_time();
-			GetAveragedX(numMinibatches, numMinibatchesAtATime, m_cstore, xFinal, x);
+			GetAveragedX(numMinibatches, 1, m_cstore, xFinal, x);
 			double end = get_time();
 #ifdef PRINT_TIMING
 			cout << "decryptionTime: " << decryptionTime << endl;
@@ -819,7 +797,7 @@ void ColumnML::SCD(
 		free(transformedColumn1);
 		free(transformedColumn2);
 	}
-	else if (numMinibatchesAtATime > 1) {
+	else if (useEncrypted || useCompressed) {
 		free(transformedColumn2);
 	}
 	free(x);

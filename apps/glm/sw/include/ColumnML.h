@@ -154,7 +154,6 @@ public:
 		uint32_t minibatchSize, 
 		float stepSize, 
 		float lambda, 
-		uint32_t numMinibatchesAtATime, 
 		uint32_t residualUpdatePeriod, 
 		bool useEncrypted, 
 		bool useCompressed, 

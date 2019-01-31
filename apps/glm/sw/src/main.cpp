@@ -4,12 +4,15 @@
 // State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script
 #include "afu_json_info.h"
 
+#define VALUE_TO_INT_SCALER 10
+
 int main(int argc, char* argv[]) {
 
 	char* pathToDataset;
 	uint32_t numSamples = 0;
 	uint32_t numFeatures = 0;
 	uint32_t numEpochs = 10;
+	uint32_t minibatchSize = 1;
 	if (!(argc == 5)) {
 		cout << "Usage: ./app <pathToDataset> <numSamples> <numFeatures> <numEpochs>" << endl;
 		return 0;
@@ -18,6 +21,8 @@ int main(int argc, char* argv[]) {
 	numSamples = atoi(argv[2]);
 	numFeatures = atoi(argv[3]);
 	numEpochs = atoi(argv[4]);
+
+	uint32_t partitionSize = 16384;
 
 	FPGA_ColumnML columnML(AFU_ACCEL_UUID);
 
@@ -37,6 +42,15 @@ int main(int argc, char* argv[]) {
 	}
 	columnML.m_cstore->PrintSamples(2);
 
-	columnML.CopyDataToFPGAMemory(16384);
-	columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda);
+	AdditionalArguments args;
+	args.m_firstSample = 0;
+	args.m_numSamples = columnML.m_cstore->m_numSamples;
+	args.m_constantStepSize = true;
+
+	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+	columnML.CopyDataToFPGAMemory(partitionSize);
+	columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
+
+	// columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
+	// columnML.CopyDataToFPGAMemory(partitionSize);
 }

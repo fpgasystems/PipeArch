@@ -3,7 +3,7 @@
 `include "afu_json_info.vh"
 `include "pipearch_common.vh"
 
-module pipearch_top
+module glm_top
 (
     input  logic clk,
     input  logic reset,
@@ -33,7 +33,7 @@ module pipearch_top
     //   NUM_WRITEBACK_CHANNELS
     //
     // *************************************************************************
-    parameter NUM_WRITEBACK_CHANNELS = 2;
+    parameter NUM_WRITEBACK_CHANNELS = 1;
 
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PROGRAM_SIZE)) program_access();
@@ -404,7 +404,6 @@ module pipearch_top
     //  else:
     //      programCounter = instruction[14]
 
-
     // if opcode == 10 ---- prefetch
     // reg[3] = instruction[3]+reg[2]*instruction[12]+reg[1]*instruction[11]+reg[0]*instruction[10]     // DRAM read offset in cachelines
                                                                                                         // instruction[10]: read offset change per index0
@@ -428,6 +427,26 @@ module pipearch_top
     // reg[5] = instruction[5]                                                                          // Internal read channel select
     // reg[x] = instruction[x]                                                                          // [15:0]: memory load offset in cachelines
                                                                                                         // [31:16]: memory/fifo load length in cachelines
+
+    // if opcode == 13 ---- dot
+    // reg[3] = instruction[3]                                                  // [15:0] Read length in cachelines
+                                                                                // [16] Read from modelforward
+                                                                                // [17] Perform subtraction
+    // reg[4] = instruction[4]                                                  // [15:0] model memory load offset in cachelines
+                                                                                // [31:16] label memory load offset in cachelines
+
+    // if opcode == 14 ---- modify
+    // reg[3] = instruction[3]                                                  // [15:0]: memory2 load offset in cachelines
+                                                                                // [31:16]: memory2 store offset in cachelines
+    // reg[4] = instruction[4]                                                  // [1:0]: (0 linreg) (1 logreg) (2 SVM)
+                                                                                // [2]: (0 SGD) (1 SCD)
+    // reg[5] = instruction[5]                                                  // step size
+    // reg[6] = instruction[6]                                                  // lambda
+
+    // if opcode == 15 ---- update
+    // reg[3] = instruction[3]                                                  // [15:0] memory1 load/store offset in cacheline
+                                                                                // [31:16] memory1 load/store length in cachelines
+    // reg[4] = instruction[4]                                                  // [0] write to model_forward_fifo
 
 
     logic [15:0] program_counter;
@@ -491,22 +510,22 @@ module pipearch_top
                     opcode <= instruction[15][7:0];
                     nonblocking <= instruction[15][8];
                     case(instruction[15][7:0])
-                        8'h0: // Jump0
+                        8'd0: // Jump0
                         begin
                             program_counter <= (regs[0] == instruction[12]) ? instruction[13] : instruction[14];
                         end
 
-                        8'h1:
+                        8'd1:
                         begin
                             program_counter <= (regs[1] == instruction[12]) ? instruction[13] : instruction[14];
                         end
 
-                        8'h2:
+                        8'd2:
                         begin
                             program_counter <= (regs[2] == instruction[12]) ? instruction[13] : instruction[14];
                         end
 
-                        8'hA: // prefetch
+                        8'd10: // prefetch
                         begin
                             op_start[0] <= 1'b1;
                             regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
@@ -514,7 +533,7 @@ module pipearch_top
                             program_counter <= program_counter + 1;
                         end
 
-                        8'hB: // load
+                        8'd11: // load
                         begin
                             op_start[1] <= 1'b1;
                             regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
@@ -526,7 +545,7 @@ module pipearch_top
                             program_counter <= program_counter + 1;
                         end
 
-                        8'hC: // writeback
+                        8'd12: // writeback
                         begin
                             op_start[2] <= 1'b1;
                             regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // store offset
@@ -544,7 +563,31 @@ module pipearch_top
                         //   Additional opcodes
                         //
                         // *************************************************************************
+                        8'd13: // dot
+                        begin
+                            op_start[3] <= 1'b1;
+                            regs[3] <= instruction[3];
+                            regs[4] <= instruction[4];
+                            program_counter <= program_counter + 1;
+                        end
 
+                        8'd14: // modify
+                        begin
+                            op_start[4] <= 1'b1;
+                            regs[3] <= instruction[3];
+                            regs[4] <= instruction[4];
+                            regs[5] <= instruction[5];
+                            regs[6] <= instruction[6];
+                            program_counter <= program_counter + 1;
+                        end
+
+                        8'd15: // update
+                        begin
+                            op_start[5] <= 1'b1;
+                            regs[3] <= instruction[3];
+                            regs[4] <= instruction[4];
+                            program_counter <= program_counter + 1;
+                        end
 
                     endcase
                 end
@@ -579,100 +622,145 @@ module pipearch_top
     //
     // *************************************************************************
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) modelMem_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface();
     bram
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
-    modelMem_inst (
+    MEM_model (
         .clk,
-        .access(modelMem_interface.bram_source)
+        .access(MEM_model_interface.bram_source)
     );
 
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) labelsMem_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_labels_interface();
     bram
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
-    labelsMem_inst (
+    MEM_labels (
         .clk,
-        .access(labelsMem_interface.bram_source)
+        .access(MEM_labels_interface.bram_source)
     );
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) input_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) FIFO_input_interface();
     fifo
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE))
-    input_inst (
+    FIFO_input (
         .clk, .reset,
-        .access(input_interface.fifo_source)
+        .access(FIFO_input_interface.fifo_source)
     );
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) samplesForward_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) FIFO_samplesforward_interface();
     fifo
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
-    samplesForward_inst (
+    FIFO_samplesforward (
         .clk, .reset,
-        .access(samplesForward_interface.fifo_source)
+        .access(FIFO_samplesforward_interface.fifo_source)
     );
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) modelForward_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) FIFO_modelforward_interface();
     fifo
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_INTERNAL_SIZE))
-    modelForward_inst (
+    FIFO_modelforward (
         .clk, .reset,
-        .access(modelForward_interface.fifo_source)
+        .access(FIFO_modelforward_interface.fifo_source)
     );
 
-    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) dot_interface();
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) FIFO_dot_interface();
     fifo
     #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE))
-    dot_inst (
+    FIFO_dot (
         .clk, .reset,
-        .access(dot_interface.fifo_source)
+        .access(FIFO_dot_interface.fifo_source)
+    );
+
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) FIFO_gradient_interface();
+    fifo
+    #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE))
+    FIFO_gradient (
+        .clk, .reset,
+        .access(FIFO_gradient_interface.fifo_source)
     );
 
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_modelMem_interface();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_labelsMem_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_MEM_model_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_MEM_labels_interface();
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) dot_modelMem_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) dot_MEM_model_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) dot_MEM_labels_interface();
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_modelMem_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) modify_MEM_labels_interface();
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) update_MEM_model_interface();
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_MEM_model_interface();
 
 
-    assign writeback_modelMem_interface.rvalid = modelMem_interface.rvalid;
-    assign writeback_modelMem_interface.rdata = modelMem_interface.rdata;
+    assign dot_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
+    assign dot_MEM_model_interface.rdata = MEM_model_interface.rdata;
+    assign dot_MEM_labels_interface.rvalid = MEM_labels_interface.rvalid;
+    assign dot_MEM_labels_interface.rdata = MEM_labels_interface.rdata;
 
-    assign dot_modelMem_interface.rvalid = modelMem_interface.rvalid;
-    assign dot_modelMem_interface.rdata = modelMem_interface.rdata;
+    assign modify_MEM_labels_interface.rvalid = MEM_labels_interface.rvalid;
+    assign modify_MEM_labels_interface.rdata = MEM_labels_interface.rdata;
 
-    always_ff @(posedge clk)
+    assign update_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
+    assign update_MEM_model_interface.rdata = MEM_model_interface.rdata;
+
+    assign writeback_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
+    assign writeback_MEM_model_interface.rdata = MEM_model_interface.rdata;
+
+    always_comb
     begin
-        // modelMem request arbitration
-        modelMem_interface.re <= 1'b0;
-        if (dot_modelMem_interface.re)
+        // MEM_model request arbitration
+        MEM_model_interface.re <= 1'b0;
+        if (dot_MEM_model_interface.re)
         begin
-            modelMem_interface.re <= 1'b1;
-            modelMem_interface.raddr <= dot_modelMem_interface.raddr;
+            MEM_model_interface.re <= 1'b1;
+            MEM_model_interface.raddr <= dot_MEM_model_interface.raddr;
         end
-        else if (writeback_modelMem_interface.re)
+        else if (update_MEM_model_interface.re)
         begin
-            modelMem_interface.re <= 1'b1;
-            modelMem_interface.raddr <= writeback_modelMem_interface.raddr;
+            MEM_model_interface.re <= 1'b1;
+            MEM_model_interface.raddr <= update_MEM_model_interface.raddr;
         end
-
-        // modelMem write arbitration
-        modelMem_interface.we <= 1'b0;
-        if (load2modelMem_interface.we)
+        else if (writeback_MEM_model_interface.re)
         begin
-            modelMem_interface.we <= 1'b1;
-            modelMem_interface.waddr <= load_modelMem_interface.waddr;
-            modelMem_interface.wdata <= load_modelMem_interface.wdata;
+            MEM_model_interface.re <= 1'b1;
+            MEM_model_interface.raddr <= writeback_MEM_model_interface.raddr;
         end
 
-        // labelsMem write arbitration
-        if (load2labelsMem_interface.we)
+        // MEM_labels request arbitration
+        MEM_labels_interface.re <= 1'b0;
+        if (modify_MEM_labels_interface.re)
         begin
-            labelsMem_interface.we <= 1'b1;
-            labelsMem_interface.waddr <= load_labelsMem_interface.waddr;
-            labelsMem_interface.wdata <= load_labelsMem_interface.wdata;
+            MEM_labels_interface.re <= 1'b1;
+            MEM_labels_interface.raddr <= modify_MEM_labels_interface.raddr;
+        end
+        if (dot_MEM_labels_interface.re)
+        begin
+            MEM_labels_interface.re <= 1'b1;
+            MEM_labels_interface.raddr <= dot_MEM_labels_interface.raddr;
+        end
+
+        // MEM_model write arbitration
+        MEM_model_interface.we <= 1'b0;
+        if (load_MEM_model_interface.we)
+        begin
+            MEM_model_interface.we <= 1'b1;
+            MEM_model_interface.waddr <= load_MEM_model_interface.waddr;
+            MEM_model_interface.wdata <= load_MEM_model_interface.wdata;
+        end
+        else if (update_MEM_model_interface.we)
+        begin
+            MEM_model_interface.we <= 1'b1;
+            MEM_model_interface.waddr <= update_MEM_model_interface.waddr;
+            MEM_model_interface.wdata <= update_MEM_model_interface.wdata;
+        end
+
+        // MEM_labels write arbitration
+        if (load_MEM_labels_interface.we)
+        begin
+            MEM_labels_interface.we <= 1'b1;
+            MEM_labels_interface.waddr <= load_MEM_labels_interface.waddr;
+            MEM_labels_interface.wdata <= load_MEM_labels_interface.wdata;
         end
     end
 
@@ -693,8 +781,7 @@ module pipearch_top
         .reset,
         .op_start(op_start[0]),
         .op_done(op_done[0]),
-        .regs0(regs[3]),
-        .regs1(regs[4]),
+        .regs,
         .in_addr,
         .c0TxAlmFull(execute_load_c0TxAlmFull),
         .cp2af_sRx_c0(execute_load_cp2af_sRx_c0),
@@ -704,38 +791,36 @@ module pipearch_top
         .get_af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0)
     );
 
-    pipearch_load
+    glm_load
     execute_load
     (
         .clk,
         .reset,
         .op_start(op_start[1]),
         .op_done(op_done[1]),
-        .regs0(regs[3]),
-        .regs1(regs[4]),
+        .regs,
         .in_addr,
         .c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
         .cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
         .af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0),
-        .input_interface(input_interface.fifo_write),
-        .samplesForward_output(samplesForward_interface.fifo_write),
-        .modelMem_output(load_modelMem_interface.bram_write),
-        .labelsMem_output(load_labelsMem_interface.bram_write)
+        .FIFO_input(FIFO_input_interface.fifo_write),
+        .FIFO_samplesforward(FIFO_samplesforward_interface.fifo_write),
+        .MEM_model(load_MEM_model_interface.bram_write),
+        .MEM_labels(load_MEM_labels_interface.bram_write)
     );
 
     
-    pipearch_writeback
+    glm_writeback
     execute_writeback
     (
         .clk,
         .reset,
         .op_start(op_start[2]),
         .op_done(op_done[2]),
-        .regs0(regs[3]),
-        .regs1(regs[4]),
+        .regs,
         .in_addr,
         .out_addr,
-        .modelMem_input(writeback_modelMem_interface.bram_read),
+        .MEM_model(writeback_MEM_model_interface.bram_read),
         .c1TxAlmFull(execute_writeback_c1TxAlmFull),
         .cp2af_sRx_c1(execute_writeback_cp2af_sRx_c1),
         .af2cp_sTx_c1(execute_writeback_af2cp_sTx_c1)
@@ -747,19 +832,46 @@ module pipearch_top
     //
     // *************************************************************************
     
-    pipearch_dot
+    glm_dot
     execute_dot
     (
         .clk,
         .reset,
         .op_start(op_start[3]),
         .op_done(op_done[3]),
-        .regs0(regs[3]),
-        .regs1(regs[4]),
-        .samples_input(input_interface.fifo_read),
-        .modelMem_input(dot_modelMem_interface.bram_read),
-        .modelForward_input(modelForward_interface.fifo_read),
-        .result(dot_interface)
+        .regs,
+        .FIFO_input(FIFO_input_interface.fifo_read),
+        .MEM_labels(dot_MEM_labels_interface.bram_read),
+        .MEM_model(dot_MEM_model_interface.bram_read),
+        .FIFO_modelforward(FIFO_modelforward_interface.fifo_read),
+        .FIFO_dot(FIFO_dot_interface.fifo_write)
+    );
+
+    glm_modify
+    execute_modify
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[4]),
+        .op_done(op_done[4]),
+        .regs,
+        .MEM_labels(modify_MEM_labels_interface.bram_read),
+        .FIFO_dot(FIFO_dot_interface.fifo_read),
+        .FIFO_gradient(FIFO_gradient_interface.fifo_write)
+    );
+
+    glm_update
+    execute_update
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[5]),
+        .op_done(op_done[5]),
+        .regs,
+        .FIFO_samplesforward(FIFO_samplesforward_interface.fifo_read),
+        .FIFO_gradient(FIFO_gradient_interface.fifo_read),
+        .MEM_model(update_MEM_model_interface.bram_readwrite),
+        .FIFO_modelforward(FIFO_modelforward_interface.fifo_write)
     );
 
 endmodule

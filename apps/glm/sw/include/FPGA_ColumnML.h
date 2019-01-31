@@ -77,7 +77,7 @@ public:
 		m_samples = m_memory + m_samplesChunk.m_offsetInCL*16;
 
 		for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-			m_model[j] = 0.1;
+			m_model[j] = 0;
 		}
 		for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
 			m_labels[i] = m_cstore->m_labels[i];
@@ -99,27 +99,30 @@ public:
 		float* xHistory,
 		uint32_t numEpochs,
 		float stepSize,
-		float lambda)
+		float lambda,
+		AdditionalArguments* args)
 	{
 		if (m_memory == nullptr) {
 			return;
 		}
 
-		const uint32_t numInstructions = 6;
+		const uint32_t numInstructions = 15;
 		Instruction inst[numInstructions];
 
 		uint32_t modelOffsetInBRAM = 0;
 		uint32_t labelOffsetInBRAM = 0;
 
-		access_t accessRead[3];
+		access_t accessRead[4];
 
 		// Load model
 		accessRead[0].m_offsetInCL = 0;
 		accessRead[0].m_lengthInCL = 0;
-		accessRead[1].m_offsetInCL = modelOffsetInBRAM;
-		accessRead[1].m_lengthInCL = m_modelChunk.m_lengthInCL;
-		accessRead[2].m_offsetInCL = 0;
-		accessRead[2].m_lengthInCL = 0;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = 0;
+		accessRead[2].m_offsetInCL = modelOffsetInBRAM;
+		accessRead[2].m_lengthInCL = m_modelChunk.m_lengthInCL;
+		accessRead[3].m_offsetInCL = 0;
+		accessRead[3].m_lengthInCL = 0;
 		inst[0].Load(
 			m_modelChunk.m_offsetInCL,
 			m_modelChunk.m_lengthInCL,
@@ -127,26 +130,28 @@ public:
 			0,
 			0,
 			accessRead,
-			3);
+			4);
 		inst[0].ResetIndex(0);
 		inst[0].ResetIndex(1);
 		inst[0].ResetIndex(2);
 
-		// Load labels
+		// Load labels in partition
 		accessRead[0].m_offsetInCL = 0;
 		accessRead[0].m_lengthInCL = 0;
 		accessRead[1].m_offsetInCL = 0;
 		accessRead[1].m_lengthInCL = 0;
-		accessRead[2].m_offsetInCL = labelOffsetInBRAM;
-		accessRead[2].m_lengthInCL = m_numSamplesInCL;
+		accessRead[2].m_offsetInCL = 0;
+		accessRead[2].m_lengthInCL = 0;
+		accessRead[3].m_offsetInCL = labelOffsetInBRAM;
+		accessRead[3].m_lengthInCL = m_partitionSize;
 		inst[1].Load(
 			m_labelChunk.m_offsetInCL,
-			m_numSamplesInCL,
+			m_partitionSize,
 			0,
-			0,
+			m_partitionSize,
 			0,
 			accessRead,
-			3);
+			4);
 
 		// Prefetch all samples
 		inst[2].Prefetch(
@@ -156,15 +161,15 @@ public:
 			0,
 			0);
 
-		// Innermost loop
-
 		// Load samples
 		accessRead[0].m_offsetInCL = 0;
 		accessRead[0].m_lengthInCL = m_numFeaturesInCL;
 		accessRead[1].m_offsetInCL = 0;
-		accessRead[1].m_lengthInCL = 0;
+		accessRead[1].m_lengthInCL = m_numFeaturesInCL;
 		accessRead[2].m_offsetInCL = 0;
 		accessRead[2].m_lengthInCL = 0;
+		accessRead[3].m_offsetInCL = 0;
+		accessRead[3].m_lengthInCL = 0;
 		inst[3].Load(
 			m_samplesChunk.m_offsetInCL,
 			m_numFeaturesInCL,
@@ -172,26 +177,96 @@ public:
 			0,
 			0,
 			accessRead,
-			3);
-		inst[3].IncrementIndex(0);
+			4);
+		inst[3].MakeNonBlocking();
+
+		inst[4].Dot(
+			m_numFeaturesInCL,
+			false,
+			false,
+			modelOffsetInBRAM,
+			0xFFFF);
+
+		// Innermost loop
+		inst[5].Modify(
+			labelOffsetInBRAM,
+			type,
+			0,
+			stepSize,
+			lambda);
+		inst[5].IncrementIndex(0);
+		inst[5].MakeNonBlocking();
+
+		inst[6].Update(
+			modelOffsetInBRAM,
+			m_numFeaturesInCL,
+			true);
+		inst[6].MakeNonBlocking();
+
+		// Load samples
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = m_numFeaturesInCL;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = m_numFeaturesInCL;
+		accessRead[2].m_offsetInCL = 0;
+		accessRead[2].m_lengthInCL = 0;
+		accessRead[3].m_offsetInCL = 0;
+		accessRead[3].m_lengthInCL = 0;
+		inst[7].Load(
+			m_samplesChunk.m_offsetInCL,
+			m_numFeaturesInCL,
+			m_numFeaturesInCL, // Offset by index 0
+			0,
+			0,
+			accessRead,
+			4);
+		inst[7].MakeNonBlocking();
+		inst[7].MakeNonBlocking();
+
+		inst[8].Dot(
+			m_numFeaturesInCL,
+			true,
+			false,
+			0,
+			0xFFFF);
+
+		// End of samples
+		inst[9].Jump(0, m_partitionSize-1, 5, 10);
+
+		inst[10].Modify(
+			labelOffsetInBRAM,
+			type,
+			0,
+			stepSize,
+			lambda);
+
+		inst[11].Update(
+			modelOffsetInBRAM,
+			m_numFeaturesInCL,
+			false);
+		inst[11].ResetIndex(0);
+		inst[11].IncrementIndex(1);
+
+		inst[12].Jump(1, m_numPartitions, 1, 13);
 
 		// WriteBack
 		access_t accessOut[1];
 		accessOut[0].m_offsetInCL = 0;
-		accessOut[0].m_lengthInCL = 1;
-		inst[4].WriteBack(
+		accessOut[0].m_lengthInCL = m_numFeaturesInCL;
+		inst[13].WriteBack(
 			1,
-			1,
+			m_numFeaturesInCL,
 			0,
 			0,
-			0,
+			m_numFeaturesInCL,
 			0,
 			accessOut,
 			1);
-		inst[4].IncrementIndex(0);
+		inst[13].IncrementIndex(2);
 
-		inst[5].Jump(0, m_cstore->m_numSamples, 3, 0xFFFFFFFF);
-
+		inst[14].Jump(2, numEpochs, 1, 0xFFFFFFFF);
+		inst[14].ResetIndex(0);
+		inst[14].ResetIndex(1);
 
 		std::vector<Instruction> instructions;
 		for (uint32_t i = 0; i < numInstructions; i++) {
@@ -220,26 +295,19 @@ public:
 		struct timespec pause;
 		// Longer when simulating
 		pause.tv_sec = (m_fpga->hwIsSimulated() ? 1 : 0);
-		pause.tv_nsec = 2500000;
+		pause.tv_nsec = 100;
 
 		output[0] = 0;
 		while (0 == output[0]) {
 			nanosleep(&pause, NULL);
 		};
 
-
 		// Verify
-		for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
-			float dot = 0.0;
-			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				dot += m_samples[i*m_alignedNumFeatures + j]*m_model[j];
-			}
-			float error = dot - m_labels[i];
-			if (error != output[16*(i+1)]) {
-				cout << "Missmatch: error = " << error << ", output[" << 16*(i+1) << "]: " << output[16*(i+1)] << endl;
-			}
+		xHistory = (float*)(output + 16);
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = Loss(type, xHistory + e*m_alignedNumFeatures, lambda, args);
+			std::cout << "loss " << e << ": " << loss << std::endl;
 		}
-
 
 		// Reads CSRs to get some statistics
 		cout	<< "# List length: " << m_csrs->readCSR(0) << endl
@@ -269,5 +337,4 @@ public:
 					<< vtp_stats.numTLBMisses2MB << endl;
 		}
 	}
-
 };

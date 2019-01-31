@@ -16,6 +16,7 @@ logic [LOG2_DEPTH-1:0] waddr;
 logic [LOG2_DEPTH-1:0] raddr;
 logic [LOG2_DEPTH-1:0] count;
 logic empty;
+logic internal_empty;
 
 assign access.almostfull = (count > 2**LOG2_DEPTH-16) ? 1'b1 : 1'b0;
 assign access.count = count;
@@ -49,6 +50,7 @@ end
 
 always_ff @(posedge clk)
 begin
+	internal_empty <= empty;
 	if (reset)
 	begin
 		waddr <= 0;
@@ -65,7 +67,7 @@ begin
 
 		// Read
 		access.rvalid <= 1'b0;
-		if (access.re && empty == 1'b0)
+		if (access.re && internal_empty == 1'b0)
 		begin
 			access.rvalid <= 1'b1;
 			access.rdata <= memory[raddr];
