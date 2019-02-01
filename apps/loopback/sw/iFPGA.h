@@ -66,8 +66,8 @@ public:
 		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());
 		assert(NULL != input);
 
-		for (uint32_t i = 0; i < numLines*16; i++) {
-			input[i] = i;
+		for (uint32_t i = 0; i < numLines*numIterations*16; i++) {
+			input[i] = i%(numLines*16);
 		}
 
 		auto outputHandle = m_fpga->allocBuffer((numLines+1)*64);
