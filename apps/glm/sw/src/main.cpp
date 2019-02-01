@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
 	numFeatures = atoi(argv[3]);
 	numEpochs = atoi(argv[4]);
 
-	uint32_t partitionSize = 16384;
+	uint32_t partitionSize = 16;
 
 	FPGA_ColumnML columnML(AFU_ACCEL_UUID);
 
@@ -49,7 +49,8 @@ int main(int argc, char* argv[]) {
 
 	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 	columnML.CopyDataToFPGAMemory(partitionSize);
-	columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
+	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
+	columnML.fSGD_blocking(type, nullptr, numEpochs, stepSize, lambda, &args);
 
 	// columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
 	// columnML.CopyDataToFPGAMemory(partitionSize);

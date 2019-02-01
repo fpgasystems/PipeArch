@@ -221,7 +221,6 @@ public:
 			accessRead,
 			4);
 		inst[7].MakeNonBlocking();
-		inst[7].MakeNonBlocking();
 
 		inst[8].Dot(
 			m_numFeaturesInCL,
@@ -286,10 +285,208 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
+		uint32_t vc_select = 0;
 		m_csrs->writeCSR(0, intptr_t(m_memory));
 		m_csrs->writeCSR(1, intptr_t(output));
 		m_csrs->writeCSR(2, intptr_t(programMemory));
-		m_csrs->writeCSR(3, (uint64_t)instructions.size());
+		m_csrs->writeCSR(3, (vc_select << 16) | (uint32_t)instructions.size());
+
+		// Spin, waiting for the value in memory to change to something non-zero.
+		struct timespec pause;
+		// Longer when simulating
+		pause.tv_sec = (m_fpga->hwIsSimulated() ? 1 : 0);
+		pause.tv_nsec = 100;
+
+		output[0] = 0;
+		while (0 == output[0]) {
+			nanosleep(&pause, NULL);
+		};
+
+		// Verify
+		xHistory = (float*)(output + 16);
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = Loss(type, xHistory + e*m_alignedNumFeatures, lambda, args);
+			std::cout << "loss " << e << ": " << loss << std::endl;
+		}
+
+		// Reads CSRs to get some statistics
+		cout	<< "# List length: " << m_csrs->readCSR(0) << endl
+				<< "# Linked list data entries read: " << m_csrs->readCSR(1) << endl;
+
+		cout	<< "#" << endl
+				<< "# AFU frequency: " << m_csrs->getAFUMHz() << " MHz"
+				<< (m_fpga->hwIsSimulated() ? " [simulated]" : "")
+				<< endl;
+
+		// MPF VTP (virtual to physical) statistics
+		mpf_handle::ptr_t mpf = m_fpga->mpf;
+		if (mpfVtpIsAvailable(*mpf))
+		{
+			mpf_vtp_stats vtp_stats;
+			mpfVtpGetStats(*mpf, &vtp_stats);
+
+			cout << "#" << endl;
+			if (vtp_stats.numFailedTranslations)
+			{
+				cout << "# VTP failed translating VA: 0x" << hex << uint64_t(vtp_stats.ptWalkLastVAddr) << dec << endl;
+			}
+			cout	<< "# VTP PT walk cycles: " << vtp_stats.numPTWalkBusyCycles << endl
+					<< "# VTP L2 4KB hit / miss: " << vtp_stats.numTLBHits4KB << " / "
+					<< vtp_stats.numTLBMisses4KB << endl
+					<< "# VTP L2 2MB hit / miss: " << vtp_stats.numTLBHits2MB << " / "
+					<< vtp_stats.numTLBMisses2MB << endl;
+		}
+	}
+
+	void fSGD_blocking(
+		ModelType type,
+		float* xHistory,
+		uint32_t numEpochs,
+		float stepSize,
+		float lambda,
+		AdditionalArguments* args)
+	{
+		if (m_memory == nullptr) {
+			return;
+		}
+
+		const uint32_t numInstructions = 15;
+		Instruction inst[numInstructions];
+
+		uint32_t modelOffsetInBRAM = 0;
+		uint32_t labelOffsetInBRAM = 0;
+
+		access_t accessRead[4];
+
+		// Load model
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = 0;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = 0;
+		accessRead[2].m_offsetInCL = modelOffsetInBRAM;
+		accessRead[2].m_lengthInCL = m_modelChunk.m_lengthInCL;
+		accessRead[3].m_offsetInCL = 0;
+		accessRead[3].m_lengthInCL = 0;
+		inst[0].Load(
+			m_modelChunk.m_offsetInCL,
+			m_modelChunk.m_lengthInCL,
+			0,
+			0,
+			0,
+			accessRead,
+			4);
+		inst[0].ResetIndex(0);
+		inst[0].ResetIndex(1);
+		inst[0].ResetIndex(2);
+
+		// Load labels in partition
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = 0;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = 0;
+		accessRead[2].m_offsetInCL = 0;
+		accessRead[2].m_lengthInCL = 0;
+		accessRead[3].m_offsetInCL = labelOffsetInBRAM;
+		accessRead[3].m_lengthInCL = m_partitionSize;
+		inst[1].Load(
+			m_labelChunk.m_offsetInCL,
+			m_partitionSize,
+			0,
+			m_partitionSize,
+			0,
+			accessRead,
+			4);
+
+		// Innermost loop
+
+		// Load samples
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = m_numFeaturesInCL;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = m_numFeaturesInCL;
+		accessRead[2].m_offsetInCL = 0;
+		accessRead[2].m_lengthInCL = 0;
+		accessRead[3].m_offsetInCL = 0;
+		accessRead[3].m_lengthInCL = 0;
+		inst[2].Load(
+			m_samplesChunk.m_offsetInCL,
+			m_numFeaturesInCL,
+			m_numFeaturesInCL, // Offset by index 0
+			0,
+			0,
+			accessRead,
+			4);
+		inst[2].MakeNonBlocking();
+
+		inst[3].Dot(
+			m_numFeaturesInCL,
+			false,
+			false,
+			modelOffsetInBRAM,
+			0xFFFF);
+
+		inst[4].Modify(
+			labelOffsetInBRAM,
+			type,
+			0,
+			stepSize,
+			lambda);
+
+		inst[5].Update(
+			modelOffsetInBRAM,
+			m_numFeaturesInCL,
+			false);
+
+		// End of samples
+		inst[6].Jump(0, m_partitionSize-1, 2, 7);
+		inst[6].IncrementIndex(0);
+
+		inst[7].Jump(1, m_numPartitions-1, 1, 8);
+		inst[7].ResetIndex(0);
+		inst[7].IncrementIndex(1);
+
+		// WriteBack
+		access_t accessOut[1];
+		accessOut[0].m_offsetInCL = 0;
+		accessOut[0].m_lengthInCL = m_numFeaturesInCL;
+		inst[8].WriteBack(
+			1,
+			m_numFeaturesInCL,
+			0,
+			0,
+			m_numFeaturesInCL,
+			0,
+			accessOut,
+			1);
+
+		inst[9].Jump(2, numEpochs-1, 1, 0xFFFFFFFF);
+		inst[9].IncrementIndex(2);
+		inst[9].ResetIndex(0);
+		inst[9].ResetIndex(1);
+
+		std::vector<Instruction> instructions;
+		for (uint32_t i = 0; i < numInstructions; i++) {
+			instructions.push_back(inst[i]);
+		}
+
+		// Copy program to FPGA memory
+		auto programMemoryHandle = m_fpga->allocBuffer(instructions.size()*64);
+		auto programMemory = reinterpret_cast<volatile uint32_t*>(programMemoryHandle->c_type());
+		uint32_t k = 0;
+		for (Instruction i: instructions) {
+			i.Copy(programMemory + k*Instruction::NUM_WORDS);
+			k++;
+		}
+
+		auto outputHandle = m_fpga->allocBuffer(numEpochs*m_numFeaturesInCL*64);
+		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
+		assert(NULL != output);
+
+		uint32_t vc_select = 0;
+		m_csrs->writeCSR(0, intptr_t(m_memory));
+		m_csrs->writeCSR(1, intptr_t(output));
+		m_csrs->writeCSR(2, intptr_t(programMemory));
+		m_csrs->writeCSR(3, (vc_select << 16) | (uint32_t)instructions.size());
 
 		// Spin, waiting for the value in memory to change to something non-zero.
 		struct timespec pause;
