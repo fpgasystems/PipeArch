@@ -1,6 +1,8 @@
 #include "ColumnML.h"
 #include "iFPGA.h"
 
+enum MemoryFormat {FormatSGD, FormatSCD};
+
 class FPGA_ColumnML : public iFPGA, public ColumnML {
 
 public:
@@ -10,6 +12,7 @@ public:
 	volatile float* m_model = nullptr;
 	volatile float* m_labels = nullptr;
 	volatile float* m_samples = nullptr;
+	volatile float* m_residual = nullptr;
 
 	uint32_t m_numSamplesInCL;
 	uint32_t m_numFeaturesInCL;
@@ -23,8 +26,12 @@ public:
 	access_t m_modelChunk;
 	access_t m_labelChunk;
 	access_t m_samplesChunk;
+	access_t m_residualChunk;
 
-	uint32_t CreateMemoryLayout(uint32_t partitionSize) {
+	MemoryFormat m_currentMemoryFormat;
+
+	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
+		m_currentMemoryFormat = format;
 
 		m_numSamplesInCL = (m_cstore->m_numSamples >> 4) + ((m_cstore->m_numSamples&0xF) > 0);
 		m_numFeaturesInCL = (m_cstore->m_numFeatures >> 4) + ((m_cstore->m_numFeatures&0xF) > 0);
@@ -46,21 +53,47 @@ public:
 
 		uint32_t countCL = 0;
 
-		// Model
-		m_modelChunk.m_offsetInCL = countCL;
-		countCL += m_numFeaturesInCL;
-		m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
+		if (format == FormatSGD) {
+			// Model
+			m_modelChunk.m_offsetInCL = countCL;
+			countCL += m_numFeaturesInCL;
+			m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
 
-		// Labels
-		m_labelChunk.m_offsetInCL = countCL;
-		countCL += m_numSamplesInCL;
-		m_labelChunk.m_lengthInCL = countCL - m_labelChunk.m_offsetInCL;
+			// Labels
+			m_labelChunk.m_offsetInCL = countCL;
+			countCL += m_numSamplesInCL;
+			m_labelChunk.m_lengthInCL = countCL - m_labelChunk.m_offsetInCL;
 
-		// Samples
-		m_samplesChunk.m_offsetInCL = countCL;
-		countCL += m_cstore->m_numSamples*m_numFeaturesInCL;
-		m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
+			// Samples
+			m_samplesChunk.m_offsetInCL = countCL;
+			countCL += m_cstore->m_numSamples*m_numFeaturesInCL;
+			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
 
+			// No residual used
+			m_residualChunk.m_offsetInCL = 0;
+			m_residualChunk.m_lengthInCL = 0;
+		}
+		else if (format == FormatSCD) {
+			// Residual
+			m_residualChunk.m_offsetInCL = countCL;
+			countCL += m_numSamplesInCL;
+			m_residualChunk.m_lengthInCL = countCL - m_residualChunk.m_offsetInCL;
+
+			// Labels
+			m_labelChunk.m_offsetInCL = countCL;
+			countCL += m_numSamplesInCL;
+			m_labelChunk.m_lengthInCL = countCL - m_labelChunk.m_offsetInCL;
+
+			// Samples
+			m_samplesChunk.m_offsetInCL = countCL;
+			countCL += m_cstore->m_numFeatures*m_numSamplesInCL;
+			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
+
+			// Model
+			m_modelChunk.m_offsetInCL = countCL;
+			countCL += m_numPartitions*m_numFeaturesInCL;
+			m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
+		}
 
 		if (m_handle != NULL) {
 			m_handle->release();
@@ -73,24 +106,43 @@ public:
 		memset((void*)m_memory, 0, 16*countCL*sizeof(float));
 
 		m_model = m_memory + m_modelChunk.m_offsetInCL*16;
+		m_residual = m_memory + m_residualChunk.m_offsetInCL*16;
 		m_labels = m_memory + m_labelChunk.m_offsetInCL*16;
 		m_samples = m_memory + m_samplesChunk.m_offsetInCL*16;
 
-		for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-			m_model[j] = 0;
-		}
-		for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
-			m_labels[i] = m_cstore->m_labels[i];
+		if (format == FormatSGD) {
 			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				m_samples[i*m_alignedNumFeatures + j] = m_cstore->m_samples[j][i];
+				m_model[j] = 0;
+			}
+			for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
+				m_labels[i] = m_cstore->m_labels[i];
+				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+					m_samples[i*m_alignedNumFeatures + j] = m_cstore->m_samples[j][i];
+				}
+			}
+		}
+		else if (format == FormatSCD) {
+			for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
+				m_residual[i] = 0;
+				m_labels[i] = m_cstore->m_labels[i];
+			}
+			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+				for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
+					m_samples[j*m_alignedNumSamples + i] = m_cstore->m_samples[j][i];
+				}
+			}
+			for (uint32_t p = 0; p < m_numPartitions; p++) {
+				for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
+					m_model[p*m_alignedNumFeatures + j] = 0;
+				}
 			}
 		}
 
 		return countCL;
 	}
 
-	void CopyDataToFPGAMemory(uint32_t partitionSize) {
-		uint32_t countCL = CreateMemoryLayout(partitionSize);
+	void CopyDataToFPGAMemory(MemoryFormat format, uint32_t partitionSize) {
+		uint32_t countCL = CreateMemoryLayout(format, partitionSize);
 		cout << "CopyDataToFPGAMemory END" << endl;
 	}
 
@@ -387,12 +439,12 @@ public:
 		accessRead[2].m_offsetInCL = 0;
 		accessRead[2].m_lengthInCL = 0;
 		accessRead[3].m_offsetInCL = labelOffsetInBRAM;
-		accessRead[3].m_lengthInCL = m_partitionSize;
+		accessRead[3].m_lengthInCL = m_partitionSizeInCL;
 		inst[1].Load(
 			m_labelChunk.m_offsetInCL,
-			m_partitionSize,
+			m_partitionSizeInCL,
 			0,
-			m_partitionSize,
+			m_partitionSizeInCL, // Offset by index 1
 			0,
 			accessRead,
 			4);
@@ -412,7 +464,7 @@ public:
 			m_samplesChunk.m_offsetInCL,
 			m_numFeaturesInCL,
 			m_numFeaturesInCL, // Offset by index 0
-			0,
+			m_numFeaturesInCL*m_partitionSize, // Offset by index 1
 			0,
 			accessRead,
 			4);

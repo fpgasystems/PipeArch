@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
 	args.m_constantStepSize = true;
 
 	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
-	columnML.CopyDataToFPGAMemory(partitionSize);
+	columnML.CopyDataToFPGAMemory(FormatSGD, partitionSize);
 	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
 	columnML.fSGD_blocking(type, nullptr, numEpochs, stepSize, lambda, &args);
 
