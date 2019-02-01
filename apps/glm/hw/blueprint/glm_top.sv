@@ -90,6 +90,7 @@ module glm_top
     t_ccip_clAddr program_addr;
     logic [15:0] program_length;
     logic start;
+    t_ccip_vc vc_select;
 
     always_ff @(posedge clk)
     begin
@@ -121,7 +122,8 @@ module glm_top
             start <= csrs.cpu_wr_csrs[3].en;
             if (csrs.cpu_wr_csrs[3].en)
             begin
-                program_length <= 15'(csrs.cpu_wr_csrs[3].data);
+                program_length <= csrs.cpu_wr_csrs[3].data[15:0];
+                vc_select <= t_ccip_vc'(csrs.cpu_wr_csrs[3].data[17:16]);
             end
 
         end
@@ -160,26 +162,15 @@ module glm_top
     logic [15:0] program_length_request;
     logic [15:0] program_length_receive;
 
-    t_cci_c0_ReqMemHdr rd_hdr;
-    always_comb
-    begin
-        rd_hdr = t_cci_c0_ReqMemHdr'(0);
-        // Read request type
-        rd_hdr.req_type = eREQ_RDLINE_I;
-        // Let the FIU pick the channel
-        rd_hdr.vc_sel = eVC_VA;
-        // Read 4 lines (the size of an entry in the list)
-        rd_hdr.cl_len = eCL_LEN_1;
-    end
-
     always_ff @(posedge clk)
     begin
+        af2cp_sTx.c0.hdr <= t_cci_c0_ReqMemHdr'(0);
+        af2cp_sTx.c0.valid <= 1'b0;
+
         if (reset)
         begin
             request_state <= RXTX_STATE_IDLE;
             receive_state <= RXTX_STATE_IDLE;
-            af2cp_sTx.c0.valid <= 1'b0;
-
             program_access.we <= 1'b0;
         end
         else
@@ -189,7 +180,6 @@ module glm_top
             //   Request State Machine
             //
             // =================================
-            af2cp_sTx.c0.valid <= 1'b0;
             case (request_state)
                 RXTX_STATE_IDLE:
                 begin
@@ -205,7 +195,7 @@ module glm_top
                     if (program_length_request < program_length && !cp2af_sRx.c0TxAlmFull)
                     begin
                         af2cp_sTx.c0.valid <= 1'b1;
-                        af2cp_sTx.c0.hdr <= rd_hdr;
+                        af2cp_sTx.c0.hdr.vc_sel <= vc_select;
                         af2cp_sTx.c0.hdr.address <= program_addr + program_length_request;
                         program_length_request <= program_length_request + 1;
                         if (program_length_request == program_length - 1)
@@ -224,6 +214,7 @@ module glm_top
                     else
                     begin
                         af2cp_sTx.c0 <= execute_load_af2cp_sTx_c0;
+                        af2cp_sTx.c0.hdr.vc_sel <= vc_select;
                     end
                 end
 
@@ -286,48 +277,29 @@ module glm_top
     end
 
     // =========================================================================
-    
+    //
     //   Write Back
-    
+    //
     // =========================================================================
-    t_cci_c1_ReqMemHdr wr_hdr;
-
-    always_comb
-    begin
-        wr_hdr = t_cci_c1_ReqMemHdr'(0);
-        // Write request type
-        wr_hdr.req_type = eREQ_WRLINE_I;
-        // Let the FIU pick the channel
-        wr_hdr.vc_sel = eVC_VA;
-        // Write 1 line
-        wr_hdr.cl_len = eCL_LEN_1;
-        // Start of packet is true (single line write)
-        wr_hdr.sop = 1'b1;
-    end
-
     always_ff @(posedge clk)
     begin
-        if (reset)
-        begin
-            af2cp_sTx.c1.valid <= 1'b0;
-        end
-        else
-        begin
-            af2cp_sTx.c1.valid <= 1'b0;
+        af2cp_sTx.c1.hdr <= t_cci_c1_ReqMemHdr'(0);
+        af2cp_sTx.c1.hdr.sop <= 1'b1;
+        af2cp_sTx.c1.valid <= 1'b0;
 
-            if (receive_state == RXTX_STATE_PROGRAM_EXECUTE)
-            begin
-                execute_writeback_cp2af_sRx_c1 <= cp2af_sRx.c1;
-                execute_writeback_c1TxAlmFull <= cp2af_sRx.c1TxAlmFull;
-                af2cp_sTx.c1 <= execute_writeback_af2cp_sTx_c1;
-            end
-            else if (receive_state == RXTX_STATE_DONE)
-            begin
-                af2cp_sTx.c1.valid <= 1'b1;
-                af2cp_sTx.c1.data <= t_ccip_clData'(64'h1);
-                af2cp_sTx.c1.hdr <= wr_hdr;
-                af2cp_sTx.c1.hdr.address <= out_addr;
-            end
+        if (receive_state == RXTX_STATE_PROGRAM_EXECUTE)
+        begin
+            execute_writeback_cp2af_sRx_c1 <= cp2af_sRx.c1;
+            execute_writeback_c1TxAlmFull <= cp2af_sRx.c1TxAlmFull;
+            af2cp_sTx.c1 <= execute_writeback_af2cp_sTx_c1;
+            af2cp_sTx.c1.hdr.vc_sel <= vc_select;
+        end
+        else if (receive_state == RXTX_STATE_DONE)
+        begin
+            af2cp_sTx.c1.valid <= 1'b1;
+            af2cp_sTx.c1.data <= t_ccip_clData'(64'h1);
+            af2cp_sTx.c1.hdr.address <= out_addr;
+            af2cp_sTx.c1.hdr.vc_sel <= vc_select;
         end
     end
 

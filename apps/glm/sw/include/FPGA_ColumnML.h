@@ -195,12 +195,12 @@ public:
 		accessRead[2].m_offsetInCL = 0;
 		accessRead[2].m_lengthInCL = 0;
 		accessRead[3].m_offsetInCL = labelOffsetInBRAM;
-		accessRead[3].m_lengthInCL = m_partitionSize;
+		accessRead[3].m_lengthInCL = m_partitionSizeInCL;
 		inst[1].Load(
 			m_labelChunk.m_offsetInCL,
-			m_partitionSize,
+			m_partitionSizeInCL,
 			0,
-			m_partitionSize,
+			m_partitionSizeInCL, // Offset by index 1
 			0,
 			accessRead,
 			4);
@@ -208,9 +208,9 @@ public:
 		// Prefetch all samples
 		inst[2].Prefetch(
 			m_samplesChunk.m_offsetInCL,
-			m_cstore->m_numSamples*m_numFeaturesInCL,
+			m_partitionSize*m_numFeaturesInCL,
 			0,
-			0,
+			m_partitionSize*m_numFeaturesInCL,
 			0);
 
 		// Load samples
@@ -226,7 +226,7 @@ public:
 			m_samplesChunk.m_offsetInCL,
 			m_numFeaturesInCL,
 			m_numFeaturesInCL, // Offset by index 0
-			0,
+			m_numFeaturesInCL*m_partitionSize, // Offset by index 1
 			0,
 			accessRead,
 			4);
@@ -268,7 +268,7 @@ public:
 			m_samplesChunk.m_offsetInCL,
 			m_numFeaturesInCL,
 			m_numFeaturesInCL, // Offset by index 0
-			0,
+			m_numFeaturesInCL*m_partitionSize, // Offset by index 1
 			0,
 			accessRead,
 			4);

@@ -111,18 +111,6 @@ module glm_load
     t_ccip_clAddr DRAM_load_offset;
     logic [31:0] DRAM_load_length;
 
-    t_cci_c0_ReqMemHdr rd_hdr;
-    always_comb
-    begin
-        rd_hdr = t_cci_c0_ReqMemHdr'(0);
-        // Read request type
-        rd_hdr.req_type = eREQ_RDLINE_I;
-        // Let the FIU pick the channel
-        rd_hdr.vc_sel = eVC_VA;
-        // Read 4 lines (the size of an entry in the list)
-        rd_hdr.cl_len = eCL_LEN_1;
-    end
-
     // Counters
     logic [31:0] num_requested_lines;
     logic [31:0] num_received_lines;
@@ -136,11 +124,13 @@ module glm_load
         prefetch_fifo_free_count <= PREFETCH_SIZE - prefetch_fifo_access.count[LOG2_PREFETCH_SIZE-1:0];
         num_allowed_lines_to_request <= prefetch_fifo_free_count - $signed(num_lines_in_flight);
 
+        af2cp_sTx_c0.hdr <= t_cci_c0_ReqMemHdr'(0);
+        af2cp_sTx_c0.valid <= 1'b0;
+
         if (reset)
         begin
             request_state <= STATE_IDLE;
             receive_state <= STATE_IDLE;
-            af2cp_sTx_c0.valid <= 1'b0;
             num_requested_lines <= 32'b0;
             num_received_lines <= 32'b0;
             from_load.we <= 1'b0;
@@ -148,7 +138,7 @@ module glm_load
         end
         else
         begin
-            af2cp_sTx_c0.valid <= 1'b0;
+            
             // =================================
             //
             //   Request State Machine
@@ -178,7 +168,6 @@ module glm_load
                     if (num_requested_lines < DRAM_load_length && !c0TxAlmFull && (num_allowed_lines_to_request > 0) )
                     begin
                         af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr <= rd_hdr;
                         af2cp_sTx_c0.hdr.address <= DRAM_load_offset + num_requested_lines;
 
                         num_requested_lines <= num_requested_lines + 1;

@@ -60,20 +60,6 @@ module glm_writeback
     t_ccip_clAddr DRAM_store_offset;
     logic [15:0] DRAM_store_length;
 
-    t_cci_c1_ReqMemHdr wr_hdr;
-    always_comb
-    begin
-        wr_hdr = t_cci_c1_ReqMemHdr'(0);
-        // Write request type
-        wr_hdr.req_type = eREQ_WRLINE_I;
-        // Let the FIU pick the channel
-        wr_hdr.vc_sel = eVC_VA;
-        // Write 1 line
-        wr_hdr.cl_len = eCL_LEN_1;
-        // Start of packet is true (single line write)
-        wr_hdr.sop = 1'b1;
-    end
-
     // Counters
     logic [15:0] num_sent_lines;
     logic [15:0] num_ack_lines;
@@ -82,13 +68,17 @@ module glm_writeback
 
     always_ff @(posedge clk)
     begin
+
+        af2cp_sTx_c1.hdr <= t_cci_c1_ReqMemHdr'(0);
+        af2cp_sTx_c1.hdr.sop <= 1'b1;
+        af2cp_sTx_c1.valid <= 1'b0;
+
         if (reset)
         begin
             send_state <= STATE_IDLE;
             ack_state <= STATE_IDLE;
             num_sent_lines <= 16'b0;
             num_ack_lines <= 16'b0;
-            af2cp_sTx_c1.valid <= 1'b0;
             op_done <= 1'b0;
         end
         else
@@ -98,7 +88,6 @@ module glm_writeback
             //   Send State Machine
             //
             // =================================
-            af2cp_sTx_c1.valid <= 1'b0;
             case(send_state)
                 STATE_IDLE:
                 begin
@@ -124,7 +113,6 @@ module glm_writeback
                     begin
                         af2cp_sTx_c1.valid <= 1'b1;
                         af2cp_sTx_c1.data <= to_writeback.rdata;
-                        af2cp_sTx_c1.hdr <= wr_hdr;
                         af2cp_sTx_c1.hdr.address <= DRAM_store_offset + num_sent_lines;
                         num_sent_lines <= num_sent_lines + 1;
                         if (num_sent_lines == DRAM_store_length-1)
