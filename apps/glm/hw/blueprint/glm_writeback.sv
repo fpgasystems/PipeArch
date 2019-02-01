@@ -14,6 +14,7 @@ module glm_writeback
     input t_ccip_clAddr out_addr,
 
     fifobram_interface.bram_read MEM_model,
+    fifobram_interface.bram_read MEM_labels,
 
     // CCI-P request/response
     input  logic c1TxAlmFull,
@@ -37,6 +38,16 @@ module glm_writeback
         .outfrom_read(to_writeback_from_MEM_model.commonread_source)
     );
 
+    internal_interface #(.WIDTH(512)) to_writeback_from_MEM_labels();
+    read_bram
+    read_MEM_labels_inst (
+        .clk, .reset,
+        .op_start(op_start),
+        .configreg(regs[7]),
+        .memory_access(MEM_labels),
+        .outfrom_read(to_writeback_from_MEM_labels.commonread_source)
+    );
+
     always_comb
     begin
         if (regs[5][3:0] == 0)
@@ -45,8 +56,13 @@ module glm_writeback
             to_writeback.rdata = to_writeback_from_MEM_model.rdata;
             to_writeback_from_MEM_model.almostfull = to_writeback.almostfull;
         end
+        else if (regs[5][3:0] == 1)
+        begin
+            to_writeback.rvalid = to_writeback_from_MEM_labels.rvalid;
+            to_writeback.rdata = to_writeback_from_MEM_labels.rdata;
+            to_writeback_from_MEM_labels.almostfull = to_writeback.almostfull;
+        end
     end
-
 
     typedef enum logic [1:0]
     {
@@ -93,7 +109,7 @@ module glm_writeback
                 begin
                     if (op_start)
                     begin
-                        DRAM_store_offset <= (regs[3][31] == 1'b0) ? out_addr + regs[3] : in_addr + regs[3];
+                        DRAM_store_offset <= (regs[3][31] == 1'b0) ? out_addr + regs[3][30:0] : in_addr + regs[3][30:0];
                         DRAM_store_length <= regs[4];
                         num_sent_lines <= 16'b0;
                         if (regs[4] == 0)

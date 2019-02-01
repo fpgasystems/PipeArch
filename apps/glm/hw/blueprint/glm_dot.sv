@@ -162,7 +162,7 @@ module glm_dot
                                     num_requested_lines <= num_requested_lines + 1;
                                 end
                             end
-                            if (subtract_trigger_d[2])
+                            if (subtract_trigger_d[0])
                             begin
                                 FIFO_input.re <= 1'b1;
                             end

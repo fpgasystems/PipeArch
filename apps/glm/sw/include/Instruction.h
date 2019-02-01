@@ -66,9 +66,10 @@ public:
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2)
 	{
+		uint32_t enableMultiline = 1;
 		m_data[15] = 10;
 		m_data[3] = loadOffsetDRAM;
-		m_data[4] = loadLengthDRAM;
+		m_data[4] = (enableMultiline << 31) | loadLengthDRAM;
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
@@ -84,9 +85,10 @@ public:
 		access_t* accessProperties,
 		uint32_t numLoadChannels)
 	{
+		uint32_t enableMultiline = 1;
 		m_data[15] = 11;
 		m_data[3] = loadOffsetDRAM;
-		m_data[4] = loadLengthDRAM;
+		m_data[4] = (enableMultiline << 31) | loadLengthDRAM;
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
@@ -96,6 +98,7 @@ public:
 	}
 
 	void WriteBack(
+		bool useInputSpace,
 		uint32_t storeOffsetDRAM,
 		uint32_t storeLengthDRAM,
 		uint32_t offsetByIndex0,
@@ -106,7 +109,7 @@ public:
 		uint32_t numWriteBackChannels)
 	{
 		m_data[15] = 12;
-		m_data[3] = storeOffsetDRAM;
+		m_data[3] = ((uint32_t)useInputSpace << 31) | storeOffsetDRAM;
 		m_data[4] = storeLengthDRAM;
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;

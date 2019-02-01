@@ -109,7 +109,9 @@ module glm_load
     end
 
     t_ccip_clAddr DRAM_load_offset;
+    t_ccip_clAddr running_DRAM_load_offset;
     logic [31:0] DRAM_load_length;
+    logic enable_multiline;
 
     // Counters
     logic [31:0] num_requested_lines;
@@ -150,7 +152,9 @@ module glm_load
                     if (op_start)
                     begin
                         DRAM_load_offset <= in_addr + regs[3];
-                        DRAM_load_length <= regs[4];
+                        running_DRAM_load_offset <= in_addr + regs[3];
+                        DRAM_load_length <= 32'(regs[4][30:0]);
+                        enable_multiline <= regs[4][31];
                         num_requested_lines <= 32'b0;
                         if (regs[4] == 0)
                         begin
@@ -165,16 +169,44 @@ module glm_load
 
                 STATE_READ:
                 begin
-                    if (num_requested_lines < DRAM_load_length && !c0TxAlmFull && (num_allowed_lines_to_request > 0) )
+                    if (!c0TxAlmFull && (num_allowed_lines_to_request > 0) )
                     begin
-                        af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr.address <= DRAM_load_offset + num_requested_lines;
-
-                        num_requested_lines <= num_requested_lines + 1;
-                        if (num_requested_lines == DRAM_load_length-1)
+                        if (enable_multiline && 
+                            (num_requested_lines+4 < DRAM_load_length) && 
+                            (running_DRAM_load_offset[1:0] == 2'b0))
                         begin
-                            request_state <= STATE_DONE;
+                            af2cp_sTx_c0.valid <= 1'b1;
+                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                            af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
+                            af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_4;
+                            num_requested_lines <= num_requested_lines + 4;
+                            running_DRAM_load_offset <= running_DRAM_load_offset + 4;
                         end
+                        else if (enable_multiline && 
+                            (num_requested_lines+2 < DRAM_load_length) &&
+                            (running_DRAM_load_offset[0] == 1'b0))
+                        begin
+                            af2cp_sTx_c0.valid <= 1'b1;
+                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                            af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
+                            af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_2;
+                            num_requested_lines <= num_requested_lines + 2;
+                            running_DRAM_load_offset <= running_DRAM_load_offset + 2;
+                        end
+                        else if (num_requested_lines < DRAM_load_length)
+                        begin
+                            af2cp_sTx_c0.valid <= 1'b1;
+                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                            af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
+                            af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_1;
+                            num_requested_lines <= num_requested_lines + 1;
+                            running_DRAM_load_offset <= running_DRAM_load_offset + 1;
+                        end
+                    end
+
+                    if (num_requested_lines == DRAM_load_length)
+                    begin
+                        request_state <= STATE_DONE;
                     end
                 end
 

@@ -33,7 +33,7 @@ module glm_top
     //   NUM_WRITEBACK_CHANNELS
     //
     // *************************************************************************
-    parameter NUM_WRITEBACK_CHANNELS = 1;
+    parameter NUM_WRITEBACK_CHANNELS = 2;
 
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PROGRAM_SIZE)) program_access();
@@ -663,6 +663,7 @@ module glm_top
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) update_MEM_model_interface();
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_MEM_model_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_MEM_labels_interface();
 
 
     assign dot_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
@@ -678,6 +679,8 @@ module glm_top
 
     assign writeback_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
     assign writeback_MEM_model_interface.rdata = MEM_model_interface.rdata;
+    assign writeback_MEM_labels_interface.rvalid = MEM_labels_interface.rvalid;
+    assign writeback_MEM_labels_interface.rdata = MEM_labels_interface.rdata;
 
     always_comb
     begin
@@ -706,10 +709,15 @@ module glm_top
             MEM_labels_interface.re <= 1'b1;
             MEM_labels_interface.raddr <= modify_MEM_labels_interface.raddr;
         end
-        if (dot_MEM_labels_interface.re)
+        else if (dot_MEM_labels_interface.re)
         begin
             MEM_labels_interface.re <= 1'b1;
             MEM_labels_interface.raddr <= dot_MEM_labels_interface.raddr;
+        end
+        else if (writeback_MEM_labels_interface.re)
+        begin
+            MEM_labels_interface.re <= 1'b1;
+            MEM_labels_interface.raddr <= writeback_MEM_labels_interface.raddr;
         end
 
         // MEM_model write arbitration
@@ -733,6 +741,12 @@ module glm_top
             MEM_labels_interface.we <= 1'b1;
             MEM_labels_interface.waddr <= load_MEM_labels_interface.waddr;
             MEM_labels_interface.wdata <= load_MEM_labels_interface.wdata;
+        end
+        else if (modify_MEM_labels_interface.we)
+        begin
+            MEM_labels_interface.we <= 1'b1;
+            MEM_labels_interface.waddr <= modify_MEM_labels_interface.waddr;
+            MEM_labels_interface.wdata <= modify_MEM_labels_interface.wdata;
         end
     end
 
@@ -793,6 +807,7 @@ module glm_top
         .in_addr,
         .out_addr,
         .MEM_model(writeback_MEM_model_interface.bram_read),
+        .MEM_labels(writeback_MEM_labels_interface.bram_read),
         .c1TxAlmFull(execute_writeback_c1TxAlmFull),
         .cp2af_sRx_c1(execute_writeback_cp2af_sRx_c1),
         .af2cp_sTx_c1(execute_writeback_af2cp_sTx_c1)
@@ -827,7 +842,7 @@ module glm_top
         .op_start(op_start[4]),
         .op_done(op_done[4]),
         .regs,
-        .MEM_labels(modify_MEM_labels_interface.bram_read),
+        .MEM_labels(modify_MEM_labels_interface.bram_readwrite),
         .FIFO_dot(FIFO_dot_interface.fifo_read),
         .FIFO_gradient(FIFO_gradient_interface.fifo_write)
     );
