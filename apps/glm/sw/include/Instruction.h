@@ -47,16 +47,15 @@ public:
 		m_data[15] |= (1 << 8);
 	}
 
-	void Jump(
+	void AddJump(
 		uint32_t whichReg,
 		uint32_t predicate,
 		uint32_t nextPCFalse,
 		uint32_t nextPCTrue)
 	{
-		m_data[15] = whichReg; // opcode
-		m_data[12] = predicate;
-		m_data[14] = nextPCFalse;
-		m_data[13] = nextPCTrue;
+		m_data[15] |= (whichReg+1); // opcode
+		m_data[13] = predicate;
+		m_data[14] = ((nextPCFalse & 0xFFFF) << 16) | (nextPCTrue & 0xFFFF);
 	}
 
 	void Prefetch(
@@ -67,7 +66,7 @@ public:
 		uint32_t offsetByIndex2)
 	{
 		uint32_t enableMultiline = 1;
-		m_data[15] = 10;
+		m_data[15] |= (1 << 4);
 		m_data[3] = loadOffsetDRAM;
 		m_data[4] = (enableMultiline << 31) | loadLengthDRAM;
 		m_data[10] = offsetByIndex0;
@@ -86,7 +85,7 @@ public:
 		uint32_t numLoadChannels)
 	{
 		uint32_t enableMultiline = 1;
-		m_data[15] = 11;
+		m_data[15] |= (2 << 4);
 		m_data[3] = loadOffsetDRAM;
 		m_data[4] = (enableMultiline << 31) | loadLengthDRAM;
 		m_data[10] = offsetByIndex0;
@@ -105,16 +104,17 @@ public:
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
 		uint32_t whichChannel,
+		bool writeFence,
 		access_t* accessProperties,
 		uint32_t numWriteBackChannels)
 	{
-		m_data[15] = 12;
+		m_data[15] |= (3 << 4);
 		m_data[3] = ((uint32_t)useInputSpace << 31) | storeOffsetDRAM;
 		m_data[4] = storeLengthDRAM;
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
-		m_data[5] = whichChannel;
+		m_data[5] = (((uint32_t)writeFence << 4) | (whichChannel & 0xFFFF));
 		for (uint32_t i = 0; i < numWriteBackChannels; i++) {
 			m_data[6+i] = (accessProperties[i].m_lengthInCL << 16) | accessProperties[i].m_offsetInCL;
 		}
@@ -133,7 +133,7 @@ public:
 		uint32_t memModelLoadOffset,
 		uint32_t memLabelsLoadOffset)
 	{
-		m_data[15] = 13; // opcode
+		m_data[15] |= (4 << 4);
 		m_data[3] = (((uint32_t)performSubtraction) << 17) | (((uint32_t)readFromModelForward) << 16) | (numLinesToProcess & 0xFFFF);
 		m_data[4] = ((memLabelsLoadOffset & 0xFFFF) << 16) | (memModelLoadOffset & 0xFFFF);
 	}
@@ -145,7 +145,7 @@ public:
 		float stepSize,
 		float lambda)
 	{
-		m_data[15] = 14; // opcode
+		m_data[15] |= (5 << 4);
 		m_data[3] = (memLabelsLoadOffset & 0xFFFF);
 		m_data[4] = (algo << 2) | (type & 0x3);
 		m_data[5] = *((uint32_t*)&stepSize);
@@ -157,7 +157,7 @@ public:
 		uint32_t loadLength,
 		bool modelForward)
 	{
-		m_data[15] = 15; // opcode
+		m_data[15] |= (6 << 4);
 		m_data[3] = (loadLength << 16) | (memModelLoadOffset & 0xFFFF);
 		m_data[4] = (uint32_t)modelForward;
 	}

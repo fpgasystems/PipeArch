@@ -580,8 +580,8 @@ static inline void DoStep(
 	timeStamp2 = get_time();
 	dotTime += (timeStamp2-timeStamp1);
 
-	std::cout << "----------------------" << std::endl;
-	std::cout << "gradient: " << gradient << std::endl;
+	// std::cout << "----------------------" << std::endl;
+	// std::cout << "gradient: " << gradient << std::endl;
 
 	float step = scaledStepSize*gradient;
 
@@ -595,12 +595,12 @@ static inline void DoStep(
 		step = x[minibatchIndex[0]*cstore->m_numFeatures + coordinate];
 	}
 
-	std::cout << "scaledStepSize: " << scaledStepSize << std::endl; 
-	std::cout << "coordinate=" << coordinate << ", minibatchIndex=" << minibatchIndex[0] << ", step=" << step << std::endl;
+	// std::cout << "scaledStepSize: " << scaledStepSize << std::endl; 
+	// std::cout << "coordinate=" << coordinate << ", minibatchIndex=" << minibatchIndex[0] << ", step=" << step << std::endl;
 
 	x[minibatchIndex[0]*cstore->m_numFeatures + coordinate] -= step;
 
-	std::cout << "coordinate=" << coordinate << ", minibatchIndex=" << minibatchIndex[0] << ", x=" << x[minibatchIndex[0]*cstore->m_numFeatures + coordinate] << std::endl;
+	// std::cout << "coordinate=" << coordinate << ", minibatchIndex=" << minibatchIndex[0] << ", x=" << x[minibatchIndex[0]*cstore->m_numFeatures + coordinate] << std::endl;
 
 	for (uint32_t l = 0; l < numMinibatchesAtATime; l++) {
 		for (uint32_t i = 0; i < minibatchSize; i++) {

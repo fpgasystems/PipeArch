@@ -48,21 +48,7 @@ module glm_writeback
         .outfrom_read(to_writeback_from_MEM_labels.commonread_source)
     );
 
-    always_comb
-    begin
-        if (regs[5][3:0] == 0)
-        begin
-            to_writeback.rvalid = to_writeback_from_MEM_model.rvalid;
-            to_writeback.rdata = to_writeback_from_MEM_model.rdata;
-            to_writeback_from_MEM_model.almostfull = to_writeback.almostfull;
-        end
-        else if (regs[5][3:0] == 1)
-        begin
-            to_writeback.rvalid = to_writeback_from_MEM_labels.rvalid;
-            to_writeback.rdata = to_writeback_from_MEM_labels.rdata;
-            to_writeback_from_MEM_labels.almostfull = to_writeback.almostfull;
-        end
-    end
+    
 
     typedef enum logic [1:0]
     {
@@ -71,14 +57,32 @@ module glm_writeback
         STATE_DONE
     } t_writestate;
     t_writestate send_state;
-    t_writestate ack_state;
 
     t_ccip_clAddr DRAM_store_offset;
     logic [15:0] DRAM_store_length;
+    logic [3:0] select_channel;
+    logic write_fence;
 
     // Counters
     logic [15:0] num_sent_lines;
     logic [15:0] num_ack_lines;
+
+
+    always_comb
+    begin
+        if (select_channel == 0)
+        begin
+            to_writeback.rvalid = to_writeback_from_MEM_model.rvalid;
+            to_writeback.rdata = to_writeback_from_MEM_model.rdata;
+            to_writeback_from_MEM_model.almostfull = to_writeback.almostfull;
+        end
+        else if (select_channel == 1)
+        begin
+            to_writeback.rvalid = to_writeback_from_MEM_labels.rvalid;
+            to_writeback.rdata = to_writeback_from_MEM_labels.rdata;
+            to_writeback_from_MEM_labels.almostfull = to_writeback.almostfull;
+        end
+    end
 
     assign to_writeback.almostfull = c1TxAlmFull;
 
@@ -88,11 +92,11 @@ module glm_writeback
         af2cp_sTx_c1.hdr <= t_cci_c1_ReqMemHdr'(0);
         af2cp_sTx_c1.hdr.sop <= 1'b1;
         af2cp_sTx_c1.valid <= 1'b0;
+        op_done <= 1'b0;
 
         if (reset)
         begin
             send_state <= STATE_IDLE;
-            ack_state <= STATE_IDLE;
             num_sent_lines <= 16'b0;
             num_ack_lines <= 16'b0;
             op_done <= 1'b0;
@@ -111,7 +115,10 @@ module glm_writeback
                     begin
                         DRAM_store_offset <= (regs[3][31] == 1'b0) ? out_addr + regs[3][30:0] : in_addr + regs[3][30:0];
                         DRAM_store_length <= regs[4];
+                        select_channel <= regs[5][3:0];
+                        write_fence <= regs[5][4];
                         num_sent_lines <= 16'b0;
+                        num_ack_lines <= 16'b0;
                         if (regs[4] == 0)
                         begin
                             send_state <= STATE_DONE;
@@ -131,7 +138,16 @@ module glm_writeback
                         af2cp_sTx_c1.data <= to_writeback.rdata;
                         af2cp_sTx_c1.hdr.address <= DRAM_store_offset + num_sent_lines;
                         num_sent_lines <= num_sent_lines + 1;
-                        if (num_sent_lines == DRAM_store_length-1)
+                        if (num_sent_lines == DRAM_store_length-1 && write_fence == 1'b0)
+                        begin
+                            send_state <= STATE_DONE;
+                        end
+                    end
+
+                    if (cp2af_sRx_c1.rspValid)
+                    begin
+                        num_ack_lines <= num_ack_lines + 1;
+                        if (num_ack_lines == DRAM_store_length-1 && write_fence == 1'b1)
                         begin
                             send_state <= STATE_DONE;
                         end
@@ -140,52 +156,10 @@ module glm_writeback
 
                 STATE_DONE:
                 begin
+                    op_done <= 1'b1;
                     send_state <= STATE_IDLE;
                 end
             endcase
-
-            // =================================
-            //
-            //   Ack State Machine
-            //
-            // =================================
-            op_done <= 1'b0;
-            case(ack_state)
-                STATE_IDLE:
-                begin
-                    if (op_start)
-                    begin
-                        num_ack_lines <= 16'b0;
-                        if (regs[4] == 0)
-                        begin
-                            ack_state <= STATE_DONE;
-                        end
-                        else
-                        begin
-                            ack_state <= STATE_WRITE;
-                        end
-                    end
-                end
-
-                STATE_WRITE:
-                begin
-                    if (cp2af_sRx_c1.rspValid)
-                    begin
-                        num_ack_lines <= num_ack_lines + 1;
-                        if (num_ack_lines == DRAM_store_length-1)
-                        begin
-                            ack_state <= STATE_DONE;
-                        end
-                    end
-                end
-
-                STATE_DONE:
-                begin
-                    op_done <= 1'b1;
-                    ack_state <= STATE_IDLE;
-                end
-            endcase
-
         end
     end
 

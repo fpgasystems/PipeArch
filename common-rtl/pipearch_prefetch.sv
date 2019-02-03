@@ -147,7 +147,7 @@ module pipearch_prefetch
 
                     end
 
-                    get_c0TxAlmFull <= c0TxAlmFull;
+                    get_c0TxAlmFull <= 1'b0;
                     if (get_af2cp_sTx_c0.valid)
                     begin
                         if (get_af2cp_sTx_c0.hdr.cl_len == eCL_LEN_4) begin

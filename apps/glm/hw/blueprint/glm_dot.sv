@@ -38,12 +38,6 @@ module glm_dot
     logic [511:0] subtract_vector2;
     logic subtract_valid;
     logic [511:0] subtract_result;
-    logic [1:0] subtract_trigger_d;
-    always_ff @(posedge clk)
-    begin
-        subtract_trigger_d[0] <= subtract_trigger;
-        subtract_trigger_d[1] <= subtract_trigger_d[0];
-    end
     float_vector_subtract
     #(
         .VALUES_PER_LINE(16)
@@ -62,6 +56,17 @@ module glm_dot
     assign subtract_vector1 = (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
     assign subtract_vector2 = MEM_labels.rdata;
 
+    logic FIFO_input_rvalid_d [2:0];
+    logic [511:0] FIFO_input_rdata_d [2:0];
+    always_ff @(posedge clk)
+    begin
+        FIFO_input_rvalid_d[0] <= FIFO_input.rvalid;
+        FIFO_input_rvalid_d[1] <= FIFO_input_rvalid_d[0];
+        FIFO_input_rvalid_d[2] <= FIFO_input_rvalid_d[1];
+        FIFO_input_rdata_d[0] <= FIFO_input.rdata;
+        FIFO_input_rdata_d[1] <= FIFO_input_rdata_d[0];
+        FIFO_input_rdata_d[2] <= FIFO_input_rdata_d[1];
+    end
 
     logic dot_trigger;
     logic [511:0] dot_left;
@@ -83,26 +88,34 @@ module glm_dot
         .result_valid(dot_done),
         .result(dot_result)
     );
-    assign dot_trigger = FIFO_input.rvalid;
     always_comb
     begin
         if (perform_label_subtraction)
         begin
+            dot_trigger = FIFO_input_rvalid_d[2];
             dot_left = subtract_result;
+            dot_right = FIFO_input_rdata_d[2];
         end
         else
         begin
+            dot_trigger = FIFO_input.rvalid;
             dot_left = (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
+            dot_right = FIFO_input.rdata;
         end
     end
-    assign dot_right = FIFO_input.rdata;
     assign FIFO_dot.we = dot_done;
     assign FIFO_dot.wdata = dot_result;
-    assign op_done = dot_done;
-
+    // assign op_done = dot_done;
 
     always_ff @(posedge clk)
     begin
+
+        FIFO_input.re <= 1'b0;
+        MEM_model.re <= 1'b0;
+        MEM_labels.re <= 1'b0;
+        FIFO_modelforward.re <= 1'b0;
+        op_done <= 1'b0;
+
         if (reset)
         begin
             dot_state <= STATE_IDLE;
@@ -116,10 +129,6 @@ module glm_dot
         else
         begin
 
-            FIFO_input.re <= 1'b0;
-            MEM_model.re <= 1'b0;
-            MEM_labels.re <= 1'b0;
-            FIFO_modelforward.re <= 1'b0;
             case (dot_state)
                 STATE_IDLE:
                 begin
@@ -139,13 +148,13 @@ module glm_dot
 
                 STATE_READ:
                 begin
-
                     if (!FIFO_input.empty)
                     begin
                         if (perform_label_subtraction)
                         begin
                             if (num_requested_lines < num_lines_to_process)
                             begin
+                                FIFO_input.re <= 1'b1;
                                 if (!read_from_modelforward)
                                 begin
                                     MEM_labels.re <= 1'b1;
@@ -161,10 +170,6 @@ module glm_dot
                                     FIFO_modelforward.re <= 1'b1;
                                     num_requested_lines <= num_requested_lines + 1;
                                 end
-                            end
-                            if (subtract_trigger_d[0])
-                            begin
-                                FIFO_input.re <= 1'b1;
                             end
                         end
                         else
@@ -190,18 +195,20 @@ module glm_dot
                         num_processed_lines <= num_processed_lines + 1;
                         if (num_processed_lines == num_lines_to_process-1)
                         begin
-                            dot_state <= STATE_DONE;
+                            dot_state <= STATE_IDLE;
+                            op_done <= 1'b1;
+                            // dot_state <= STATE_DONE;
                         end
                     end
                 end
 
-                STATE_DONE:
-                begin
-                    if (dot_done == 1'b1)
-                    begin
-                        dot_state <= STATE_IDLE;
-                    end
-                end
+                // STATE_DONE:
+                // begin
+                //     if (dot_done == 1'b1)
+                //     begin
+                //         dot_state <= STATE_IDLE;
+                //     end
+                // end
 
             endcase
         end

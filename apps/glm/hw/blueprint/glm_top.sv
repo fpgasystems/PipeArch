@@ -358,32 +358,35 @@ module glm_top
     // opcode = instruction[15][7:0]
     // nonblocking = instruction[15][8]
 
-    // if opcode == 0 ---- jump0
-    //  if reg[0] == instruction[12]:
-    //      programCounter = instruction[13]
-    //  else:
-    //      programCounter = instruction[14]
+    // if opcode == 0xN0 ---- Inrement PC
+    //  programCounter++
 
-    // if opcode == 1 ---- jump1
-    //  if reg[1] == instruction[12]:
-    //      programCounter = instruction[13]
+    // if opcode == 0xN1 ---- jump0
+    //  if reg[0] == instruction[13]:
+    //      programCounter = instruction[14][15:0]
     //  else:
-    //      programCounter = instruction[14]
+    //      programCounter = instruction[14][31:16]
 
-    // if opcode == 2 ---- jump3
-    //  if reg[2] == instruction[12]:
-    //      programCounter = instruction[13]
+    // if opcode == 0xN2 ---- jump1
+    //  if reg[1] == instruction[13]:
+    //      programCounter = instruction[14][15:0]
     //  else:
-    //      programCounter = instruction[14]
+    //      programCounter = instruction[14][31:16]
 
-    // if opcode == 10 ---- prefetch
+    // if opcode == 0xN3 ---- jump3
+    //  if reg[2] == instruction[13]:
+    //      programCounter = instruction[14][15:0]
+    //  else:
+    //      programCounter = instruction[14][31:16]
+
+    // if opcode == 0x1N ---- prefetch
     // reg[3] = instruction[3]+reg[2]*instruction[12]+reg[1]*instruction[11]+reg[0]*instruction[10]     // DRAM read offset in cachelines
                                                                                                         // instruction[10]: read offset change per index0
                                                                                                         // instruction[11]: read offset change per index1
                                                                                                         // instruction[12]: read offset change per index2
     // reg[4] = instruction[4]                                                                          // DRAM read length in cachelines
 
-    // if opcode == 11 ---- load
+    // if opcode == 0x2N ---- load
     // reg[3] = instruction[3]+reg[2]*instruction[12]+reg[1]*instruction[11]+reg[0]*instruction[10]     // DRAM read offset in cachelines
                                                                                                         // instruction[10]: read offset change per index0
                                                                                                         // instruction[11]: read offset change per index1
@@ -392,22 +395,23 @@ module glm_top
     // reg[x] = instruction[x]                                                                          // [15:0]: memory store offset in cachelines
                                                                                                         // [31:16]: memory/fifo store length in cachelines
 
-    // if opcode == 12 ---- writeback
+    // if opcode == 0x3N ---- writeback
     // reg[3] = instruction[3]+reg[2]*instruction[12]+reg[1]*instruction[11]+reg[0]*instruction[10]     // DRAM store offset in cachelines
                                                                                                         // [31] DRAM buffer (0 out) (1 in)
     // reg[4] = instruction[4]                                                                          // DRAM store length in cachelines
-    // reg[5] = instruction[5]                                                                          // Internal read channel select
+    // reg[5] = instruction[5]                                                                          // [3:0] Internal read channel select
+                                                                                                        // [4] Write Fence
     // reg[x] = instruction[x]                                                                          // [15:0]: memory load offset in cachelines
                                                                                                         // [31:16]: memory/fifo load length in cachelines
 
-    // if opcode == 13 ---- dot
+    // if opcode == 0x4N ---- dot
     // reg[3] = instruction[3]                                                  // [15:0] Read length in cachelines
                                                                                 // [16] Read from modelforward
                                                                                 // [17] Perform subtraction
     // reg[4] = instruction[4]                                                  // [15:0] model memory load offset in cachelines
                                                                                 // [31:16] label memory load offset in cachelines
 
-    // if opcode == 14 ---- modify
+    // if opcode == 0x5N ---- modify
     // reg[3] = instruction[3]                                                  // [15:0]: memory2 load offset in cachelines
                                                                                 // [31:16]: memory2 store offset in cachelines
     // reg[4] = instruction[4]                                                  // [1:0]: (0 linreg) (1 logreg) (2 SVM)
@@ -415,7 +419,7 @@ module glm_top
     // reg[5] = instruction[5]                                                  // step size
     // reg[6] = instruction[6]                                                  // lambda
 
-    // if opcode == 15 ---- update
+    // if opcode == 0x6N ---- update
     // reg[3] = instruction[3]                                                  // [15:0] memory1 load/store offset in cacheline
                                                                                 // [31:16] memory1 load/store length in cachelines
     // reg[4] = instruction[4]                                                  // [0] write to model_forward_fifo
@@ -429,6 +433,14 @@ module glm_top
 
     logic [5:0] op_start;
     logic [5:0] op_done;
+
+    always_comb
+    begin
+        for (int i=0; i < 16; i=i+1)
+        begin
+            instruction[i] = program_access.rdata[ (i*32)+31 -: 32 ];
+        end
+    end
 
     always_ff @(posedge clk)
     begin
@@ -452,116 +464,129 @@ module glm_top
                     {<<{regs}} <= REGS_WIDTH'(0);
                     if (receive_state == RXTX_STATE_PROGRAM_EXECUTE)
                     begin
-                        machine_state <= MACHINE_STATE_INSTRUCTION_FETCH;
-                    end
-                end
-
-                MACHINE_STATE_INSTRUCTION_FETCH:
-                begin
-                    program_access.re <= 1'b1;
-                    program_access.raddr <= program_counter;
-                    machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
-                end
-
-                MACHINE_STATE_INSTRUCTION_RECEIVE:
-                begin
-                    if (program_access.rvalid)
-                    begin
-                        for (int i=0; i < 16; i=i+1)
-                        begin
-                            instruction[i] <= program_access.rdata[ (i*32)+31 -: 32 ];
-                        end
+                        program_access.re <= 1'b1;
+                        program_access.raddr <= program_counter;
                         machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
                     end
                 end
 
                 MACHINE_STATE_INSTRUCTION_DECODE:
                 begin
-                    machine_state <= MACHINE_STATE_EXECUTE;
 
-                    opcode <= instruction[15][7:0];
-                    nonblocking <= instruction[15][8];
-                    case(instruction[15][7:0])
-                        8'd0: // Jump0
-                        begin
-                            program_counter <= (regs[0] == instruction[12]) ? instruction[13] : instruction[14];
-                        end
+                    if (program_access.rvalid)
+                    begin
+                        opcode <= instruction[15][7:0];
+                        nonblocking <= instruction[15][8];
+                        case(instruction[15][7:4])
 
-                        8'd1:
-                        begin
-                            program_counter <= (regs[1] == instruction[12]) ? instruction[13] : instruction[14];
-                        end
-
-                        8'd2:
-                        begin
-                            program_counter <= (regs[2] == instruction[12]) ? instruction[13] : instruction[14];
-                        end
-
-                        8'd10: // prefetch
-                        begin
-                            op_start[0] <= 1'b1;
-                            regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
-                            regs[4] <= instruction[4]; // read length in cachelines
-                            program_counter <= program_counter + 1;
-                        end
-
-                        8'd11: // load
-                        begin
-                            op_start[1] <= 1'b1;
-                            regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
-                            regs[4] <= instruction[4]; // read length in cachelines
-                            for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
+                            4'h1: // prefetch
                             begin
-                                regs[5+i] <= instruction[5+i]; 
+                                op_start[0] <= 1'b1;
+                                regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
+                                regs[4] <= instruction[4]; // read length in cachelines
                             end
-                            program_counter <= program_counter + 1;
-                        end
 
-                        8'd12: // writeback
-                        begin
-                            op_start[2] <= 1'b1;
-                            regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // store offset
-                            regs[4] <= instruction[4]; // store length in cachelines
-                            regs[5] <= instruction[5]; // channel select
-                            for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
+                            4'h2: // load
                             begin
-                                regs[6+i] <= instruction[6+i]; 
+                                op_start[1] <= 1'b1;
+                                regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
+                                regs[4] <= instruction[4]; // read length in cachelines
+                                for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
+                                begin
+                                    regs[5+i] <= instruction[5+i]; 
+                                end
                             end
-                            program_counter <= program_counter + 1;
-                        end
 
-                        // *************************************************************************
-                        //
-                        //   Additional opcodes
-                        //
-                        // *************************************************************************
-                        8'd13: // dot
-                        begin
-                            op_start[3] <= 1'b1;
-                            regs[3] <= instruction[3];
-                            regs[4] <= instruction[4];
-                            program_counter <= program_counter + 1;
-                        end
+                            4'h3: // writeback
+                            begin
+                                op_start[2] <= 1'b1;
+                                regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // store offset
+                                regs[4] <= instruction[4]; // store length in cachelines
+                                regs[5] <= instruction[5]; // channel select
+                                for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
+                                begin
+                                    regs[6+i] <= instruction[6+i]; 
+                                end
+                            end
 
-                        8'd14: // modify
-                        begin
-                            op_start[4] <= 1'b1;
-                            regs[3] <= instruction[3];
-                            regs[4] <= instruction[4];
-                            regs[5] <= instruction[5];
-                            regs[6] <= instruction[6];
-                            program_counter <= program_counter + 1;
-                        end
+                            // *************************************************************************
+                            //
+                            //   Additional opcodes
+                            //
+                            // *************************************************************************
+                            4'h4: // dot
+                            begin
+                                op_start[3] <= 1'b1;
+                                regs[3] <= instruction[3];
+                                regs[4] <= instruction[4];
+                            end
 
-                        8'd15: // update
-                        begin
-                            op_start[5] <= 1'b1;
-                            regs[3] <= instruction[3];
-                            regs[4] <= instruction[4];
-                            program_counter <= program_counter + 1;
-                        end
+                            4'h5: // modify
+                            begin
+                                op_start[4] <= 1'b1;
+                                regs[3] <= instruction[3];
+                                regs[4] <= instruction[4];
+                                regs[5] <= instruction[5];
+                                regs[6] <= instruction[6];
+                            end
 
-                    endcase
+                            4'h6: // update
+                            begin
+                                op_start[5] <= 1'b1;
+                                regs[3] <= instruction[3];
+                                regs[4] <= instruction[4];
+                            end
+                        endcase
+
+                        case(instruction[15][3:0])
+                            4'h0:
+                            begin
+                                program_counter <= program_counter + 1;
+                            end
+
+                            4'h1:
+                            begin
+                                program_counter <= (regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                                // if (regs[0] == instruction[13] && instruction[14][15:0] == 16'hFFFF)
+                                // begin
+                                //     machine_state <= MACHINE_STATE_DONE;
+                                // end
+                            end
+
+                            4'h2:
+                            begin
+                                program_counter <= (regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                                // if (regs[1] == instruction[13] && instruction[14][15:0] == 16'hFFFF)
+                                // begin
+                                //     machine_state <= MACHINE_STATE_DONE;
+                                // end
+                            end
+
+                            4'h3:
+                            begin
+                                program_counter <= (regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                                // if (regs[2] == instruction[13] && instruction[14][15:0] == 16'hFFFF)
+                                // begin
+                                //     machine_state <= MACHINE_STATE_DONE;
+                                // end
+                            end
+                        endcase
+
+                        // if (instruction[15][8])
+                        // begin
+                        //     program_access.re <= 1'b1;
+                        //     program_access.raddr <= program_counter + 1;
+                        //     regs[0] <= updateIndex(instruction[0], regs[0]);
+                        //     regs[1] <= updateIndex(instruction[1], regs[1]);
+                        //     regs[2] <= updateIndex(instruction[2], regs[2]);
+                        //     machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
+                        // end
+                        // else
+                        // begin
+                        //     machine_state <= MACHINE_STATE_EXECUTE;
+                        // end
+                        machine_state <= MACHINE_STATE_EXECUTE;
+                    end
                 end
 
                 MACHINE_STATE_EXECUTE:
@@ -570,9 +595,11 @@ module glm_top
                     begin
                         machine_state <= MACHINE_STATE_DONE;
                     end
-                    else if (nonblocking == 1'b1 || op_done[opcode-8'hA] || opcode < 8'hA)
+                    else if (op_done[opcode[7:4]-1] || opcode[7:4] == 4'b0 || nonblocking)
                     begin
-                        machine_state <= MACHINE_STATE_INSTRUCTION_FETCH;
+                        program_access.re <= 1'b1;
+                        program_access.raddr <= program_counter;
+                        machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
                         regs[0] <= updateIndex(instruction[0], regs[0]);
                         regs[1] <= updateIndex(instruction[1], regs[1]);
                         regs[2] <= updateIndex(instruction[2], regs[2]);
@@ -736,6 +763,7 @@ module glm_top
         end
 
         // MEM_labels write arbitration
+        MEM_labels_interface.we <= 1'b0;
         if (load_MEM_labels_interface.we)
         begin
             MEM_labels_interface.we <= 1'b1;
