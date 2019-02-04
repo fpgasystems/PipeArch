@@ -96,7 +96,7 @@ module glm_modify
         MEM_labels.re <= 1'b0;
         MEM_labels.we <= 1'b0;
         FIFO_gradient.we <= 1'b0;
-        op_done = 1'b0;
+        op_done <= 1'b0;
 
         if (reset)
         begin
@@ -162,9 +162,9 @@ module glm_modify
 
                     if (FIFO_dot.rvalid)
                     begin
-                        mult_regs.trigger = 1'b1;
-                        mult_regs.leftoperand = step_size;
-                        mult_regs.rightoperand = FIFO_dot.rdata;;
+                        mult_regs.trigger <= 1'b1;
+                        mult_regs.leftoperand <= step_size;
+                        mult_regs.rightoperand <= FIFO_dot.rdata;;
                     end
 
                     if (mult_status[0])
@@ -185,7 +185,7 @@ module glm_modify
 
                     if (sub_regs.done)
                     begin
-                        op_done = 1'b1;
+                        op_done <= 1'b1;
                         MEM_labels.we <= 1'b1;
                         MEM_labels.waddr <= MEM_labels_load_offset + offsetByIndex;
                         MEM_labels.wdata <= lineFromLabelsMem;
