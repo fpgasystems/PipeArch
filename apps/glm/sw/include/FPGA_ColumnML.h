@@ -168,22 +168,28 @@ public:
 			k++;
 		}
 
-		uint32_t vc_select = 0;
-		m_csrs->writeCSR(0, intptr_t(m_memory));
-		m_csrs->writeCSR(1, intptr_t(output));
-		m_csrs->writeCSR(2, intptr_t(programMemory));
-		m_csrs->writeCSR(3, (vc_select << 16) | (uint32_t)instructions.size());
-
 		// Spin, waiting for the value in memory to change to something non-zero.
 		struct timespec pause;
 		// Longer when simulating
 		pause.tv_sec = (m_fpga->hwIsSimulated() ? 1 : 0);
 		pause.tv_nsec = 100;
 
+		double start = get_time();
+
+		uint32_t vc_select = 0;
+		m_csrs->writeCSR(0, intptr_t(m_memory));
+		m_csrs->writeCSR(1, intptr_t(output));
+		m_csrs->writeCSR(2, intptr_t(programMemory));
+		m_csrs->writeCSR(3, (vc_select << 16) | (uint32_t)instructions.size());
+
 		output[0] = 0;
 		while (0 == output[0]) {
 			nanosleep(&pause, NULL);
 		};
+
+		double end = get_time();
+
+		cout << "Time: " << end-start << endl;
 
 		// Reads CSRs to get some statistics
 		cout	<< "# List length: " << m_csrs->readCSR(0) << endl
