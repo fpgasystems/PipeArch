@@ -91,11 +91,11 @@ module glm_modify
     begin
 
         sub_regs.trigger <= 1'b0;
-        mult_regs.trigger = 1'b0;
+        mult_regs.trigger <= 1'b0;
         FIFO_dot.re <= 1'b0;
         MEM_labels.re <= 1'b0;
         MEM_labels.we <= 1'b0;
-        FIFO_gradient.we = 1'b0;
+        FIFO_gradient.we <= 1'b0;
         op_done = 1'b0;
 
         if (reset)
