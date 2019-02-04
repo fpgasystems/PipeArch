@@ -5,8 +5,42 @@ struct access_t {
 	uint32_t m_lengthInCL;
 };
 
+class AccessProperties {
+private:
+	access_t* m_properties;
+	uint32_t m_numChannels;
+
+public:
+	AccessProperties(uint32_t numChannels)  {
+		m_numChannels = numChannels;
+		m_properties = new access_t[numChannels];
+		for (uint32_t i = 0; i < numChannels; i++) {
+			m_properties[i].m_offsetInCL = 0;
+			m_properties[i].m_lengthInCL = 0;
+		}
+	}
+
+	// ~AccessProperties() {
+	// 	delete[] m_properties;
+	// }
+
+	void Set(uint32_t channel, uint32_t offsetInCL, uint32_t lengthInCL) {
+		m_properties[channel].m_offsetInCL = offsetInCL;
+		m_properties[channel].m_lengthInCL = lengthInCL;
+	}
+
+	access_t Get(uint32_t channel) {
+		return m_properties[channel];
+	}
+
+	uint32_t GetNumChannels() {
+		return m_numChannels;
+	}
+};
+
 class Instruction {
 public:
+	static const uint32_t MAX_NUM_INSTRUCTIONS = 32;
 	static const uint32_t NUM_WORDS = 16;
 	static const uint32_t NUM_BYTES = NUM_WORDS*4;
 	uint32_t m_data[NUM_WORDS];
@@ -81,8 +115,7 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		access_t* accessProperties,
-		uint32_t numLoadChannels)
+		AccessProperties accessProperties)
 	{
 		uint32_t enableMultiline = 1;
 		m_data[15] |= (2 << 4);
@@ -91,8 +124,8 @@ public:
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
-		for (uint32_t i = 0; i < numLoadChannels; i++) {
-			m_data[5+i] = (accessProperties[i].m_lengthInCL << 16) | accessProperties[i].m_offsetInCL;
+		for (uint32_t i = 0; i < accessProperties.GetNumChannels(); i++) {
+			m_data[5+i] = (accessProperties.Get(i).m_lengthInCL << 16) | accessProperties.Get(i).m_offsetInCL;
 		}
 	}
 
@@ -105,8 +138,7 @@ public:
 		uint32_t offsetByIndex2,
 		uint32_t whichChannel,
 		bool writeFence,
-		access_t* accessProperties,
-		uint32_t numWriteBackChannels)
+		AccessProperties accessProperties)
 	{
 		m_data[15] |= (3 << 4);
 		m_data[3] = ((uint32_t)useInputSpace << 31) | storeOffsetDRAM;
@@ -115,8 +147,8 @@ public:
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
 		m_data[5] = (((uint32_t)writeFence << 4) | (whichChannel & 0xFFFF));
-		for (uint32_t i = 0; i < numWriteBackChannels; i++) {
-			m_data[6+i] = (accessProperties[i].m_lengthInCL << 16) | accessProperties[i].m_offsetInCL;
+		for (uint32_t i = 0; i < accessProperties.GetNumChannels(); i++) {
+			m_data[6+i] = (accessProperties.Get(i).m_lengthInCL << 16) | accessProperties.Get(i).m_offsetInCL;
 		}
 	}
 
