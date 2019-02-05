@@ -608,6 +608,7 @@ module glm_top
 
                 MACHINE_STATE_DONE:
                 begin
+                    program_counter <= 0;
                     machine_state <= MACHINE_STATE_IDLE;
                 end
             endcase

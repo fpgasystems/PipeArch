@@ -1,3 +1,8 @@
 C:../../../../common-rtl/common_sources_sim.txt
 
+pipearch_cci.json
+
+../../../../common-rtl/pipearch_load.sv
+../../../../common-rtl/pipearch_writeback.sv
+../../../../common-rtl/top.sv
 pipearch_top.sv

@@ -560,6 +560,7 @@ module pipearch_top
 
                 MACHINE_STATE_DONE:
                 begin
+                    program_counter <= 0;
                     machine_state <= MACHINE_STATE_IDLE;
                 end
             endcase
@@ -589,8 +590,7 @@ module pipearch_top
         .reset,
         .op_start(op_start[0]),
         .op_done(op_done[0]),
-        .regs0(regs[3]),
-        .regs1(regs[4]),
+        .regs,
         .in_addr,
         .c0TxAlmFull(execute_load_c0TxAlmFull),
         .cp2af_sRx_c0(execute_load_cp2af_sRx_c0),
@@ -609,8 +609,7 @@ module pipearch_top
         .reset,
         .op_start(op_start[1]),
         .op_done(op_done[1]),
-        .regs0(regs[3]),
-        .regs1(regs[4]),
+        .regs,
         .in_addr,
         .c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
         .cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
@@ -637,8 +636,7 @@ module pipearch_top
         .reset,
         .op_start(op_start[2]),
         .op_done(op_done[2]),
-        .regs0(regs[3]),
-        .regs1(regs[4]),
+        .regs,
         .in_addr,
         .out_addr,
         .outfrom_read(to_writeback.from_commonread),

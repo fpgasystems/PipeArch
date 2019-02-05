@@ -55,10 +55,10 @@ public:
 		delete m_fpga;
 	}
 
-	uint32_t ExampleApp(uint32_t numLines, uint32_t numIterations) {
+	uint32_t ReadWrite(uint32_t numLines, uint32_t numIterations) {
 
-		if (numLines > 32768) {
-			cout << "max allowed numLines is 32768" << endl;
+		if (numLines > 2048) {
+			cout << "max allowed numLines is 2048" << endl;
 			exit(1);
 		}
 
@@ -86,18 +86,22 @@ public:
 		prefetchInst.ResetIndex(1);
 		prefetchInst.ResetIndex(2);
 
-		access_t accessRead[1];
+		access_t accessRead[2];
 		accessRead[0].m_offsetInCL = 0;
 		accessRead[0].m_lengthInCL = numLines;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = 0;
 		Instruction loadInst;
-		loadInst.Load(0, numLines, 0, 0, 0, accessRead, 1);
+		loadInst.Load(0, numLines, 0, 0, 0, accessRead, 2);
 		loadInst.MakeNonBlocking();
 
-		access_t accessWrite[1];
+		access_t accessWrite[2];
 		accessWrite[0].m_offsetInCL = 0;
 		accessWrite[0].m_lengthInCL = numLines;
+		accessWrite[1].m_offsetInCL = 0;
+		accessWrite[1].m_lengthInCL = 0;
 		Instruction writebackInst;
-		writebackInst.WriteBack(1, numLines, 0, 0, 0, 0, accessWrite, 1);
+		writebackInst.WriteBack(1, numLines, 0, 0, 0, 0, accessWrite, 2);
 		writebackInst.IncrementIndex(2);
 
 		Instruction exitInst;
@@ -150,14 +154,100 @@ public:
 			cout << "PASS!" << endl;
 		}
 
-		// Reads CSRs to get some statistics
-		cout	<< "# List length: " << m_csrs->readCSR(0) << endl
-				<< "# Linked list data entries read: " << m_csrs->readCSR(1) << endl;
+		// MPF VTP (virtual to physical) statistics
+		mpf_handle::ptr_t mpf = m_fpga->mpf;
+		if (mpfVtpIsAvailable(*mpf))
+		{
+			mpf_vtp_stats vtp_stats;
+			mpfVtpGetStats(*mpf, &vtp_stats);
 
-		cout	<< "#" << endl
-				<< "# AFU frequency: " << m_csrs->getAFUMHz() << " MHz"
-				<< (m_fpga->hwIsSimulated() ? " [simulated]" : "")
-				<< endl;
+			cout << "#" << endl;
+			if (vtp_stats.numFailedTranslations)
+			{
+				cout << "# VTP failed translating VA: 0x" << hex << uint64_t(vtp_stats.ptWalkLastVAddr) << dec << endl;
+			}
+			cout	<< "# VTP PT walk cycles: " << vtp_stats.numPTWalkBusyCycles << endl
+					<< "# VTP L2 4KB hit / miss: " << vtp_stats.numTLBHits4KB << " / "
+					<< vtp_stats.numTLBMisses4KB << endl
+					<< "# VTP L2 2MB hit / miss: " << vtp_stats.numTLBHits2MB << " / "
+					<< vtp_stats.numTLBMisses2MB << endl;
+		}
+	}
+
+	uint32_t Read(uint32_t numLines, uint32_t numIterations) {
+
+		if (numLines > 2048) {
+			cout << "max allowed numLines is 2048" << endl;
+			exit(1);
+		}
+
+		auto inputHandle = m_fpga->allocBuffer(numLines*numIterations*64);
+		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());
+		assert(NULL != input);
+
+		for (uint32_t i = 0; i < numLines*numIterations*16; i++) {
+			input[i] = i%(numLines*16);
+		}
+
+		auto outputHandle = m_fpga->allocBuffer(64);
+		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
+		assert(NULL != output);
+
+		output[0] = 0;
+
+		std::vector<Instruction> instructions;
+
+		Instruction prefetchInst;
+		prefetchInst.Prefetch(0, numLines*numIterations, 0, 0, 0);
+		prefetchInst.ResetIndex(0);
+		prefetchInst.ResetIndex(1);
+		prefetchInst.ResetIndex(2);
+
+		access_t accessRead[2];
+		accessRead[0].m_offsetInCL = 0;
+		accessRead[0].m_lengthInCL = 0;
+		accessRead[1].m_offsetInCL = 0;
+		accessRead[1].m_lengthInCL = numLines;
+		Instruction loadInst;
+		loadInst.Load(0, numLines, 0, 0, 0, accessRead, 2);
+
+		Instruction exitInst;
+		exitInst.Jump(2, numIterations-1, 1, 0xFFFFFFFF);
+		exitInst.IncrementIndex(2);
+
+		instructions.push_back(prefetchInst);
+		instructions.push_back(loadInst);
+		instructions.push_back(exitInst);
+
+		// Copy program to FPGA memory
+		auto programMemoryHandle = m_fpga->allocBuffer(instructions.size()*64);
+		auto programMemory = reinterpret_cast<volatile uint32_t*>(programMemoryHandle->c_type());
+		uint32_t k = 0;
+		for (Instruction i: instructions) {
+			i.Copy(programMemory + k*Instruction::NUM_WORDS);
+			k++;
+		}
+
+		// Spin, waiting for the value in memory to change to something non-zero.
+		struct timespec pause;
+		// Longer when simulating
+		pause.tv_sec = (m_fpga->hwIsSimulated() ? 1 : 0);
+		pause.tv_nsec = 100;
+
+		double start = get_time();
+
+		m_csrs->writeCSR(0, intptr_t(input));
+		m_csrs->writeCSR(1, intptr_t(output));
+		m_csrs->writeCSR(2, intptr_t(programMemory));
+		m_csrs->writeCSR(3, (uint64_t)instructions.size());
+
+		output[0] = 0;
+		while (0 == output[0]) {
+			nanosleep(&pause, NULL);
+		};
+
+		double end = get_time();
+		cout << "Time: " << end-start << endl;
 
 		// MPF VTP (virtual to physical) statistics
 		mpf_handle::ptr_t mpf = m_fpga->mpf;
@@ -178,4 +268,5 @@ public:
 					<< vtp_stats.numTLBMisses2MB << endl;
 		}
 	}
+
 };

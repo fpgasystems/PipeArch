@@ -17,5 +17,7 @@ int main(int argc, char* argv[]) {
 
 	iFPGA myfpga(AFU_ACCEL_UUID);
 
-	myfpga.ExampleApp(numLines, numIterations);
+	myfpga.ReadWrite(numLines, numIterations);
+
+	myfpga.Read(numLines, numIterations);
 }

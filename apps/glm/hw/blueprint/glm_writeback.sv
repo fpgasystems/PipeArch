@@ -48,7 +48,22 @@ module glm_writeback
         .outfrom_read(to_writeback_from_MEM_labels.commonread_source)
     );
 
-    
+    always_comb
+    begin
+        if (select_channel == 0)
+        begin
+            to_writeback.rvalid = to_writeback_from_MEM_model.rvalid;
+            to_writeback.rdata = to_writeback_from_MEM_model.rdata;
+            to_writeback_from_MEM_model.almostfull = to_writeback.almostfull;
+        end
+        else if (select_channel == 1)
+        begin
+            to_writeback.rvalid = to_writeback_from_MEM_labels.rvalid;
+            to_writeback.rdata = to_writeback_from_MEM_labels.rdata;
+            to_writeback_from_MEM_labels.almostfull = to_writeback.almostfull;
+        end
+    end
+
 
     typedef enum logic [1:0]
     {
@@ -66,23 +81,6 @@ module glm_writeback
     // Counters
     logic [15:0] num_sent_lines;
     logic [15:0] num_ack_lines;
-
-
-    always_comb
-    begin
-        if (select_channel == 0)
-        begin
-            to_writeback.rvalid = to_writeback_from_MEM_model.rvalid;
-            to_writeback.rdata = to_writeback_from_MEM_model.rdata;
-            to_writeback_from_MEM_model.almostfull = to_writeback.almostfull;
-        end
-        else if (select_channel == 1)
-        begin
-            to_writeback.rvalid = to_writeback_from_MEM_labels.rvalid;
-            to_writeback.rdata = to_writeback_from_MEM_labels.rdata;
-            to_writeback_from_MEM_labels.almostfull = to_writeback.almostfull;
-        end
-    end
 
     assign to_writeback.almostfull = c1TxAlmFull;
 
