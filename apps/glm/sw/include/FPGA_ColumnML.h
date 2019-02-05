@@ -152,7 +152,7 @@ public:
 		cout << "CopyDataToFPGAMemory END" << endl;
 	}
 
-	void RunProgram(Instruction inst[], uint32_t numInstructions, volatile float* output) {
+	void RunProgram(Instruction inst[], uint32_t numInstructions, volatile float* input, volatile float* output) {
 
 		std::vector<Instruction> instructions;
 		for (uint32_t i = 0; i < numInstructions; i++) {
@@ -177,7 +177,7 @@ public:
 		double start = get_time();
 
 		uint32_t vc_select = 0;
-		m_csrs->writeCSR(0, intptr_t(m_memory));
+		m_csrs->writeCSR(0, intptr_t(input));
 		m_csrs->writeCSR(1, intptr_t(output));
 		m_csrs->writeCSR(2, intptr_t(programMemory));
 		m_csrs->writeCSR(3, (vc_select << 16) | (uint32_t)instructions.size());
@@ -190,15 +190,6 @@ public:
 		double end = get_time();
 
 		cout << "Time: " << end-start << endl;
-
-		// Reads CSRs to get some statistics
-		cout	<< "# List length: " << m_csrs->readCSR(0) << endl
-				<< "# Linked list data entries read: " << m_csrs->readCSR(1) << endl;
-
-		cout	<< "#" << endl
-				<< "# AFU frequency: " << m_csrs->getAFUMHz() << " MHz"
-				<< (m_fpga->hwIsSimulated() ? " [simulated]" : "")
-				<< endl;
 
 		// MPF VTP (virtual to physical) statistics
 		mpf_handle::ptr_t mpf = m_fpga->mpf;
@@ -377,7 +368,7 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, output);
+		RunProgram(inst, pc, m_memory, output);
 
 		// Verify
 		xHistory = (float*)(output + 16);
@@ -506,7 +497,7 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, output);
+		RunProgram(inst, pc, m_memory, output);
 
 		// Verify
 		xHistory = (float*)(output + 16);
@@ -640,7 +631,7 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, output);
+		RunProgram(inst, pc, m_memory, output);
 
 		// Verify
 		std::vector<float> avgModel(m_alignedNumFeatures);
@@ -662,4 +653,39 @@ public:
 		std::cout << "loss: " << loss << std::endl;
 	}
 
+
+	void ReadBandwidth(uint32_t numIterations) {
+
+		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
+
+		uint32_t numLines = 2048;
+
+		AccessProperties accessSamples(4);
+		accessSamples.Set(2, 0, numLines);
+
+		uint32_t pc = 0;
+
+		inst[pc].Prefetch(0, numIterations*numLines, 0, 0, 0);
+		inst[pc].MakeNonBlocking();
+		pc++;
+
+		inst[pc].Load(0, numLines, 0, 0, 0, accessSamples);
+		uint32_t pcLoad = pc;
+		pc++;
+
+		inst[pc].AddJump(2, numIterations-1, pcLoad, 0xFFFFFFFF);
+		inst[pc].IncrementIndex(2);
+		pc++;
+
+
+		auto inputHandle = m_fpga->allocBuffer(numIterations*numLines*64);
+		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());
+		assert(NULL != input);
+
+		auto outputHandle = m_fpga->allocBuffer(64);
+		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
+		assert(NULL != output);
+
+		RunProgram(inst, pc, input, output);
+	}
 };
