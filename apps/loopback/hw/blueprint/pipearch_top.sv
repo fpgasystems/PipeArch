@@ -24,11 +24,13 @@ module pipearch_top
 // *************************************************************************
 //   FILL: NUM_LOAD_CHANNELS
 // *************************************************************************
+parameter NUM_LOAD_CHANNELS = 2;
 //?LOAD
 
 // *************************************************************************
 //   FILL: NUM_WRITEBACK_CHANNELS
 // *************************************************************************
+parameter NUM_WRITEBACK_CHANNELS = 2;
 //?WRITEBACK
 
 
@@ -584,6 +586,22 @@ module pipearch_top
 // *************************************************************************
 //   FILL: Local Memories
 // *************************************************************************
+fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(9)) fifo_interface();
+fifo
+#(.WIDTH(512), .LOG2_DEPTH(9))
+fifo_inst (
+.clk, .reset,
+.access(fifo_interface.fifo_source)
+);
+
+fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(12)) mem_interface();
+bram
+#(.WIDTH(512), .LOG2_DEPTH(12))
+mem_inst (
+.clk,
+.access(mem_interface.bram_source)
+);
+
 //?LOCALMEM
 
     // =========================================================================
@@ -633,6 +651,35 @@ module pipearch_top
 // *************************************************************************
 //   FILL: Load Channels
 // *************************************************************************
+internal_interface #(.WIDTH(512)) from_load_to_fifo();
+write_fifo
+write_fifo_inst (
+.clk, .reset,
+.op_start(op_start[1]),
+.configreg(load_regs[5]),
+.into_write(from_load_to_fifo.commonwrite_source),
+.fifo_access(fifo_interface.fifo_write)
+);
+
+internal_interface #(.WIDTH(512)) from_load_to_mem();
+write_bram
+write_mem_inst (
+.clk, .reset,
+.op_start(op_start[1]),
+.configreg(load_regs[6]),
+.into_write(from_load_to_mem.commonwrite_source),
+.memory_access(mem_interface.bram_write)
+);
+
+always_comb
+begin
+	from_load_to_fifo.we = from_load.we;
+	from_load_to_fifo.wdata = from_load.wdata;
+	from_load_to_mem.we = from_load.we;
+	from_load_to_mem.wdata = from_load.wdata;
+end
+assign from_load.almostfull = from_load_to_fifo.almostfull | from_load_to_mem.almostfull;
+
 //?LOADCH
 
 
@@ -640,6 +687,40 @@ module pipearch_top
 // *************************************************************************
 //   FILL: Store Channels
 // *************************************************************************
+internal_interface #(.WIDTH(512)) to_writeback_from_fifo();
+read_fifo
+read_fifo_inst (
+.clk, .reset,
+.op_start(op_start[2]),
+.configreg(writeback_regs[6]),
+.fifo_access(fifo_interface.fifo_read),
+.outfrom_read(to_writeback_from_fifo.commonread_source)
+);
+
+internal_interface #(.WIDTH(512)) to_writeback_from_mem();
+read_bram
+read_mem_inst (
+.clk, .reset,
+.op_start(op_start[2]),
+.configreg(writeback_regs[7]),
+.memory_access(mem_interface.bram_read),
+.outfrom_read(to_writeback_from_mem.commonread_source)
+);
+
+always_comb
+begin
+	if (writeback_regs[5][3:0] == 0) begin
+		to_writeback.rvalid = to_writeback_from_fifo.rvalid;
+		to_writeback.rdata = to_writeback_from_fifo.rdata;
+		to_writeback_from_fifo.almostfull = to_writeback.almostfull;
+	end
+	else if (writeback_regs[5][3:0] == 1) begin
+		to_writeback.rvalid = to_writeback_from_mem.rvalid;
+		to_writeback.rdata = to_writeback_from_mem.rdata;
+		to_writeback_from_mem.almostfull = to_writeback.almostfull;
+	end
+end
+
 //?STORECH
  
     pipearch_writeback

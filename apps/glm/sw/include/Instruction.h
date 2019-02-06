@@ -20,10 +20,6 @@ public:
 		}
 	}
 
-	// ~AccessProperties() {
-	// 	delete[] m_properties;
-	// }
-
 	void Set(uint32_t channel, uint32_t offsetInCL, uint32_t lengthInCL) {
 		m_properties[channel].m_offsetInCL = offsetInCL;
 		m_properties[channel].m_lengthInCL = lengthInCL;

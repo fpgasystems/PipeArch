@@ -5,13 +5,13 @@ TEST = main
 
 # Build directory
 OBJDIR = obj
-CFLAGS += -I./$(OBJDIR)
+CFLAGS += -I./$(OBJDIR) -I./include
 CPPFLAGS += -I./$(OBJDIR) -march=native
 
 # Files and folders
 SRCS = $(TEST).cpp $(BASE_FILE_SRC) 
 OBJS = $(addprefix $(OBJDIR)/,$(patsubst %.cpp,%.o,$(SRCS)))
-DEPS = $(wildcard ./*.h)
+DEPS = $(wildcard ./include/*.h)
 
 $(info $$SRCS is [$(SRCS)])
 $(info $$OBJS is [$(OBJS)])

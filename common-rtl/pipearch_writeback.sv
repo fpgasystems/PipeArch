@@ -9,7 +9,7 @@ module pipearch_writeback
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [NUM_REGS],
+    input logic [31:0] regs [5],
     input t_ccip_clAddr in_addr,
     input t_ccip_clAddr out_addr,
 
