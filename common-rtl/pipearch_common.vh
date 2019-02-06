@@ -4,7 +4,7 @@
 parameter LOG2_MEMORY_SIZE = 12;
 parameter LOG2_PROGRAM_SIZE = 5;
 parameter PROGRAM_SIZE = 2**LOG2_PROGRAM_SIZE;
-parameter NUM_REGS = 12;
+parameter NUM_REGS = 3;
 parameter REGS_WIDTH = 32*NUM_REGS;
 parameter LOG2_PREFETCH_SIZE = 9;
 parameter PREFETCH_SIZE = 2**LOG2_PREFETCH_SIZE - 16;

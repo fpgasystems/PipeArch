@@ -514,7 +514,7 @@ parameter NUM_WRITEBACK_CHANNELS = 2;
                             prefetch_regs[0] <= regs[0];
                             prefetch_regs[1] <= regs[1];
                             prefetch_regs[2] <= regs[2];
-                            prefetch_regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
+                            prefetch_regs[3] <= instruction[3]; // + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
                             prefetch_regs[4] <= instruction[4]; // read length in cachelines
                             program_counter <= program_counter + 1;
                         end
@@ -525,7 +525,7 @@ parameter NUM_WRITEBACK_CHANNELS = 2;
                             load_regs[0] <= regs[0];
                             load_regs[1] <= regs[1];
                             load_regs[2] <= regs[2];
-                            load_regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
+                            load_regs[3] <= instruction[3]; // + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
                             load_regs[4] <= instruction[4]; // read length in cachelines
                             for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
                             begin
@@ -540,7 +540,7 @@ parameter NUM_WRITEBACK_CHANNELS = 2;
                             writeback_regs[0] <= regs[0];
                             writeback_regs[1] <= regs[1];
                             writeback_regs[2] <= regs[2];
-                            writeback_regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // store offset
+                            writeback_regs[3] <= instruction[3]; // + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // store offset
                             writeback_regs[4] <= instruction[4]; // store length in cachelines
                             writeback_regs[5] <= instruction[5]; // channel select
                             for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
