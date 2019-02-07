@@ -1,7 +1,7 @@
 #include "ColumnML.h"
 #include "iFPGA.h"
 
-enum MemoryFormat {FormatSGD, FormatSCD};
+enum MemoryFormat {RowStore, ColumnStore};
 
 class FPGA_ColumnML : public iFPGA, public ColumnML {
 
@@ -13,6 +13,8 @@ public:
 	volatile float* m_labels = nullptr;
 	volatile float* m_samples = nullptr;
 	volatile float* m_residual = nullptr;
+	volatile uint32_t* m_accessprops = nullptr;
+	volatile float** m_columns = nullptr;
 
 	uint32_t m_numSamplesInCL;
 	uint32_t m_numFeaturesInCL;
@@ -26,9 +28,11 @@ public:
 	uint32_t m_restInCL;
 
 	access_t m_modelChunk;
-	access_t m_labelChunk;
+	access_t m_labelsChunk;
 	access_t m_samplesChunk;
 	access_t m_residualChunk;
+	access_t m_accesspropsChunk;
+	access_t** m_columnsChunks;
 
 	MemoryFormat m_currentMemoryFormat;
 
@@ -59,64 +63,35 @@ public:
 
 		uint32_t countCL = 0;
 
-		if (format == FormatSGD) {
+		if (format == RowStore) {
 			// Model
 			m_modelChunk.m_offsetInCL = countCL;
 			countCL += m_numFeaturesInCL;
 			m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
 
 			// Labels
-			m_labelChunk.m_offsetInCL = countCL;
+			m_labelsChunk.m_offsetInCL = countCL;
 			countCL += m_numSamplesInCL;
-			m_labelChunk.m_lengthInCL = countCL - m_labelChunk.m_offsetInCL;
+			m_labelsChunk.m_lengthInCL = countCL - m_labelsChunk.m_offsetInCL;
 
 			// Samples
 			m_samplesChunk.m_offsetInCL = countCL;
 			countCL += m_cstore->m_numSamples*m_numFeaturesInCL;
 			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
 
-			// No residual used
-			m_residualChunk.m_offsetInCL = 0;
-			m_residualChunk.m_lengthInCL = 0;
-		}
-		else if (format == FormatSCD) {
-			// Residual
-			m_residualChunk.m_offsetInCL = countCL;
-			countCL += m_numSamplesInCL;
-			m_residualChunk.m_lengthInCL = countCL - m_residualChunk.m_offsetInCL;
+			if (m_handle != NULL) {
+				m_handle->release();
+				m_handle = NULL;
+			}
+			m_handle = m_fpga->allocBuffer(countCL*64);
+			m_memory = reinterpret_cast<volatile float*>(m_handle->c_type());
+			assert(NULL != m_memory);
+			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
 
-			// Labels
-			m_labelChunk.m_offsetInCL = countCL;
-			countCL += m_numSamplesInCL;
-			m_labelChunk.m_lengthInCL = countCL - m_labelChunk.m_offsetInCL;
+			m_model = m_memory + m_modelChunk.m_offsetInCL*16;
+			m_labels = m_memory + m_labelsChunk.m_offsetInCL*16;
+			m_samples = m_memory + m_samplesChunk.m_offsetInCL*16;
 
-			// Samples
-			m_samplesChunk.m_offsetInCL = countCL;
-			countCL += m_cstore->m_numFeatures*m_numSamplesInCL;
-			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
-
-			// Model
-			m_modelChunk.m_offsetInCL = countCL;
-			countCL += m_numPartitions*m_numFeaturesInCL;
-			m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
-		}
-
-		if (m_handle != NULL) {
-			m_handle->release();
-			m_handle = NULL;
-		}
-		m_handle = m_fpga->allocBuffer(countCL*64);
-		m_memory = reinterpret_cast<volatile float*>(m_handle->c_type());
-		assert(NULL != m_memory);
-
-		memset((void*)m_memory, 0, 16*countCL*sizeof(float));
-
-		m_model = m_memory + m_modelChunk.m_offsetInCL*16;
-		m_residual = m_memory + m_residualChunk.m_offsetInCL*16;
-		m_labels = m_memory + m_labelChunk.m_offsetInCL*16;
-		m_samples = m_memory + m_samplesChunk.m_offsetInCL*16;
-
-		if (format == FormatSGD) {
 			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 				m_model[j] = 0;
 			}
@@ -127,19 +102,88 @@ public:
 				}
 			}
 		}
-		else if (format == FormatSCD) {
+		else if (format == ColumnStore) {
+			// Residual
+			m_residualChunk.m_offsetInCL = countCL;
+			countCL += m_numSamplesInCL;
+			m_residualChunk.m_lengthInCL = countCL - m_residualChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+			cout << "m_residualChunk.m_offsetInCL: " << m_residualChunk.m_offsetInCL << endl;
+			cout << "m_residualChunk.m_lengthInCL: " << m_residualChunk.m_lengthInCL << endl;
+#endif
+			// Labels
+			m_labelsChunk.m_offsetInCL = countCL;
+			countCL += m_numSamplesInCL;
+			m_labelsChunk.m_lengthInCL = countCL - m_labelsChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+			cout << "m_labelsChunk.m_offsetInCL: " << m_labelsChunk.m_offsetInCL << endl;
+			cout << "m_labelsChunk.m_lengthInCL: " << m_labelsChunk.m_lengthInCL << endl;
+#endif
+			// Model
+			m_modelChunk.m_offsetInCL = countCL;
+			countCL += m_numPartitions*m_numFeaturesInCL;
+			m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+			cout << "m_modelChunk.m_offsetInCL: " << m_modelChunk.m_offsetInCL << endl;
+			cout << "m_modelChunk.m_lengthInCL: " << m_modelChunk.m_lengthInCL << endl;
+#endif
+			// Offsets
+			m_accesspropsChunk.m_offsetInCL = countCL;
+			countCL += m_numPartitions*m_numFeaturesInCL*2; // *2, because offset and length
+			m_accesspropsChunk.m_lengthInCL = countCL - m_accesspropsChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+			cout << "m_accesspropsChunk.m_offsetInCL: " << m_accesspropsChunk.m_offsetInCL << endl;
+			cout << "m_accesspropsChunk.m_lengthInCL: " << m_accesspropsChunk.m_lengthInCL << endl;
+#endif
+			// Columns
+			m_columnsChunks = new access_t*[m_cstore->m_numFeatures];
+			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+				m_columnsChunks[j] = new access_t[m_numPartitions];
+				for (uint32_t p = 0; p < m_numPartitions; p++) {
+					m_columnsChunks[j][p].m_offsetInCL = countCL;
+					countCL += m_partitionSizeInCL;
+					m_columnsChunks[j][p].m_lengthInCL = countCL - m_columnsChunks[j][p].m_offsetInCL;
+#ifdef DEBUG_COPY
+					cout << "m_columnsChunks[" << j << "," << p << "].m_offsetInCL: " << m_columnsChunks[j][p].m_offsetInCL << endl;
+					cout << "m_columnsChunks[" << j << "," << p << "].m_lengthInCL: " << m_columnsChunks[j][p].m_lengthInCL << endl;
+#endif
+				}
+			}
+
+			if (m_handle != NULL) {
+				m_handle->release();
+				m_handle = NULL;
+			}
+			m_handle = m_fpga->allocBuffer(countCL*64);
+			m_memory = reinterpret_cast<volatile float*>(m_handle->c_type());
+			assert(NULL != m_memory);
+			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
+
+			m_residual = m_memory + m_residualChunk.m_offsetInCL*16;
+			m_labels = m_memory + m_labelsChunk.m_offsetInCL*16;
+			m_model = m_memory + m_modelChunk.m_offsetInCL*16;
+			m_accessprops = (uint32_t*)(m_memory + m_accesspropsChunk.m_offsetInCL*16);
+			m_columns = new volatile float*[m_cstore->m_numFeatures];
+			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+				m_columns[j] = m_memory + m_columnsChunks[j][0].m_offsetInCL*16;
+			}
+
 			for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
 				m_residual[i] = 0;
 				m_labels[i] = m_cstore->m_labels[i];
 			}
-			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
-					m_samples[j*m_alignedNumSamples + i] = m_cstore->m_samples[j][i];
-				}
-			}
 			for (uint32_t p = 0; p < m_numPartitions; p++) {
 				for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
 					m_model[p*m_alignedNumFeatures + j] = 0;
+				}
+			}
+			for (uint32_t p = 0; p < m_numPartitions; p++) {
+				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+					m_accessprops[p*m_alignedNumFeatures*2 + 2*j] = m_columnsChunks[j][p].m_offsetInCL;
+					m_accessprops[p*m_alignedNumFeatures*2 + 2*j+1] = m_columnsChunks[j][p].m_lengthInCL;
+					for (uint32_t i = 0; i < m_partitionSize; i++) {
+						m_columns[j][p*m_alignedPartitionSize + i] = m_cstore->m_samples[j][p*m_alignedPartitionSize + i];
+					}
 				}
 			}
 		}
@@ -229,13 +273,13 @@ public:
 		uint32_t modelOffsetInBRAM = 0;
 		uint32_t labelOffsetInBRAM = 0;
 
-		AccessProperties accessModel(4);
+		AccessProperties accessModel(5);
 		accessModel.Set(2, modelOffsetInBRAM, m_modelChunk.m_lengthInCL);
 
-		AccessProperties accessLabels(4);
+		AccessProperties accessLabels(5);
 		accessLabels.Set(3, labelOffsetInBRAM, m_partitionSizeInCL);
 
-		AccessProperties accessSamples(4);
+		AccessProperties accessSamples(5);
 		accessSamples.Set(0, 0, m_numFeaturesInCL);
 		accessSamples.Set(1, 0, m_numFeaturesInCL);
 
@@ -258,7 +302,7 @@ public:
 
 		uint32_t beginEpoch = pc;
 		// Load labels in partition
-		inst[pc].Load(m_labelChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
+		inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
 		pc++;
 
 		inst[pc].Prefetch(m_samplesChunk.m_offsetInCL, m_partitionSize*m_numFeaturesInCL, 0, m_partitionSize*m_numFeaturesInCL, 0);
@@ -304,7 +348,7 @@ public:
 
 		if ( m_rest > 1 ) {
 			accessLabels.Set(3, labelOffsetInBRAM, m_restInCL);
-			inst[pc].Load( m_labelChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, accessLabels);
+			inst[pc].Load( m_labelsChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, accessLabels);
 			pc++;
 
 			inst[pc].Prefetch(m_samplesChunk.m_offsetInCL, m_rest*m_numFeaturesInCL, 0, m_partitionSize*m_numFeaturesInCL, 0);
@@ -396,13 +440,13 @@ public:
 		uint32_t modelOffsetInBRAM = 0;
 		uint32_t labelOffsetInBRAM = 0;
 
-		AccessProperties accessModel(4);
+		AccessProperties accessModel(5);
 		accessModel.Set(2, modelOffsetInBRAM, m_modelChunk.m_lengthInCL);
 
-		AccessProperties accessLabels(4);
+		AccessProperties accessLabels(5);
 		accessLabels.Set(3, labelOffsetInBRAM, m_partitionSizeInCL);
 
-		AccessProperties accessSamples(4);
+		AccessProperties accessSamples(5);
 		accessSamples.Set(0, 0, m_numFeaturesInCL);
 		accessSamples.Set(1, 0, m_numFeaturesInCL);
 
@@ -424,7 +468,7 @@ public:
 		pc++;
 
 		// Load labels in partition
-		inst[pc].Load(m_labelChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
+		inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
 		uint32_t pcLabels = pc;
 		pc++;
 
@@ -453,7 +497,7 @@ public:
 
 		if ( m_rest > 0 ) {
 			accessLabels.Set(3, labelOffsetInBRAM, m_restInCL);
-			inst[pc].Load( m_labelChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, accessLabels);
+			inst[pc].Load( m_labelsChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, accessLabels);
 			pc++;
 
 			// Start---Innermost loop
@@ -528,20 +572,23 @@ public:
 		uint32_t residualOffsetInBRAM = 0;
 		uint32_t labelOffsetInBRAM = 0;
 		uint32_t modelOffsetInBRAM = labelOffsetInBRAM + m_partitionSizeInCL;
+		uint32_t accesspropsOffsetInBRAM = 0;
 
-
-		AccessProperties accessResidual(4);
+		AccessProperties accessResidual(5);
 		accessResidual.Set(2, residualOffsetInBRAM, m_partitionSizeInCL);
 
-		AccessProperties accessLabels(4);
+		AccessProperties accessLabels(5);
 		accessLabels.Set(3, labelOffsetInBRAM, m_partitionSizeInCL);
 
-		AccessProperties accessModel(4);
+		AccessProperties accessModel(5);
 		accessModel.Set(3, modelOffsetInBRAM, m_numFeaturesInCL);
 
-		AccessProperties accessSamples(4);
+		AccessProperties accessSamples(5);
 		accessSamples.Set(0, 0, m_partitionSizeInCL);
 		accessSamples.Set(1, 0, m_partitionSizeInCL);
+
+		AccessProperties accessAccessProps(5);
+		accessAccessProps.Set(4, accesspropsOffsetInBRAM, m_numFeaturesInCL*2);
 
 		AccessProperties writebackResidual(2);
 		writebackResidual.Set(0, residualOffsetInBRAM, m_partitionSizeInCL);
@@ -562,15 +609,19 @@ public:
 		pc++;
 
 		// Load labels in partition
-		inst[pc].Load(m_labelChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
+		inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
 		pc++;
 
 		// Load model
 		inst[pc].Load(m_modelChunk.m_offsetInCL, m_numFeaturesInCL, 0, m_numFeaturesInCL, 0, accessModel);
 		pc++;
 
+		// Load accessprops
+		inst[pc].Load(m_accesspropsChunk.m_offsetInCL, m_numFeaturesInCL*2, 0, m_numFeaturesInCL*2, 0, accessAccessProps);
+		pc++;
+
 		// Load samples
-		inst[pc].Load(m_samplesChunk.m_offsetInCL, m_partitionSizeInCL, m_numSamplesInCL, m_partitionSizeInCL, 0, accessSamples);
+		inst[pc].LocalLoad(0, 1, 0, 0, accessSamples);
 		inst[pc].MakeNonBlocking();
 		pc++;
 
@@ -588,7 +639,7 @@ public:
 		inst[pc].MakeNonBlocking();
 		pc++;
 
-		inst[pc].Load(m_samplesChunk.m_offsetInCL, m_partitionSizeInCL, m_numSamplesInCL, m_partitionSizeInCL, 0, accessSamples);
+		inst[pc].LocalLoad(0, 1, 0, 0, accessSamples);
 		inst[pc].MakeNonBlocking();
 		pc++;
 
@@ -653,7 +704,6 @@ public:
 		std::cout << "loss: " << loss << std::endl;
 	}
 
-
 	void ReadBandwidth(uint32_t numIterations) {
 
 		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
@@ -676,7 +726,6 @@ public:
 		inst[pc].AddJump(2, numIterations-1, pcLoad, 0xFFFFFFFF);
 		inst[pc].IncrementIndex(2);
 		pc++;
-
 
 		auto inputHandle = m_fpga->allocBuffer(numIterations*numLines*64);
 		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());

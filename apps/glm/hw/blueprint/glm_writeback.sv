@@ -1,5 +1,6 @@
 `include "cci_mpf_if.vh"
 `include "pipearch_common.vh"
+`include "glm_common.vh"
 
 module glm_writeback
 (
@@ -9,7 +10,7 @@ module glm_writeback
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [NUM_REGS],
+    input logic [31:0] regs [6+NUM_WRITEBACK_CHANNELS],
     input t_ccip_clAddr in_addr,
     input t_ccip_clAddr out_addr,
 
@@ -21,6 +22,31 @@ module glm_writeback
     input  t_if_ccip_c1_Rx cp2af_sRx_c1,
     output t_if_ccip_c1_Tx af2cp_sTx_c1
 );
+
+    // *************************************************************************
+    //
+    //   Internal State
+    //
+    // *************************************************************************
+    typedef enum logic [1:0]
+    {
+        STATE_IDLE,
+        STATE_PREPROCESS,
+        STATE_WRITE,
+        STATE_DONE
+    } t_writestate;
+    t_writestate send_state;
+
+    // *************************************************************************
+    //
+    //   Instruction Information
+    //
+    // *************************************************************************
+    logic[31:0] offset_by_index[3];
+    t_ccip_clAddr DRAM_store_offset;
+    logic [15:0] DRAM_store_length;
+    logic [3:0] select_channel;
+    logic write_fence;
 
     internal_interface #(.WIDTH(512)) to_writeback();
     // *************************************************************************
@@ -64,25 +90,16 @@ module glm_writeback
         end
     end
 
-
-    typedef enum logic [1:0]
-    {
-        STATE_IDLE,
-        STATE_WRITE,
-        STATE_DONE
-    } t_writestate;
-    t_writestate send_state;
-
-    t_ccip_clAddr DRAM_store_offset;
-    logic [15:0] DRAM_store_length;
-    logic [3:0] select_channel;
-    logic write_fence;
-
-    // Counters
+    // *************************************************************************
+    //
+    //   Counter
+    //
+    // *************************************************************************
+    logic [1:0] offset_accumulate;
     logic [15:0] num_sent_lines;
     logic [15:0] num_ack_lines;
 
-    assign to_writeback.almostfull = c1TxAlmFull;
+    assign to_writeback.almostfull = c1TxAlmFull || (send_state == STATE_PREPROCESS);
 
     always_ff @(posedge clk)
     begin
@@ -95,9 +112,6 @@ module glm_writeback
         if (reset)
         begin
             send_state <= STATE_IDLE;
-            num_sent_lines <= 16'b0;
-            num_ack_lines <= 16'b0;
-            op_done <= 1'b0;
         end
         else
         begin
@@ -111,10 +125,16 @@ module glm_writeback
                 begin
                     if (op_start)
                     begin
+                        // *************************************************************************
+                        offset_by_index[0] <= regs[0];
+                        offset_by_index[1] <= regs[1];
+                        offset_by_index[2] <= regs[2];
                         DRAM_store_offset <= (regs[3][31] == 1'b0) ? out_addr + regs[3][30:0] : in_addr + regs[3][30:0];
                         DRAM_store_length <= regs[4];
                         select_channel <= regs[5][3:0];
                         write_fence <= regs[5][4];
+                        // *************************************************************************
+                        offset_accumulate <= 2'b0;
                         num_sent_lines <= 16'b0;
                         num_ack_lines <= 16'b0;
                         if (regs[4] == 0)
@@ -123,8 +143,18 @@ module glm_writeback
                         end
                         else
                         begin
-                            send_state <= STATE_WRITE;
+                            send_state <= STATE_PREPROCESS;
                         end
+                    end
+                end
+
+                STATE_PREPROCESS:
+                begin
+                    DRAM_store_offset <= DRAM_store_offset + offset_by_index[offset_accumulate];
+                    offset_accumulate <= offset_accumulate + 1;
+                    if (offset_accumulate == 2)
+                    begin
+                        send_state <= STATE_WRITE;
                     end
                 end
 

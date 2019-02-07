@@ -125,6 +125,26 @@ public:
 		}
 	}
 
+	void LocalLoad(
+		uint32_t loadOffsetAccessProps,
+		uint32_t offsetByIndex0,
+		uint32_t offsetByIndex1,
+		uint32_t offsetByIndex2,
+		AccessProperties accessProperties)
+	{
+		uint32_t enableMultiline = 1;
+		uint32_t useLocalAccessProps = 1;
+		m_data[15] |= (2 << 4);
+		m_data[3] = (useLocalAccessProps << 31) | loadOffsetAccessProps;
+		m_data[4] = (enableMultiline << 31);
+		m_data[10] = offsetByIndex0;
+		m_data[11] = offsetByIndex1;
+		m_data[12] = offsetByIndex2;
+		for (uint32_t i = 0; i < accessProperties.GetNumChannels(); i++) {
+			m_data[5+i] = (accessProperties.Get(i).m_lengthInCL << 16) | accessProperties.Get(i).m_offsetInCL;
+		}
+	}
+
 	void WriteBack(
 		bool useInputSpace,
 		uint32_t storeOffsetDRAM,

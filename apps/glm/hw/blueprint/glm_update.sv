@@ -8,14 +8,19 @@ module glm_update
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [NUM_REGS],
+    input logic [31:0] regs [5],
 
     fifobram_interface.fifo_read FIFO_samplesforward,
     fifobram_interface.fifo_read FIFO_gradient,
     fifobram_interface.bram_readwrite MEM_model,
     fifobram_interface.fifo_write FIFO_modelforward
 );
-
+    
+    // *************************************************************************
+    //
+    //   Internal State
+    //
+    // *************************************************************************
     typedef enum logic [1:0]
     {
         STATE_IDLE,
@@ -24,15 +29,29 @@ module glm_update
     } t_updatestate;
     t_updatestate update_state;
 
-
+    // *************************************************************************
+    //
+    //   Instruction Information
+    //
+    // *************************************************************************
     logic [15:0] MEM_model_offset;
     logic [15:0] MEM_model_length;
     logic write_to_model_forward;
 
+    // *************************************************************************
+    //
+    //   Counter
+    //
+    // *************************************************************************
     logic [15:0] num_lines_multiplied_requested;
     logic [15:0] num_lines_multiplied;
     logic [15:0] num_lines_subtracted;
 
+    // *************************************************************************
+    //
+    //   Computation
+    //
+    // *************************************************************************
     logic multiply_trigger;
     logic [31:0] multiply_scalar;
     logic [511:0] multiply_vector;
@@ -86,40 +105,32 @@ module glm_update
 
     always_ff @(posedge clk)
     begin
+        FIFO_gradient.re <= 1'b0;
+        FIFO_samplesforward.re <= 1'b0;
+        MEM_model.re <= 1'b0;
+        MEM_model.we <= 1'b0;
+        FIFO_modelforward.we <= 1'b0;
+        op_done <= 1'b0;
+
         if (reset)
         begin
             update_state <= STATE_IDLE;
-            num_lines_multiplied_requested <= 16'b0;
-            num_lines_multiplied <= 16'b0;
-            num_lines_subtracted <= 16'b0;
-
-            FIFO_gradient.re <= 1'b0;
-            FIFO_samplesforward.re <= 1'b0;
-            MEM_model.re <= 1'b0;
-            MEM_model.we <= 1'b0;
-            FIFO_modelforward.we <= 1'b0;
-            op_done <= 1'b0;
         end
         else
         begin
-            FIFO_gradient.re <= 1'b0;
-            FIFO_samplesforward.re <= 1'b0;
-            MEM_model.re <= 1'b0;
-            MEM_model.we <= 1'b0;
-            FIFO_modelforward.we <= 1'b0;
-            op_done <= 1'b0;
-
             case(update_state)
                 STATE_IDLE:
                 begin
-                    num_lines_multiplied_requested <= 16'b0;
-                    num_lines_multiplied <= 16'b0;
-                    num_lines_subtracted <= 16'b0;
                     if (op_start)
                     begin
+                        // *************************************************************************
                         MEM_model_offset <= regs[3][15:0];
                         MEM_model_length <= regs[3][31:16];
                         write_to_model_forward <= regs[4][0];
+                        // *************************************************************************
+                        num_lines_multiplied_requested <= 16'b0;
+                        num_lines_multiplied <= 16'b0;
+                        num_lines_subtracted <= 16'b0;
                         update_state <= STATE_GRADIENT_GET;
                     end
                 end

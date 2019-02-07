@@ -8,14 +8,18 @@ module glm_modify
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [NUM_REGS],
+    input logic [31:0] regs [7],
 
     fifobram_interface.bram_readwrite MEM_labels,
     fifobram_interface.fifo_read FIFO_dot,
 
     fifobram_interface.fifo_write FIFO_gradient
 );
-
+    // *************************************************************************
+    //
+    //   Internal State
+    //
+    // *************************************************************************
     typedef enum logic [2:0]
     {
         STATE_IDLE,
@@ -24,6 +28,25 @@ module glm_modify
     } t_modifystate;
     t_modifystate modify_state;
 
+    // *************************************************************************
+    //
+    //   Instruction Information
+    //
+    // *************************************************************************
+    logic [15:0] offset_by_index;
+    logic [3:0] position_by_index;
+    logic [15:0] MEM_labels_load_offset;
+    logic [1:0] model_type;
+    logic algorithm_type;
+    logic [31:0] step_size;
+    logic [31:0] lambda;
+    logic [511:0] lineFromLabelsMem;
+
+    // *************************************************************************
+    //
+    //   Computation
+    //
+    // *************************************************************************
     typedef struct packed {
         logic       trigger;
         logic[31:0] leftoperand;
@@ -31,17 +54,6 @@ module glm_modify
         logic[31:0] result;
         logic       done;
     } fp_compute_regs;
-
-    logic [15:0] offsetByIndex;
-    logic [3:0] positionByIndex;
-    logic [15:0] MEM_labels_load_offset;
-    // logic [15:0] MEM_labels_store_offset;
-    logic [1:0] model_type;
-    logic algorithm_type;
-    logic [31:0] step_size;
-    logic [31:0] lambda;
-    logic [31:0] scalarFromLabelsMem;
-    logic [511:0] lineFromLabelsMem;
 
     localparam SUBTRACT_LATENCY = 2;
     logic [SUBTRACT_LATENCY-1:0] sub_status = 0;
@@ -89,7 +101,6 @@ module glm_modify
 
     always_ff @(posedge clk)
     begin
-
         sub_regs.trigger <= 1'b0;
         mult_regs.trigger <= 1'b0;
         FIFO_dot.re <= 1'b0;
@@ -109,14 +120,15 @@ module glm_modify
                 begin
                     if (op_start)
                     begin
-                        offsetByIndex <= regs[0] >> 4;
-                        positionByIndex <= regs[0][3:0];
+                        // *************************************************************************
+                        offset_by_index <= regs[0] >> 4;
+                        position_by_index <= regs[0][3:0];
                         MEM_labels_load_offset <= regs[3][15:0];
-                        // MEM_labels_store_offset <= regs[3][31:16];
                         model_type <= regs[4][1:0];
                         algorithm_type <= regs[4][2];
                         step_size <= regs[5];
                         lambda <= regs[6];
+                        // *************************************************************************
                         modify_state <= (regs[4][2] == 1'b0) ? STATE_SGD_MAIN : STATE_SCD_MAIN;
                     end
                 end
@@ -127,14 +139,14 @@ module glm_modify
                     begin
                         FIFO_dot.re <= 1'b1;
                         MEM_labels.re <= 1'b1;
-                        MEM_labels.raddr <= MEM_labels_load_offset + offsetByIndex;
+                        MEM_labels.raddr <= MEM_labels_load_offset + offset_by_index;
                     end
 
                     if (FIFO_dot.rvalid && MEM_labels.rvalid)
                     begin
                         sub_regs.trigger <= 1'b1;
                         sub_regs.leftoperand <= FIFO_dot.rdata;
-                        sub_regs.rightoperand <= MEM_labels.rdata[positionByIndex*32+31 -: 32];
+                        sub_regs.rightoperand <= MEM_labels.rdata[position_by_index*32+31 -: 32];
                     end
 
                     if (sub_regs.done)
@@ -170,13 +182,13 @@ module glm_modify
                     if (mult_status[0])
                     begin
                         MEM_labels.re <= 1'b1;
-                        MEM_labels.raddr <= MEM_labels_load_offset + offsetByIndex;
+                        MEM_labels.raddr <= MEM_labels_load_offset + offset_by_index;
                     end
 
                     if (mult_regs.done)
                     begin
                         sub_regs.trigger <= 1'b1;
-                        sub_regs.leftoperand <= MEM_labels.rdata[positionByIndex*32+31 -: 32];
+                        sub_regs.leftoperand <= MEM_labels.rdata[position_by_index*32+31 -: 32];
                         sub_regs.rightoperand <= mult_regs.result;
                         lineFromLabelsMem <= MEM_labels.rdata;
                         FIFO_gradient.we <= 1'b1;
@@ -187,9 +199,9 @@ module glm_modify
                     begin
                         op_done <= 1'b1;
                         MEM_labels.we <= 1'b1;
-                        MEM_labels.waddr <= MEM_labels_load_offset + offsetByIndex;
+                        MEM_labels.waddr <= MEM_labels_load_offset + offset_by_index;
                         MEM_labels.wdata <= lineFromLabelsMem;
-                        MEM_labels.wdata[positionByIndex*32+31 -: 32] <= sub_regs.result;
+                        MEM_labels.wdata[position_by_index*32+31 -: 32] <= sub_regs.result;
                         modify_state <= STATE_IDLE;
                     end
                 end

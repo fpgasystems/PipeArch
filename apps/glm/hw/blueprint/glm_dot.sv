@@ -8,7 +8,7 @@ module glm_dot
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [NUM_REGS],
+    input logic [31:0] regs [5],
 
     fifobram_interface.fifo_read FIFO_input,
     fifobram_interface.bram_read MEM_labels,
@@ -16,6 +16,11 @@ module glm_dot
     fifobram_interface.fifo_read FIFO_modelforward,
     fifobram_interface.fifo_write FIFO_dot
 );
+    // *************************************************************************
+    //
+    //   Internal State
+    //
+    // *************************************************************************
     typedef enum logic [1:0]
     {
         STATE_IDLE,
@@ -24,15 +29,30 @@ module glm_dot
     } t_dotstate;
     t_dotstate dot_state;
 
+    // *************************************************************************
+    //
+    //   Instruction Information
+    //
+    // *************************************************************************
     logic read_from_modelforward;
     logic perform_label_subtraction;
     logic [15:0] num_lines_to_process;
     logic [15:0] MEM_model_load_offset;
     logic [15:0] MEM_labels_load_offset;
+
+    // *************************************************************************
+    //
+    //   Counter
+    //
+    // *************************************************************************
     logic [15:0] num_requested_lines;
     logic [15:0] num_processed_lines;
 
-
+    // *************************************************************************
+    //
+    //   Computation
+    //
+    // *************************************************************************
     logic subtract_trigger;
     logic [511:0] subtract_vector1;
     logic [511:0] subtract_vector2;
@@ -105,7 +125,6 @@ module glm_dot
     end
     assign FIFO_dot.we = dot_done;
     assign FIFO_dot.wdata = dot_result;
-    // assign op_done = dot_done;
 
     always_ff @(posedge clk)
     begin
@@ -119,12 +138,6 @@ module glm_dot
         if (reset)
         begin
             dot_state <= STATE_IDLE;
-            read_from_modelforward <= 1'b0;
-            perform_label_subtraction <= 1'b0;
-            num_lines_to_process <= 16'b0;
-            MEM_model_load_offset <= 16'b0; 
-            num_requested_lines <= 16'b0;
-            num_processed_lines <= 16'b0;
         end
         else
         begin
@@ -134,15 +147,16 @@ module glm_dot
                 begin
                     if (op_start)
                     begin
-                        dot_state <= STATE_READ;
-
+                        // *************************************************************************
                         read_from_modelforward <= regs[3][16];
                         perform_label_subtraction <= regs[3][17];
                         num_lines_to_process <= regs[3][15:0];
                         MEM_model_load_offset <= regs[4][15:0];
                         MEM_labels_load_offset <= regs[4][31:16];
+                        // *************************************************************************
                         num_requested_lines <= 32'b0;
                         num_processed_lines <= 32'b0;
+                        dot_state <= STATE_READ;
                     end
                 end
 
@@ -197,18 +211,9 @@ module glm_dot
                         begin
                             dot_state <= STATE_IDLE;
                             op_done <= 1'b1;
-                            // dot_state <= STATE_DONE;
                         end
                     end
                 end
-
-                // STATE_DONE:
-                // begin
-                //     if (dot_done == 1'b1)
-                //     begin
-                //         dot_state <= STATE_IDLE;
-                //     end
-                // end
 
             endcase
         end

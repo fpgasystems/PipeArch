@@ -2,6 +2,7 @@
 `include "csr_mgr.vh"
 `include "afu_json_info.vh"
 `include "pipearch_common.vh"
+`include "glm_common.vh"
 
 module glm_top
 (
@@ -20,21 +21,6 @@ module glm_top
     input  logic c0NotEmpty,
     input  logic c1NotEmpty
 );
-
-    // *************************************************************************
-    //
-    //   NUM_LOAD_CHANNELS
-    //
-    // *************************************************************************
-    parameter NUM_LOAD_CHANNELS = 4;
-
-    // *************************************************************************
-    //
-    //   NUM_WRITEBACK_CHANNELS
-    //
-    // *************************************************************************
-    parameter NUM_WRITEBACK_CHANNELS = 2;
-
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PROGRAM_SIZE)) program_access();
     bram
@@ -434,6 +420,14 @@ module glm_top
     logic [5:0] op_start;
     logic [5:0] op_done;
 
+    logic [31:0] prefetch_regs [5];
+    logic [31:0] load_regs [5+NUM_LOAD_CHANNELS];
+    logic [31:0] writeback_regs [6+NUM_WRITEBACK_CHANNELS];
+
+    logic [31:0] dot_regs [5];
+    logic [31:0] modify_regs [7];
+    logic [31:0] update_regs [5];
+
     always_comb
     begin
         for (int i=0; i < 16; i=i+1)
@@ -482,30 +476,39 @@ module glm_top
                             4'h1: // prefetch
                             begin
                                 op_start[0] <= 1'b1;
-                                regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
-                                regs[4] <= instruction[4]; // read length in cachelines
+                                prefetch_regs[0] <= regs[0]*instruction[10];
+                                prefetch_regs[1] <= regs[1]*instruction[11];
+                                prefetch_regs[2] <= regs[2]*instruction[12];
+                                prefetch_regs[3] <= instruction[3]; // read offset
+                                prefetch_regs[4] <= instruction[4]; // read length in cachelines
                             end
 
                             4'h2: // load
                             begin
                                 op_start[1] <= 1'b1;
-                                regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // read offset
-                                regs[4] <= instruction[4]; // read length in cachelines
+                                load_regs[0] <= regs[0]*instruction[10];
+                                load_regs[1] <= regs[1]*instruction[11];
+                                load_regs[2] <= regs[2]*instruction[12];
+                                load_regs[3] <= instruction[3]; // read offset
+                                load_regs[4] <= instruction[4]; // read length in cachelines
                                 for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
                                 begin
-                                    regs[5+i] <= instruction[5+i]; 
+                                    load_regs[5+i] <= instruction[5+i]; 
                                 end
                             end
 
                             4'h3: // writeback
                             begin
                                 op_start[2] <= 1'b1;
-                                regs[3] <= instruction[3] + regs[2]*instruction[12] + regs[1]*instruction[11] + regs[0]*instruction[10]; // store offset
-                                regs[4] <= instruction[4]; // store length in cachelines
-                                regs[5] <= instruction[5]; // channel select
+                                writeback_regs[0] <= regs[0]*instruction[10];
+                                writeback_regs[1] <= regs[1]*instruction[11];
+                                writeback_regs[2] <= regs[2]*instruction[12];
+                                writeback_regs[3] <= instruction[3]; // store offset
+                                writeback_regs[4] <= instruction[4]; // store length in cachelines
+                                writeback_regs[5] <= instruction[5]; // channel select
                                 for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
                                 begin
-                                    regs[6+i] <= instruction[6+i]; 
+                                    writeback_regs[6+i] <= instruction[6+i]; 
                                 end
                             end
 
@@ -517,24 +520,33 @@ module glm_top
                             4'h4: // dot
                             begin
                                 op_start[3] <= 1'b1;
-                                regs[3] <= instruction[3];
-                                regs[4] <= instruction[4];
+                                dot_regs[0] <= regs[0];
+                                dot_regs[1] <= regs[1];
+                                dot_regs[2] <= regs[2];
+                                dot_regs[3] <= instruction[3];
+                                dot_regs[4] <= instruction[4];
                             end
 
                             4'h5: // modify
                             begin
                                 op_start[4] <= 1'b1;
-                                regs[3] <= instruction[3];
-                                regs[4] <= instruction[4];
-                                regs[5] <= instruction[5];
-                                regs[6] <= instruction[6];
+                                modify_regs[0] <= regs[0];
+                                modify_regs[1] <= regs[1];
+                                modify_regs[2] <= regs[2];
+                                modify_regs[3] <= instruction[3];
+                                modify_regs[4] <= instruction[4];
+                                modify_regs[5] <= instruction[5];
+                                modify_regs[6] <= instruction[6];
                             end
 
                             4'h6: // update
                             begin
                                 op_start[5] <= 1'b1;
-                                regs[3] <= instruction[3];
-                                regs[4] <= instruction[4];
+                                update_regs[0] <= regs[0];
+                                update_regs[1] <= regs[1];
+                                update_regs[2] <= regs[2];
+                                update_regs[3] <= instruction[3];
+                                update_regs[4] <= instruction[4];
                             end
                         endcase
 
@@ -547,44 +559,19 @@ module glm_top
                             4'h1:
                             begin
                                 program_counter <= (regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                                // if (regs[0] == instruction[13] && instruction[14][15:0] == 16'hFFFF)
-                                // begin
-                                //     machine_state <= MACHINE_STATE_DONE;
-                                // end
                             end
 
                             4'h2:
                             begin
                                 program_counter <= (regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                                // if (regs[1] == instruction[13] && instruction[14][15:0] == 16'hFFFF)
-                                // begin
-                                //     machine_state <= MACHINE_STATE_DONE;
-                                // end
                             end
 
                             4'h3:
                             begin
                                 program_counter <= (regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                                // if (regs[2] == instruction[13] && instruction[14][15:0] == 16'hFFFF)
-                                // begin
-                                //     machine_state <= MACHINE_STATE_DONE;
-                                // end
                             end
                         endcase
 
-                        // if (instruction[15][8])
-                        // begin
-                        //     program_access.re <= 1'b1;
-                        //     program_access.raddr <= program_counter + 1;
-                        //     regs[0] <= updateIndex(instruction[0], regs[0]);
-                        //     regs[1] <= updateIndex(instruction[1], regs[1]);
-                        //     regs[2] <= updateIndex(instruction[2], regs[2]);
-                        //     machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
-                        // end
-                        // else
-                        // begin
-                        //     machine_state <= MACHINE_STATE_EXECUTE;
-                        // end
                         machine_state <= MACHINE_STATE_EXECUTE;
                     end
                 end
@@ -630,13 +617,20 @@ module glm_top
         .access(MEM_model_interface.bram_source)
     );
 
-
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_labels_interface();
     bram
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
     MEM_labels (
         .clk,
         .access(MEM_labels_interface.bram_source)
+    );
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_interface();
+    bram
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
+    MEM_accessprops (
+        .clk,
+        .access(MEM_accessprops_interface.bram_source)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) FIFO_input_interface();
@@ -682,6 +676,7 @@ module glm_top
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_MEM_model_interface();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_MEM_labels_interface();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_MEM_accessprops_interface();
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) dot_MEM_model_interface();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) dot_MEM_labels_interface();
@@ -693,6 +688,8 @@ module glm_top
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_MEM_model_interface();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_MEM_labels_interface();
 
+    assign load_MEM_accessprops_interface.rvalid = MEM_accessprops_interface.rvalid;
+    assign load_MEM_accessprops_interface.rdata = MEM_accessprops_interface.rdata;
 
     assign dot_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
     assign dot_MEM_model_interface.rdata = MEM_model_interface.rdata;
@@ -748,6 +745,14 @@ module glm_top
             MEM_labels_interface.raddr <= writeback_MEM_labels_interface.raddr;
         end
 
+        // MEM_accessprops request arbitration
+        MEM_accessprops_interface.re <= 1'b0;
+        if (load_MEM_accessprops_interface.re)
+        begin
+            MEM_accessprops_interface.re <= 1'b1;
+            MEM_accessprops_interface.raddr <= load_MEM_accessprops_interface.raddr;
+        end
+
         // MEM_model write arbitration
         MEM_model_interface.we <= 1'b0;
         if (load_MEM_model_interface.we)
@@ -777,6 +782,15 @@ module glm_top
             MEM_labels_interface.waddr <= modify_MEM_labels_interface.waddr;
             MEM_labels_interface.wdata <= modify_MEM_labels_interface.wdata;
         end
+
+        // MEM_accessprops write arbitration
+        MEM_accessprops_interface.we <= 1'b0;
+        if (load_MEM_accessprops_interface.we)
+        begin
+            MEM_accessprops_interface.we <= 1'b1;
+            MEM_accessprops_interface.waddr <= load_MEM_accessprops_interface.waddr;
+            MEM_accessprops_interface.wdata <= load_MEM_accessprops_interface.wdata;
+        end
     end
 
     // =========================================================================
@@ -796,7 +810,7 @@ module glm_top
         .reset,
         .op_start(op_start[0]),
         .op_done(op_done[0]),
-        .regs,
+        .regs(prefetch_regs),
         .in_addr,
         .c0TxAlmFull(execute_load_c0TxAlmFull),
         .cp2af_sRx_c0(execute_load_cp2af_sRx_c0),
@@ -813,7 +827,7 @@ module glm_top
         .reset,
         .op_start(op_start[1]),
         .op_done(op_done[1]),
-        .regs,
+        .regs(load_regs),
         .in_addr,
         .c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
         .cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
@@ -821,7 +835,8 @@ module glm_top
         .FIFO_input(FIFO_input_interface.fifo_write),
         .FIFO_samplesforward(FIFO_samplesforward_interface.fifo_write),
         .MEM_model(load_MEM_model_interface.bram_write),
-        .MEM_labels(load_MEM_labels_interface.bram_write)
+        .MEM_labels(load_MEM_labels_interface.bram_write),
+        .MEM_accessprops(load_MEM_accessprops_interface.bram_readwrite)
     );
 
     
@@ -832,7 +847,7 @@ module glm_top
         .reset,
         .op_start(op_start[2]),
         .op_done(op_done[2]),
-        .regs,
+        .regs(writeback_regs),
         .in_addr,
         .out_addr,
         .MEM_model(writeback_MEM_model_interface.bram_read),
@@ -855,7 +870,7 @@ module glm_top
         .reset,
         .op_start(op_start[3]),
         .op_done(op_done[3]),
-        .regs,
+        .regs(dot_regs),
         .FIFO_input(FIFO_input_interface.fifo_read),
         .MEM_labels(dot_MEM_labels_interface.bram_read),
         .MEM_model(dot_MEM_model_interface.bram_read),
@@ -870,7 +885,7 @@ module glm_top
         .reset,
         .op_start(op_start[4]),
         .op_done(op_done[4]),
-        .regs,
+        .regs(modify_regs),
         .MEM_labels(modify_MEM_labels_interface.bram_readwrite),
         .FIFO_dot(FIFO_dot_interface.fifo_read),
         .FIFO_gradient(FIFO_gradient_interface.fifo_write)
@@ -883,7 +898,7 @@ module glm_top
         .reset,
         .op_start(op_start[5]),
         .op_done(op_done[5]),
-        .regs,
+        .regs(update_regs),
         .FIFO_samplesforward(FIFO_samplesforward_interface.fifo_read),
         .FIFO_gradient(FIFO_gradient_interface.fifo_read),
         .MEM_model(update_MEM_model_interface.bram_readwrite),

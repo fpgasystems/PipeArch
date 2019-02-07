@@ -1,5 +1,7 @@
 C:../../../../common-rtl/common_sources.txt
 
+pipearch_cci.json
+
 top.sv
 glm_top.sv
 glm_load.sv
