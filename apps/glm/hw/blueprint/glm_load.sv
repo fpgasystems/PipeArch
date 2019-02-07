@@ -72,14 +72,18 @@ module glm_load
     );
 
     internal_interface #(.WIDTH(512)) from_load_to_MEM_accessprops();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_MEM_accessprops_interface();
     write_bram
     write_MEM_accessprops_inst (
         .clk, .reset,
         .op_start(op_start),
         .configreg(regs[9]),
         .into_write(from_load_to_MEM_accessprops.commonwrite_source),
-        .memory_access(MEM_accessprops)
+        .memory_access(load_MEM_accessprops_interface.bram_write)
     );
+    assign MEM_accessprops.we = load_MEM_accessprops_interface.we;
+    assign MEM_accessprops.waddr = load_MEM_accessprops_interface.waddr;
+    assign MEM_accessprops.wdata = load_MEM_accessprops_interface.wdata;
 
     always_ff @(posedge clk)
     begin
