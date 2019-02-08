@@ -710,7 +710,7 @@ public:
 
 		uint32_t numLines = 2048;
 
-		AccessProperties accessSamples(4);
+		AccessProperties accessSamples(5);
 		accessSamples.Set(2, 0, numLines);
 
 		uint32_t pc = 0;
@@ -736,5 +736,59 @@ public:
 		assert(NULL != output);
 
 		RunProgram(inst, pc, input, output);
+	}
+
+	void Correctness() {
+
+		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
+
+		uint32_t numLines = 16;
+
+		AccessProperties accessRead(5);
+		accessRead.Set(2, 0, numLines);
+
+		AccessProperties accessWriteback(2);
+		accessWriteback.Set(0, 0, numLines);
+
+		uint32_t pc = 0;
+
+		inst[pc].Load(0, numLines, 0, 0, 0, accessRead);
+		uint32_t pcLoad = pc;
+		pc++;
+
+		inst[pc].WriteBack(0, 1, numLines, 0, 0, 0, 0, true, accessWriteback);
+		pc++;
+
+		inst[pc].AddJump(2, 0, pcLoad, 0xFFFFFFFF);
+		pc++;
+
+		auto inputHandle = m_fpga->allocBuffer(numLines*64);
+		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());
+		assert(NULL != input);
+
+		for (uint32_t i = 0; i < numLines*16; i++) {
+			input[i] = i+1;
+		}
+
+		auto outputHandle = m_fpga->allocBuffer((numLines+1)*64);
+		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
+		assert(NULL != output);
+
+		for (uint32_t i = 0; i < (numLines+1)*16; i++) {
+			output[i] = 0;
+		}
+
+		RunProgram(inst, pc, input, output);
+
+		bool pass = true;
+		for (uint32_t i = 0; i < numLines*16; i++) {
+			if (input[i] != output[16+i]) {
+				pass = false;
+				cout << "Missmatch at " << i << ". output[" << 16+i << "]: " << output[16+i] << endl;
+			}
+		}
+		if (pass) {
+			cout << "PASS!" << endl;
+		}
 	}
 };
