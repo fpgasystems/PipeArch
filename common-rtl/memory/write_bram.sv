@@ -27,6 +27,8 @@ module write_bram
 
     always_ff @(posedge clk)
     begin
+        memory_access.wdata <= into_write.wdata;
+
         if (reset)
         begin
             receive_state <= STATE_IDLE;
@@ -42,7 +44,7 @@ module write_bram
                     begin
                         memory_store.offset <= configreg[15:0];
                         memory_store.length <= configreg[31:16];
-                        num_received_lines <= 32'b0;
+                        num_received_lines <= 16'b0;
                         if (configreg[31:16] == 16'b0)
                         begin
                             receive_state <= STATE_IDLE;
@@ -60,7 +62,6 @@ module write_bram
                     begin
                         memory_access.we <= 1'b1;
                         memory_access.waddr <= memory_store.offset + num_received_lines;
-                        memory_access.wdata <= into_write.wdata;
                         num_received_lines <= num_received_lines + 1;
                         if (num_received_lines == memory_store.length-1)
                         begin

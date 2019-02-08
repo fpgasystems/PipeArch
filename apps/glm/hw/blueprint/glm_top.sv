@@ -414,6 +414,7 @@ module glm_top
     logic [15:0] program_counter;
     logic [31:0] instruction [16];
     logic [31:0] regs [NUM_REGS];
+    logic [31:0] temp_regs [NUM_REGS];
     logic [7:0] opcode;
     logic nonblocking;
 
@@ -458,6 +459,7 @@ module glm_top
 
                 MACHINE_STATE_INSTRUCTION_RECEIVE:
                 begin
+                    temp_regs <= regs;
                     for (int i=0; i < 16; i=i+1)
                     begin
                         instruction[i] <= program_access.rdata[ (i*32)+31 -: 32 ];
@@ -477,9 +479,9 @@ module glm_top
                         4'h1: // prefetch
                         begin
                             op_start[0] <= 1'b1;
-                            prefetch_regs[0] <= regs[0]*instruction[10];
-                            prefetch_regs[1] <= regs[1]*instruction[11];
-                            prefetch_regs[2] <= regs[2]*instruction[12];
+                            prefetch_regs[0] <= temp_regs[0]*instruction[10];
+                            prefetch_regs[1] <= temp_regs[1]*instruction[11];
+                            prefetch_regs[2] <= temp_regs[2]*instruction[12];
                             prefetch_regs[3] <= instruction[3]; // read offset
                             prefetch_regs[4] <= instruction[4]; // read length in cachelines
                         end
@@ -487,9 +489,9 @@ module glm_top
                         4'h2: // load
                         begin
                             op_start[1] <= 1'b1;
-                            load_regs[0] <= regs[0]*instruction[10];
-                            load_regs[1] <= regs[1]*instruction[11];
-                            load_regs[2] <= regs[2]*instruction[12];
+                            load_regs[0] <= temp_regs[0]*instruction[10];
+                            load_regs[1] <= temp_regs[1]*instruction[11];
+                            load_regs[2] <= temp_regs[2]*instruction[12];
                             load_regs[3] <= instruction[3]; // read offset
                             load_regs[4] <= instruction[4]; // read length in cachelines
                             for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
@@ -501,9 +503,9 @@ module glm_top
                         4'h3: // writeback
                         begin
                             op_start[2] <= 1'b1;
-                            writeback_regs[0] <= regs[0]*instruction[10];
-                            writeback_regs[1] <= regs[1]*instruction[11];
-                            writeback_regs[2] <= regs[2]*instruction[12];
+                            writeback_regs[0] <= temp_regs[0]*instruction[10];
+                            writeback_regs[1] <= temp_regs[1]*instruction[11];
+                            writeback_regs[2] <= temp_regs[2]*instruction[12];
                             writeback_regs[3] <= instruction[3]; // store offset
                             writeback_regs[4] <= instruction[4]; // store length in cachelines
                             writeback_regs[5] <= instruction[5]; // channel select
@@ -521,9 +523,9 @@ module glm_top
                         4'h4: // dot
                         begin
                             op_start[3] <= 1'b1;
-                            dot_regs[0] <= regs[0];
-                            dot_regs[1] <= regs[1];
-                            dot_regs[2] <= regs[2];
+                            dot_regs[0] <= temp_regs[0];
+                            dot_regs[1] <= temp_regs[1];
+                            dot_regs[2] <= temp_regs[2];
                             dot_regs[3] <= instruction[3];
                             dot_regs[4] <= instruction[4];
                         end
@@ -531,9 +533,9 @@ module glm_top
                         4'h5: // modify
                         begin
                             op_start[4] <= 1'b1;
-                            modify_regs[0] <= regs[0];
-                            modify_regs[1] <= regs[1];
-                            modify_regs[2] <= regs[2];
+                            modify_regs[0] <= temp_regs[0];
+                            modify_regs[1] <= temp_regs[1];
+                            modify_regs[2] <= temp_regs[2];
                             modify_regs[3] <= instruction[3];
                             modify_regs[4] <= instruction[4];
                             modify_regs[5] <= instruction[5];
@@ -543,9 +545,9 @@ module glm_top
                         4'h6: // update
                         begin
                             op_start[5] <= 1'b1;
-                            update_regs[0] <= regs[0];
-                            update_regs[1] <= regs[1];
-                            update_regs[2] <= regs[2];
+                            update_regs[0] <= temp_regs[0];
+                            update_regs[1] <= temp_regs[1];
+                            update_regs[2] <= temp_regs[2];
                             update_regs[3] <= instruction[3];
                             update_regs[4] <= instruction[4];
                         end
@@ -559,17 +561,17 @@ module glm_top
 
                         4'h1:
                         begin
-                            program_counter <= (regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                            program_counter <= (temp_regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
                         end
 
                         4'h2:
                         begin
-                            program_counter <= (regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                            program_counter <= (temp_regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
                         end
 
                         4'h3:
                         begin
-                            program_counter <= (regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                            program_counter <= (temp_regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
                         end
                     endcase
 

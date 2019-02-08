@@ -26,6 +26,8 @@ module write_fifo
 
     always_ff @(posedge clk)
     begin
+        fifo_access.wdata <= into_write.wdata;
+
         if (reset)
         begin
             receive_state <= STATE_IDLE;
@@ -57,7 +59,6 @@ module write_fifo
                     if (into_write.we && num_received_lines < fifo_store_length)
                     begin
                         fifo_access.we <= 1'b1;
-                        fifo_access.wdata <= into_write.wdata;
                         num_received_lines <= num_received_lines + 1;
                         if (num_received_lines == fifo_store_length-1)
                         begin
