@@ -428,14 +428,6 @@ module glm_top
     logic [31:0] modify_regs [7];
     logic [31:0] update_regs [5];
 
-    always_comb
-    begin
-        for (int i=0; i < 16; i=i+1)
-        begin
-            instruction[i] = program_access.rdata[ (i*32)+31 -: 32 ];
-        end
-    end
-
     always_ff @(posedge clk)
     begin
         if (reset)
@@ -460,120 +452,128 @@ module glm_top
                     begin
                         program_access.re <= 1'b1;
                         program_access.raddr <= program_counter;
+                        machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
+                    end
+                end
+
+                MACHINE_STATE_INSTRUCTION_RECEIVE:
+                begin
+                    for (int i=0; i < 16; i=i+1)
+                    begin
+                        instruction[i] <= program_access.rdata[ (i*32)+31 -: 32 ];
+                    end
+                    if (program_access.rvalid)
+                    begin
                         machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
                     end
                 end
 
                 MACHINE_STATE_INSTRUCTION_DECODE:
                 begin
+                    opcode <= instruction[15][7:0];
+                    nonblocking <= instruction[15][8];
+                    case(instruction[15][7:4])
 
-                    if (program_access.rvalid)
-                    begin
-                        opcode <= instruction[15][7:0];
-                        nonblocking <= instruction[15][8];
-                        case(instruction[15][7:4])
+                        4'h1: // prefetch
+                        begin
+                            op_start[0] <= 1'b1;
+                            prefetch_regs[0] <= regs[0]*instruction[10];
+                            prefetch_regs[1] <= regs[1]*instruction[11];
+                            prefetch_regs[2] <= regs[2]*instruction[12];
+                            prefetch_regs[3] <= instruction[3]; // read offset
+                            prefetch_regs[4] <= instruction[4]; // read length in cachelines
+                        end
 
-                            4'h1: // prefetch
+                        4'h2: // load
+                        begin
+                            op_start[1] <= 1'b1;
+                            load_regs[0] <= regs[0]*instruction[10];
+                            load_regs[1] <= regs[1]*instruction[11];
+                            load_regs[2] <= regs[2]*instruction[12];
+                            load_regs[3] <= instruction[3]; // read offset
+                            load_regs[4] <= instruction[4]; // read length in cachelines
+                            for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
                             begin
-                                op_start[0] <= 1'b1;
-                                prefetch_regs[0] <= regs[0]*instruction[10];
-                                prefetch_regs[1] <= regs[1]*instruction[11];
-                                prefetch_regs[2] <= regs[2]*instruction[12];
-                                prefetch_regs[3] <= instruction[3]; // read offset
-                                prefetch_regs[4] <= instruction[4]; // read length in cachelines
+                                load_regs[5+i] <= instruction[5+i]; 
                             end
+                        end
 
-                            4'h2: // load
+                        4'h3: // writeback
+                        begin
+                            op_start[2] <= 1'b1;
+                            writeback_regs[0] <= regs[0]*instruction[10];
+                            writeback_regs[1] <= regs[1]*instruction[11];
+                            writeback_regs[2] <= regs[2]*instruction[12];
+                            writeback_regs[3] <= instruction[3]; // store offset
+                            writeback_regs[4] <= instruction[4]; // store length in cachelines
+                            writeback_regs[5] <= instruction[5]; // channel select
+                            for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
                             begin
-                                op_start[1] <= 1'b1;
-                                load_regs[0] <= regs[0]*instruction[10];
-                                load_regs[1] <= regs[1]*instruction[11];
-                                load_regs[2] <= regs[2]*instruction[12];
-                                load_regs[3] <= instruction[3]; // read offset
-                                load_regs[4] <= instruction[4]; // read length in cachelines
-                                for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
-                                begin
-                                    load_regs[5+i] <= instruction[5+i]; 
-                                end
+                                writeback_regs[6+i] <= instruction[6+i]; 
                             end
+                        end
 
-                            4'h3: // writeback
-                            begin
-                                op_start[2] <= 1'b1;
-                                writeback_regs[0] <= regs[0]*instruction[10];
-                                writeback_regs[1] <= regs[1]*instruction[11];
-                                writeback_regs[2] <= regs[2]*instruction[12];
-                                writeback_regs[3] <= instruction[3]; // store offset
-                                writeback_regs[4] <= instruction[4]; // store length in cachelines
-                                writeback_regs[5] <= instruction[5]; // channel select
-                                for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
-                                begin
-                                    writeback_regs[6+i] <= instruction[6+i]; 
-                                end
-                            end
+                        // *************************************************************************
+                        //
+                        //   Additional opcodes
+                        //
+                        // *************************************************************************
+                        4'h4: // dot
+                        begin
+                            op_start[3] <= 1'b1;
+                            dot_regs[0] <= regs[0];
+                            dot_regs[1] <= regs[1];
+                            dot_regs[2] <= regs[2];
+                            dot_regs[3] <= instruction[3];
+                            dot_regs[4] <= instruction[4];
+                        end
 
-                            // *************************************************************************
-                            //
-                            //   Additional opcodes
-                            //
-                            // *************************************************************************
-                            4'h4: // dot
-                            begin
-                                op_start[3] <= 1'b1;
-                                dot_regs[0] <= regs[0];
-                                dot_regs[1] <= regs[1];
-                                dot_regs[2] <= regs[2];
-                                dot_regs[3] <= instruction[3];
-                                dot_regs[4] <= instruction[4];
-                            end
+                        4'h5: // modify
+                        begin
+                            op_start[4] <= 1'b1;
+                            modify_regs[0] <= regs[0];
+                            modify_regs[1] <= regs[1];
+                            modify_regs[2] <= regs[2];
+                            modify_regs[3] <= instruction[3];
+                            modify_regs[4] <= instruction[4];
+                            modify_regs[5] <= instruction[5];
+                            modify_regs[6] <= instruction[6];
+                        end
 
-                            4'h5: // modify
-                            begin
-                                op_start[4] <= 1'b1;
-                                modify_regs[0] <= regs[0];
-                                modify_regs[1] <= regs[1];
-                                modify_regs[2] <= regs[2];
-                                modify_regs[3] <= instruction[3];
-                                modify_regs[4] <= instruction[4];
-                                modify_regs[5] <= instruction[5];
-                                modify_regs[6] <= instruction[6];
-                            end
+                        4'h6: // update
+                        begin
+                            op_start[5] <= 1'b1;
+                            update_regs[0] <= regs[0];
+                            update_regs[1] <= regs[1];
+                            update_regs[2] <= regs[2];
+                            update_regs[3] <= instruction[3];
+                            update_regs[4] <= instruction[4];
+                        end
+                    endcase
 
-                            4'h6: // update
-                            begin
-                                op_start[5] <= 1'b1;
-                                update_regs[0] <= regs[0];
-                                update_regs[1] <= regs[1];
-                                update_regs[2] <= regs[2];
-                                update_regs[3] <= instruction[3];
-                                update_regs[4] <= instruction[4];
-                            end
-                        endcase
+                    case(instruction[15][3:0])
+                        4'h0:
+                        begin
+                            program_counter <= program_counter + 1;
+                        end
 
-                        case(instruction[15][3:0])
-                            4'h0:
-                            begin
-                                program_counter <= program_counter + 1;
-                            end
+                        4'h1:
+                        begin
+                            program_counter <= (regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                        end
 
-                            4'h1:
-                            begin
-                                program_counter <= (regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                            end
+                        4'h2:
+                        begin
+                            program_counter <= (regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                        end
 
-                            4'h2:
-                            begin
-                                program_counter <= (regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                            end
+                        4'h3:
+                        begin
+                            program_counter <= (regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                        end
+                    endcase
 
-                            4'h3:
-                            begin
-                                program_counter <= (regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                            end
-                        endcase
-
-                        machine_state <= MACHINE_STATE_EXECUTE;
-                    end
+                    machine_state <= MACHINE_STATE_EXECUTE;
                 end
 
                 MACHINE_STATE_EXECUTE:
@@ -586,7 +586,7 @@ module glm_top
                     begin
                         program_access.re <= 1'b1;
                         program_access.raddr <= program_counter;
-                        machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
+                        machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
                         regs[0] <= updateIndex(instruction[0], regs[0]);
                         regs[1] <= updateIndex(instruction[1], regs[1]);
                         regs[2] <= updateIndex(instruction[2], regs[2]);
