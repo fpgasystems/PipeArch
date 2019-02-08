@@ -72,20 +72,25 @@ module glm_dot
         .result_valid(subtract_valid),
         .result(subtract_result)
     );
-    assign subtract_trigger = MEM_labels.rvalid;
-    assign subtract_vector1 = (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
-    assign subtract_vector2 = MEM_labels.rdata;
+    always_ff @(posedge clk)
+    begin
+        subtract_trigger <= MEM_labels.rvalid;
+        subtract_vector1 <= (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
+        subtract_vector2 <= MEM_labels.rdata;
+    end
 
-    logic FIFO_input_rvalid_d [2:0];
-    logic [511:0] FIFO_input_rdata_d [2:0];
+    logic FIFO_input_rvalid_d [3:0];
+    logic [511:0] FIFO_input_rdata_d [3:0];
     always_ff @(posedge clk)
     begin
         FIFO_input_rvalid_d[0] <= FIFO_input.rvalid;
         FIFO_input_rvalid_d[1] <= FIFO_input_rvalid_d[0];
         FIFO_input_rvalid_d[2] <= FIFO_input_rvalid_d[1];
+        FIFO_input_rvalid_d[3] <= FIFO_input_rvalid_d[2];
         FIFO_input_rdata_d[0] <= FIFO_input.rdata;
         FIFO_input_rdata_d[1] <= FIFO_input_rdata_d[0];
         FIFO_input_rdata_d[2] <= FIFO_input_rdata_d[1];
+        FIFO_input_rdata_d[3] <= FIFO_input_rdata_d[2];
     end
 
     logic dot_trigger;
@@ -108,19 +113,19 @@ module glm_dot
         .result_valid(dot_done),
         .result(dot_result)
     );
-    always_comb
+    always_ff @(posedge clk)
     begin
         if (perform_label_subtraction)
         begin
-            dot_trigger = FIFO_input_rvalid_d[2];
-            dot_left = subtract_result;
-            dot_right = FIFO_input_rdata_d[2];
+            dot_trigger <= FIFO_input_rvalid_d[3];
+            dot_left <= subtract_result;
+            dot_right <= FIFO_input_rdata_d[3];
         end
         else
         begin
-            dot_trigger = FIFO_input.rvalid;
-            dot_left = (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
-            dot_right = FIFO_input.rdata;
+            dot_trigger <= FIFO_input.rvalid;
+            dot_left <= (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
+            dot_right <= FIFO_input.rdata;
         end
     end
     assign FIFO_dot.we = dot_done;

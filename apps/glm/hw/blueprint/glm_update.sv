@@ -77,8 +77,11 @@ module glm_update
         .result_valid(multiply_valid),
         .result(multiply_result)
     );
-    assign multiply_trigger = FIFO_samplesforward.rvalid;
-    assign multiply_vector = FIFO_samplesforward.rdata;
+    always_ff @(posedge clk)
+    begin
+        multiply_trigger <= FIFO_samplesforward.rvalid;
+        multiply_vector <= FIFO_samplesforward.rdata;
+    end
 
     logic subtract_trigger;
     logic [511:0] subtract_vector1;
@@ -99,9 +102,12 @@ module glm_update
         .result_valid(subtract_valid),
         .result(subtract_result)
     );
-    assign subtract_trigger = MEM_model.rvalid;
-    assign subtract_vector1 = MEM_model.rdata;
-    assign subtract_vector2 = multiply_result;
+    always_ff @(posedge clk)
+    begin
+        subtract_trigger <= MEM_model.rvalid;
+        subtract_vector1 <= MEM_model.rdata;
+        subtract_vector2 <= multiply_result;
+    end
 
     always_ff @(posedge clk)
     begin
