@@ -742,7 +742,7 @@ public:
 
 		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
 
-		uint32_t numLines = 16;
+		uint32_t numLines = 128;
 
 		AccessProperties accessRead(5);
 		accessRead.Set(2, 0, numLines);
