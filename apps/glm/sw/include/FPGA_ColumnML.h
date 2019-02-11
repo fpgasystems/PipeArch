@@ -783,6 +783,13 @@ public:
 
 		RunProgram(inst, pc, (volatile float*)input, (volatile float*)output);
 
+		for (uint32_t i = 0; i < numLines*16; i++) {
+			cout << "input[" << i << "]: " << input[i] << endl;
+		}
+		for (uint32_t i = 0; i < (numLines+1)*16; i++) {
+			cout << "output[" << i << "]: " << output[i] << endl;
+		}
+
 		bool pass = true;
 		for (uint32_t i = 0; i < numLines*16; i++) {
 			if (input[i] != output[16+i]) {

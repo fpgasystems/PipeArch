@@ -7,7 +7,6 @@ module write_fifo
 
     input logic op_start,
     input logic [31:0] configreg,
-    // configreg [31:16] write length
 
     internal_interface.commonwrite_source into_write,
     fifobram_interface.fifo_write fifo_access
@@ -26,16 +25,15 @@ module write_fifo
 
     always_ff @(posedge clk)
     begin
+        fifo_access.we <= 1'b0;
         fifo_access.wdata <= into_write.wdata;
 
         if (reset)
         begin
             receive_state <= STATE_IDLE;
-            fifo_access.we <= 1'b0;
         end
         else
         begin
-            fifo_access.we <= 1'b0;
             case (receive_state)
                 STATE_IDLE:
                 begin

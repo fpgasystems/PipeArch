@@ -20,7 +20,7 @@ logic internal_empty;
 
 assign access.almostfull = (count > 2**LOG2_DEPTH-16) ? 1'b1 : 1'b0;
 assign access.count = count;
-assign access.empty = empty;
+assign access.empty = empty | internal_empty;
 
 always_ff @(negedge clk)
 begin
@@ -51,6 +51,8 @@ end
 always_ff @(posedge clk)
 begin
 	internal_empty <= empty;
+	access.rvalid <= 1'b0;
+
 	if (reset)
 	begin
 		waddr <= 0;
@@ -66,7 +68,6 @@ begin
 		end
 
 		// Read
-		access.rvalid <= 1'b0;
 		if (access.re && internal_empty == 1'b0)
 		begin
 			access.rvalid <= 1'b1;

@@ -113,7 +113,7 @@ public:
 		uint32_t offsetByIndex2,
 		AccessProperties accessProperties)
 	{
-		uint32_t genSynData = 1;
+		uint32_t genSynData = 0;
 		uint32_t enableMultiline = 1;
 		m_data[15] |= (2 << 4);
 		m_data[3] = (genSynData << 30) | loadOffsetDRAM;

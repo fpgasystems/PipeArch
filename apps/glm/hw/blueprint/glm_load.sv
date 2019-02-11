@@ -97,8 +97,8 @@ module glm_load
         from_load_to_MEM_labels.wdata <= from_load.wdata;
         from_load_to_MEM_accessprops.we <= from_load.we;
         from_load_to_MEM_accessprops.wdata <= from_load.wdata;
-    end
-    assign from_load.almostfull = from_load_to_FIFO_input.almostfull | from_load_to_FIFO_samplesforward.almostfull | from_load_to_MEM_model.almostfull | from_load_to_MEM_labels.almostfull;
+        from_load.almostfull <= from_load_to_FIFO_input.almostfull | from_load_to_FIFO_samplesforward.almostfull | from_load_to_MEM_model.almostfull | from_load_to_MEM_labels.almostfull;
+    end 
 
     // *************************************************************************
     //

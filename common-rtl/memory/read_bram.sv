@@ -7,8 +7,6 @@ module read_bram
 
     input logic op_start,
     input logic [31:0] configreg,
-    // configreg [15:0] read offset
-    // configreg [31:16] read length
 
     fifobram_interface.bram_read memory_access,
     internal_interface.commonread_source outfrom_read
@@ -24,19 +22,18 @@ module read_bram
     bram_access_properties memory_read;
     logic [15:0] num_read_lines;
 
-    assign outfrom_read.rvalid = memory_access.rvalid;
-    assign outfrom_read.rdata = memory_access.rdata;
-
     always_ff @(posedge clk)
     begin
+        outfrom_read.rvalid <= memory_access.rvalid;
+        outfrom_read.rdata <= memory_access.rdata;
+        memory_access.re <= 1'b0;
+
         if (reset)
         begin
             read_state <= STATE_IDLE;
-            memory_access.re <= 1'b0;
         end
         else
         begin
-            memory_access.re <= 1'b0;
             case (read_state)
                 STATE_IDLE:
                 begin

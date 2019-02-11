@@ -7,7 +7,6 @@ module read_fifo
 
     input logic op_start,
     input logic [31:0] configreg,
-    // configreg [31:16] read length
 
     fifobram_interface.fifo_read fifo_access,
     internal_interface.commonread_source outfrom_read
@@ -23,19 +22,18 @@ module read_fifo
     logic[15:0] fifo_read_length;
     logic [15:0] num_read_lines;
 
-    assign outfrom_read.rvalid = fifo_access.rvalid;
-    assign outfrom_read.rdata = fifo_access.rdata;
-
     always_ff @(posedge clk)
     begin
+        outfrom_read.rvalid <= fifo_access.rvalid;
+        outfrom_read.rdata <= fifo_access.rdata;
+        fifo_access.re <= 1'b0;
+
         if (reset)
         begin
             read_state <= STATE_IDLE;
-            fifo_access.re <= 1'b0;
         end
         else
         begin
-            fifo_access.re <= 1'b0;
             case (read_state)
                 STATE_IDLE:
                 begin

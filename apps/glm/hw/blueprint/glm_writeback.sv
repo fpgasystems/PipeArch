@@ -75,20 +75,21 @@ module glm_writeback
         .outfrom_read(to_writeback_from_MEM_labels.commonread_source)
     );
 
-    always_comb
+    always_ff @(posedge clk)
     begin
         if (select_channel == 0)
         begin
-            to_writeback.rvalid = to_writeback_from_MEM_model.rvalid;
-            to_writeback.rdata = to_writeback_from_MEM_model.rdata;
-            to_writeback_from_MEM_model.almostfull = to_writeback.almostfull;
+            to_writeback.rvalid <= to_writeback_from_MEM_model.rvalid;
+            to_writeback.rdata <= to_writeback_from_MEM_model.rdata;
+            to_writeback_from_MEM_model.almostfull <= to_writeback.almostfull;
         end
         else if (select_channel == 1)
         begin
-            to_writeback.rvalid = to_writeback_from_MEM_labels.rvalid;
-            to_writeback.rdata = to_writeback_from_MEM_labels.rdata;
-            to_writeback_from_MEM_labels.almostfull = to_writeback.almostfull;
+            to_writeback.rvalid <= to_writeback_from_MEM_labels.rvalid;
+            to_writeback.rdata <= to_writeback_from_MEM_labels.rdata;
+            to_writeback_from_MEM_labels.almostfull <= to_writeback.almostfull;
         end
+        to_writeback.almostfull <= c1TxAlmFull || (send_state == STATE_PREPROCESS);
     end
 
     // *************************************************************************
@@ -99,8 +100,6 @@ module glm_writeback
     logic [1:0] offset_accumulate;
     logic [32:0] num_sent_lines;
     logic [32:0] num_ack_lines;
-
-    assign to_writeback.almostfull = c1TxAlmFull || (send_state == STATE_PREPROCESS);
 
     always_ff @(posedge clk)
     begin
