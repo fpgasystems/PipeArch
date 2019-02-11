@@ -120,6 +120,20 @@ module glm_load
 
     // *************************************************************************
     //
+    //   Instruction Information
+    //
+    // *************************************************************************
+    logic[31:0] offset_by_index[3];
+    t_ccip_clAddr DRAM_load_offset;
+    t_ccip_clAddr running_DRAM_load_offset;
+    logic [31:0] DRAM_load_length;
+    logic enable_multiline;
+    logic use_accessprops;
+    logic [LOG2_MEMORY_SIZE-1:0] accessprops_raddr;
+    logic gen_syn_data;
+
+    // *************************************************************************
+    //
     //   Receive FIFO
     //
     // *************************************************************************
@@ -133,25 +147,27 @@ module glm_load
         .reset,
         .access(prefetch_fifo_access.fifo_source)
     );
-    assign prefetch_fifo_access.we = cci_c0Rx_isReadRsp(cp2af_sRx_c0) && (receive_state == STATE_READ);
-    assign prefetch_fifo_access.wdata = cp2af_sRx_c0.data;
+    
     always_ff @(posedge clk)
     begin
+        prefetch_fifo_access.we <= 1'b0;
+        if (cci_c0Rx_isReadRsp(cp2af_sRx_c0) && receive_state == STATE_READ)
+        begin
+            prefetch_fifo_access.we <= 1'b1;
+            if (gen_syn_data)
+            begin
+                for (int i=0; i < 16; i=i+1)
+                begin
+                    prefetch_fifo_access.wdata[ (i*32)+31 -: 32 ] <= 32'(i);
+                end
+            end
+            else
+            begin
+                prefetch_fifo_access.wdata <= cp2af_sRx_c0.data;
+            end
+        end
         prefetch_fifo_access.re <= !(prefetch_fifo_access.empty) && !(from_load.almostfull);
     end
-
-    // *************************************************************************
-    //
-    //   Instruction Information
-    //
-    // *************************************************************************
-    logic[31:0] offset_by_index[3];
-    t_ccip_clAddr DRAM_load_offset;
-    t_ccip_clAddr running_DRAM_load_offset;
-    logic [31:0] DRAM_load_length;
-    logic enable_multiline;
-    logic use_accessprops;
-    logic [LOG2_MEMORY_SIZE-1:0] accessprops_raddr;
 
     // *************************************************************************
     //
@@ -209,12 +225,13 @@ module glm_load
                         offset_by_index[0] <= regs[0];
                         offset_by_index[1] <= regs[1];
                         offset_by_index[2] <= regs[2];
-                        DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr : in_addr + regs[3][30:0];
-                        running_DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr : in_addr + regs[3][30:0];
+                        DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr : in_addr + regs[3][29:0];
+                        running_DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr : in_addr + regs[3][29:0];
                         DRAM_load_length <= regs[4][30:0];
                         enable_multiline <= regs[4][31];
                         use_accessprops <= regs[3][31];
-                        accessprops_raddr <= regs[3][30:0];
+                        accessprops_raddr <= regs[3][29:0];
+                        gen_syn_data <= regs[3][30];
                         // *************************************************************************
                         accessprops_position <= 0;
                         offset_accumulate <= 2'b0;

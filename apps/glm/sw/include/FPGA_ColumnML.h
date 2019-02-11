@@ -752,6 +752,9 @@ public:
 
 		uint32_t pc = 0;
 
+		// inst[pc].Prefetch(0, numLines, 0, 0, 0);
+		// pc++;
+
 		inst[pc].Load(0, numLines, 0, 0, 0, accessRead);
 		uint32_t pcLoad = pc;
 		pc++;

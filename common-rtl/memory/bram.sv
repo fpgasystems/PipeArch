@@ -11,8 +11,8 @@ module bram
 );
 
 logic [WIDTH-1:0] memory [2**LOG2_DEPTH-1:0];
-logic [LOG2_DEPTH-1:0] waddr;
-logic [LOG2_DEPTH-1:0] raddr;
+logic [LOG2_DEPTH-2:0] waddr;
+logic [LOG2_DEPTH-2:0] raddr;
 
 always_ff @(posedge clk)
 begin
