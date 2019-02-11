@@ -742,7 +742,7 @@ public:
 
 		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
 
-		uint32_t numLines = 128;
+		uint32_t numLines = 4;
 
 		AccessProperties accessRead(5);
 		accessRead.Set(2, 0, numLines);
@@ -763,7 +763,7 @@ public:
 		pc++;
 
 		auto inputHandle = m_fpga->allocBuffer(numLines*64);
-		auto input = reinterpret_cast<volatile float*>(inputHandle->c_type());
+		auto input = reinterpret_cast<volatile int*>(inputHandle->c_type());
 		assert(NULL != input);
 
 		for (uint32_t i = 0; i < numLines*16; i++) {
@@ -771,14 +771,14 @@ public:
 		}
 
 		auto outputHandle = m_fpga->allocBuffer((numLines+1)*64);
-		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
+		auto output = reinterpret_cast<volatile int*>(outputHandle->c_type());
 		assert(NULL != output);
 
 		for (uint32_t i = 0; i < (numLines+1)*16; i++) {
 			output[i] = 0;
 		}
 
-		RunProgram(inst, pc, input, output);
+		RunProgram(inst, pc, (volatile float*)input, (volatile float*)output);
 
 		bool pass = true;
 		for (uint32_t i = 0; i < numLines*16; i++) {

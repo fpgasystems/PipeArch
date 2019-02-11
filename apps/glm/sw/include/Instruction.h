@@ -156,13 +156,14 @@ public:
 		bool writeFence,
 		AccessProperties accessProperties)
 	{
+		uint32_t genSynData = 0;
 		m_data[15] |= (3 << 4);
 		m_data[3] = ((uint32_t)useInputSpace << 31) | storeOffsetDRAM;
 		m_data[4] = storeLengthDRAM;
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
-		m_data[5] = (((uint32_t)writeFence << 4) | (whichChannel & 0xFFFF));
+		m_data[5] = ((genSynData << 5) | ((uint32_t)writeFence << 4) | (whichChannel & 0xFFFF));
 		for (uint32_t i = 0; i < accessProperties.GetNumChannels(); i++) {
 			m_data[6+i] = (accessProperties.Get(i).m_lengthInCL << 16) | accessProperties.Get(i).m_offsetInCL;
 		}

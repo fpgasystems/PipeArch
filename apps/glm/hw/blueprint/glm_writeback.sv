@@ -44,9 +44,10 @@ module glm_writeback
     // *************************************************************************
     logic[31:0] offset_by_index[3];
     t_ccip_clAddr DRAM_store_offset;
-    logic [15:0] DRAM_store_length;
+    logic [32:0] DRAM_store_length;
     logic [3:0] select_channel;
     logic write_fence;
+    logic gen_syn_data;
 
     internal_interface #(.WIDTH(512)) to_writeback();
     // *************************************************************************
@@ -96,8 +97,8 @@ module glm_writeback
     //
     // *************************************************************************
     logic [1:0] offset_accumulate;
-    logic [15:0] num_sent_lines;
-    logic [15:0] num_ack_lines;
+    logic [32:0] num_sent_lines;
+    logic [32:0] num_ack_lines;
 
     assign to_writeback.almostfull = c1TxAlmFull || (send_state == STATE_PREPROCESS);
 
@@ -133,10 +134,11 @@ module glm_writeback
                         DRAM_store_length <= regs[4];
                         select_channel <= regs[5][3:0];
                         write_fence <= regs[5][4];
+                        gen_syn_data <= regs[5][5];
                         // *************************************************************************
                         offset_accumulate <= 2'b0;
-                        num_sent_lines <= 16'b0;
-                        num_ack_lines <= 16'b0;
+                        num_sent_lines <= 32'b0;
+                        num_ack_lines <= 32'b0;
                         if (regs[4] == 0)
                         begin
                             send_state <= STATE_DONE;
@@ -163,7 +165,17 @@ module glm_writeback
                     if (to_writeback.rvalid)
                     begin
                         af2cp_sTx_c1.valid <= 1'b1;
-                        af2cp_sTx_c1.data <= to_writeback.rdata;
+                        if (gen_syn_data == 1'b1)
+                        begin
+                            for (int i=0; i < 16; i=i+1)
+                            begin
+                                af2cp_sTx_c1.data[ (i*32)+31 -: 32 ] <= num_sent_lines;
+                            end
+                        end
+                        else
+                        begin
+                            af2cp_sTx_c1.data <= to_writeback.rdata;
+                        end
                         af2cp_sTx_c1.hdr.address <= DRAM_store_offset + num_sent_lines;
                         num_sent_lines <= num_sent_lines + 1;
                         if (num_sent_lines == DRAM_store_length-1 && write_fence == 1'b0)
