@@ -2,8 +2,10 @@ C:../opae/base/hw/rtl/base_sources.txt
 
 +incdir+.
 pipearch_prefetch.sv
+pipearch_copy.sv
 
 memory/bram.sv
+memory/bram2.sv
 memory/fifo.sv
 memory/read_bram.sv
 memory/read_fifo.sv

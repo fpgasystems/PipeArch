@@ -12,9 +12,9 @@ module fifo
 );
 
 logic [WIDTH-1:0] memory [2**LOG2_DEPTH-1:0];
-logic [LOG2_DEPTH-2:0] waddr;
-logic [LOG2_DEPTH-2:0] raddr;
-logic [LOG2_DEPTH-2:0] count;
+logic [LOG2_DEPTH-1:0] waddr;
+logic [LOG2_DEPTH-1:0] raddr;
+logic [LOG2_DEPTH-1:0] count;
 logic empty;
 logic internal_empty;
 

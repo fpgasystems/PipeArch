@@ -38,24 +38,6 @@ module pipearch_prefetch
 
     // *************************************************************************
     //
-    //   Receive FIFO
-    //
-    // *************************************************************************
-    fifobram_interface #(.WIDTH($bits(t_cci_c0_RspMemHdr) + 512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) prefetch_fifo_access();
-    fifo
-    #(.WIDTH($bits(t_cci_c0_RspMemHdr) + 512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)
-    )
-    prefetch_fifo
-    (
-        .clk,
-        .reset,
-        .access(prefetch_fifo_access.fifo_source)
-    );
-    assign prefetch_fifo_access.we = cci_c0Rx_isReadRsp(cp2af_sRx_c0) && (receive_state == STATE_READ);
-    assign prefetch_fifo_access.wdata = {cp2af_sRx_c0.hdr, cp2af_sRx_c0.data};
-
-    // *************************************************************************
-    //
     //   Instruction Information
     //
     // *************************************************************************
@@ -76,10 +58,41 @@ module pipearch_prefetch
     logic [31:0] num_requested_lines_plus2;
     logic [31:0] num_requested_lines_plus4;
     logic [31:0] num_received_lines;
+    logic [31:0] num_forward_request_lines;
     logic [31:0] num_forwarded_lines;
     logic [31:0] num_lines_in_flight;
     logic signed [31:0] prefetch_fifo_free_count;
     logic signed [31:0] num_allowed_lines_to_request;
+
+    // *************************************************************************
+    //
+    //   Receive FIFO
+    //
+    // *************************************************************************
+    fifobram_interface #(.WIDTH($bits(t_cci_c0_RspMemHdr) + 512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) prefetch_fifo_access();
+    fifo
+    #(.WIDTH($bits(t_cci_c0_RspMemHdr) + 512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)
+    )
+    prefetch_fifo
+    (
+        .clk,
+        .reset,
+        .access(prefetch_fifo_access.fifo_source)
+    );
+    always_ff @(posedge clk)
+    begin
+        prefetch_fifo_access.wdata <= {cp2af_sRx_c0.hdr, cp2af_sRx_c0.data};
+        prefetch_fifo_access.we <= 1'b0;
+        if (op_start)
+        begin
+            num_received_lines <= 32'b0;
+        end
+        if (cci_c0Rx_isReadRsp(cp2af_sRx_c0) && (receive_state == STATE_READ))
+        begin
+            prefetch_fifo_access.we <= 1'b1;
+            num_received_lines <= num_received_lines + 1;
+        end
+    end
 
     always_ff @(posedge clk)
     begin
@@ -231,7 +244,7 @@ module pipearch_prefetch
                     get_cp2af_sRx_c0 <= cp2af_sRx_c0;
                     if (op_start)
                     begin
-                        num_received_lines <= 32'b0;
+                        num_forward_request_lines <= 32'b0;
                         num_forwarded_lines <= 32'b0;
                         receive_state <= STATE_READ;
                     end
@@ -239,10 +252,10 @@ module pipearch_prefetch
 
                 STATE_READ:
                 begin
-                    if (!prefetch_fifo_access.empty && num_received_lines < num_wait_fifo_lines)
+                    if (!prefetch_fifo_access.empty && num_forward_request_lines < num_wait_fifo_lines)
                     begin
                         prefetch_fifo_access.re <= 1'b1;
-                        num_received_lines <= num_received_lines + 1;
+                        num_forward_request_lines <= num_forward_request_lines + 1;
                     end
 
                     if (prefetch_fifo_access.rvalid)

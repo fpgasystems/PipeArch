@@ -303,7 +303,7 @@ module glm_top
     function automatic logic[31:0] updateIndex(logic[31:0] instruction, logic[31:0] regs);
         logic[31:0] result;
         case(instruction)
-            32'hFFFFFFFF:
+            32'hEFFFFFFF:
             begin
                 result = regs;
             end
@@ -320,9 +320,29 @@ module glm_top
 
             default:
             begin
-                result = instruction;
+                if (instruction[31] == 1'b1)
+                begin
+                    result = regs + instruction[30:0];
+                end
+                else
+                begin
+                    result = instruction;
+                end
             end
         endcase
+        return result;
+    endfunction
+
+    function automatic logic[31:0] conditional(logic[31:0] regs, logic[31:0] predicate, logic[15:0] false, logic[15:0] true);
+        logic[15:0] result;
+        if (predicate[31:30] == 2'b01) // if even
+        begin
+            result = (regs[0] == 1'b0) ? true : false;
+        end
+        else // equality
+        begin
+            result = (regs == predicate) ? true : false;
+        end
         return result;
     endfunction
 
@@ -344,7 +364,7 @@ module glm_top
     // opcode = instruction[15][7:0]
     // nonblocking = instruction[15][8]
 
-    // if opcode == 0xN0 ---- Inrement PC
+    // if opcode == 0xN0 ---- Increment PC
     //  programCounter++
 
     // if opcode == 0xN1 ---- jump0
@@ -418,31 +438,54 @@ module glm_top
     logic [7:0] opcode;
     logic nonblocking;
 
-    logic [5:0] op_start;
-    logic [5:0] op_done;
+    logic [NUM_OPS-1:0] op_start;
+    logic [NUM_OPS-1:0] op_done ;
+    logic [NUM_OPS-1:0] op_active;
 
     logic [31:0] prefetch_regs [5];
     logic [31:0] load_regs [5+NUM_LOAD_CHANNELS];
     logic [31:0] writeback_regs [6+NUM_WRITEBACK_CHANNELS];
-
-    logic [31:0] dot_regs [5];
+    logic [31:0] dot_regs [6];
     logic [31:0] modify_regs [7];
-    logic [31:0] update_regs [5];
+    logic [31:0] update_regs [6];
+    logic [31:0] copy_regs [5];
 
     always_ff @(posedge clk)
     begin
+        if(machine_state == MACHINE_STATE_IDLE)
+        begin
+            op_active <= 0;
+        end
+        else
+        begin
+            for (int i=0; i < NUM_OPS; i=i+1)
+            begin
+                if (op_done[i])
+                begin
+                    op_active[i] <= 1'b0;
+                end
+                else if (op_start[i])
+                begin
+                    op_active[i] <= 1'b1;
+                end
+            end
+        end
+    end
+
+    always_ff @(posedge clk)
+    begin
+        op_start <= 0;
+
         if (reset)
         begin
             program_counter <= 32'h0;
             machine_state <= MACHINE_STATE_IDLE;
-            op_start <= 6'b0;
             opcode <= 8'b0;
             nonblocking <= 1'b0;
             program_access.re <= 1'b0;
         end
         else
         begin
-            op_start <= 6'b0;
             program_access.re <= 1'b0;
 
             case(machine_state)
@@ -472,110 +515,129 @@ module glm_top
 
                 MACHINE_STATE_INSTRUCTION_DECODE:
                 begin
-                    opcode <= instruction[15][7:0];
-                    nonblocking <= instruction[15][8];
-                    case(instruction[15][7:4])
+                    if (op_active[instruction[15][7:4]-1] == 1'b0 || instruction[15][7:4] == 0)
+                    begin
+                        opcode <= instruction[15][7:0];
+                        nonblocking <= instruction[15][8];
+                        case(instruction[15][7:4])
 
-                        4'h1: // prefetch
-                        begin
-                            op_start[0] <= 1'b1;
-                            prefetch_regs[0] <= temp_regs[0]*instruction[10];
-                            prefetch_regs[1] <= temp_regs[1]*instruction[11];
-                            prefetch_regs[2] <= temp_regs[2]*instruction[12];
-                            prefetch_regs[3] <= instruction[3]; // read offset
-                            prefetch_regs[4] <= instruction[4]; // read length in cachelines
-                        end
-
-                        4'h2: // load
-                        begin
-                            op_start[1] <= 1'b1;
-                            load_regs[0] <= temp_regs[0]*instruction[10];
-                            load_regs[1] <= temp_regs[1]*instruction[11];
-                            load_regs[2] <= temp_regs[2]*instruction[12];
-                            load_regs[3] <= instruction[3]; // read offset
-                            load_regs[4] <= instruction[4]; // read length in cachelines
-                            for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
+                            4'h1: // prefetch
                             begin
-                                load_regs[5+i] <= instruction[5+i]; 
+                                op_start[0] <= 1'b1;
+                                prefetch_regs[0] <= temp_regs[0]*instruction[10];
+                                prefetch_regs[1] <= temp_regs[1]*instruction[11];
+                                prefetch_regs[2] <= temp_regs[2]*instruction[12];
+                                prefetch_regs[3] <= instruction[3]; // read offset
+                                prefetch_regs[4] <= instruction[4]; // read length in cachelines
                             end
-                        end
 
-                        4'h3: // writeback
-                        begin
-                            op_start[2] <= 1'b1;
-                            writeback_regs[0] <= temp_regs[0]*instruction[10];
-                            writeback_regs[1] <= temp_regs[1]*instruction[11];
-                            writeback_regs[2] <= temp_regs[2]*instruction[12];
-                            writeback_regs[3] <= instruction[3]; // store offset
-                            writeback_regs[4] <= instruction[4]; // store length in cachelines
-                            writeback_regs[5] <= instruction[5]; // channel select
-                            for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
+                            4'h2: // load
                             begin
-                                writeback_regs[6+i] <= instruction[6+i]; 
+                                op_start[1] <= 1'b1;
+                                load_regs[0] <= temp_regs[0]*instruction[10];
+                                load_regs[1] <= temp_regs[1]*instruction[11];
+                                load_regs[2] <= temp_regs[2]*instruction[12];
+                                load_regs[3] <= instruction[3]; // read offset
+                                load_regs[4] <= instruction[4]; // read length in cachelines
+                                for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
+                                begin
+                                    load_regs[5+i] <= instruction[5+i]; 
+                                end
                             end
-                        end
 
-                        // *************************************************************************
-                        //
-                        //   Additional opcodes
-                        //
-                        // *************************************************************************
-                        4'h4: // dot
-                        begin
-                            op_start[3] <= 1'b1;
-                            dot_regs[0] <= temp_regs[0];
-                            dot_regs[1] <= temp_regs[1];
-                            dot_regs[2] <= temp_regs[2];
-                            dot_regs[3] <= instruction[3];
-                            dot_regs[4] <= instruction[4];
-                        end
+                            4'h3: // writeback
+                            begin
+                                op_start[2] <= 1'b1;
+                                writeback_regs[0] <= temp_regs[0]*instruction[10];
+                                writeback_regs[1] <= temp_regs[1]*instruction[11];
+                                writeback_regs[2] <= temp_regs[2]*instruction[12];
+                                writeback_regs[3] <= instruction[3]; // store offset
+                                writeback_regs[4] <= instruction[4]; // store length in cachelines
+                                writeback_regs[5] <= instruction[5]; // channel select
+                                for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
+                                begin
+                                    writeback_regs[6+i] <= instruction[6+i]; 
+                                end
+                            end
 
-                        4'h5: // modify
-                        begin
-                            op_start[4] <= 1'b1;
-                            modify_regs[0] <= temp_regs[0];
-                            modify_regs[1] <= temp_regs[1];
-                            modify_regs[2] <= temp_regs[2];
-                            modify_regs[3] <= instruction[3];
-                            modify_regs[4] <= instruction[4];
-                            modify_regs[5] <= instruction[5];
-                            modify_regs[6] <= instruction[6];
-                        end
+                            // *************************************************************************
+                            //
+                            //   Additional opcodes
+                            //
+                            // *************************************************************************
+                            4'h4: // dot
+                            begin
+                                op_start[3] <= 1'b1;
+                                dot_regs[0] <= temp_regs[0];
+                                dot_regs[1] <= temp_regs[1];
+                                dot_regs[2] <= temp_regs[2];
+                                dot_regs[3] <= instruction[3];
+                                dot_regs[4] <= instruction[4];
+                                dot_regs[5] <= instruction[5];
+                            end
 
-                        4'h6: // update
-                        begin
-                            op_start[5] <= 1'b1;
-                            update_regs[0] <= temp_regs[0];
-                            update_regs[1] <= temp_regs[1];
-                            update_regs[2] <= temp_regs[2];
-                            update_regs[3] <= instruction[3];
-                            update_regs[4] <= instruction[4];
-                        end
-                    endcase
+                            4'h5: // modify
+                            begin
+                                op_start[4] <= 1'b1;
+                                modify_regs[0] <= temp_regs[0];
+                                modify_regs[1] <= temp_regs[1];
+                                modify_regs[2] <= temp_regs[2];
+                                modify_regs[3] <= instruction[3];
+                                modify_regs[4] <= instruction[4];
+                                modify_regs[5] <= instruction[5];
+                                modify_regs[6] <= instruction[6];
+                            end
 
-                    case(instruction[15][3:0])
-                        4'h0:
-                        begin
-                            program_counter <= program_counter + 1;
-                        end
+                            4'h6: // update
+                            begin
+                                op_start[5] <= 1'b1;
+                                update_regs[0] <= temp_regs[0];
+                                update_regs[1] <= temp_regs[1];
+                                update_regs[2] <= temp_regs[2];
+                                update_regs[3] <= instruction[3];
+                                update_regs[4] <= instruction[4];
+                                update_regs[5] <= instruction[5];
+                            end
 
-                        4'h1:
-                        begin
-                            program_counter <= (temp_regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                        end
+                            4'h7: // copy
+                            begin
+                                op_start[6] <= 1'b1;
+                                copy_regs[0] <= temp_regs[0];
+                                copy_regs[1] <= temp_regs[1];
+                                copy_regs[2] <= temp_regs[2];
+                                copy_regs[3] <= instruction[3];
+                                copy_regs[4] <= instruction[4];
+                            end
 
-                        4'h2:
-                        begin
-                            program_counter <= (temp_regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                        end
+                        endcase
 
-                        4'h3:
-                        begin
-                            program_counter <= (temp_regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
-                        end
-                    endcase
+                        case(instruction[15][3:0])
+                            4'h0:
+                            begin
+                                program_counter <= program_counter + 1;
+                            end
 
-                    machine_state <= MACHINE_STATE_EXECUTE;
+                            4'h1:
+                            begin
+                                program_counter <= conditional(temp_regs[0], instruction[13], instruction[14][31:16], instruction[14][15:0]);
+                                // program_counter <= (temp_regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                            end
+
+                            4'h2:
+                            begin
+                                program_counter <= conditional(temp_regs[1], instruction[13], instruction[14][31:16], instruction[14][15:0]);
+                                // program_counter <= (temp_regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                            end
+
+                            4'h3:
+                            begin
+                                program_counter <= conditional(temp_regs[2], instruction[13], instruction[14][31:16], instruction[14][15:0]);
+                                // program_counter <= (temp_regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
+                            end
+                        endcase
+
+                        machine_state <= MACHINE_STATE_EXECUTE;
+                    end
                 end
 
                 MACHINE_STATE_EXECUTE:
@@ -611,12 +673,14 @@ module glm_top
     //
     // *************************************************************************
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface();
-    bram
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface1();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface2();
+    bram2
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
     MEM_model (
         .clk,
-        .access(MEM_model_interface.bram_source)
+        .access1(MEM_model_interface1.bram_source),
+        .access2(MEM_model_interface2.bram_source)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_labels_interface();
@@ -690,47 +754,63 @@ module glm_top
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_MEM_model_interface();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) writeback_MEM_labels_interface();
 
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) copy_MEM_model_interface();
+
     assign load_MEM_accessprops_interface.rvalid = MEM_accessprops_interface.rvalid;
     assign load_MEM_accessprops_interface.rdata = MEM_accessprops_interface.rdata;
 
-    assign dot_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
-    assign dot_MEM_model_interface.rdata = MEM_model_interface.rdata;
+    assign dot_MEM_model_interface.rvalid = MEM_model_interface1.rvalid;
+    assign dot_MEM_model_interface.rdata = MEM_model_interface1.rdata;
     assign dot_MEM_labels_interface.rvalid = MEM_labels_interface.rvalid;
     assign dot_MEM_labels_interface.rdata = MEM_labels_interface.rdata;
 
     assign modify_MEM_labels_interface.rvalid = MEM_labels_interface.rvalid;
     assign modify_MEM_labels_interface.rdata = MEM_labels_interface.rdata;
 
-    assign update_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
-    assign update_MEM_model_interface.rdata = MEM_model_interface.rdata;
+    assign update_MEM_model_interface.rvalid = MEM_model_interface2.rvalid;
+    assign update_MEM_model_interface.rdata = MEM_model_interface2.rdata;
 
-    assign writeback_MEM_model_interface.rvalid = MEM_model_interface.rvalid;
-    assign writeback_MEM_model_interface.rdata = MEM_model_interface.rdata;
+    assign writeback_MEM_model_interface.rvalid = MEM_model_interface2.rvalid;
+    assign writeback_MEM_model_interface.rdata = MEM_model_interface2.rdata;
     assign writeback_MEM_labels_interface.rvalid = MEM_labels_interface.rvalid;
     assign writeback_MEM_labels_interface.rdata = MEM_labels_interface.rdata;
+
+    assign copy_MEM_model_interface.rvalid = MEM_model_interface1.rvalid;
+    assign copy_MEM_model_interface.rdata = MEM_model_interface1.rdata;
 
     always_comb
     begin
         // MEM_model request arbitration
         if (dot_MEM_model_interface.re)
         begin
-            MEM_model_interface.re = 1'b1;
-            MEM_model_interface.raddr = dot_MEM_model_interface.raddr;
+            MEM_model_interface1.re = 1'b1;
+            MEM_model_interface1.raddr = dot_MEM_model_interface.raddr;
         end
-        else if (update_MEM_model_interface.re)
+        else if (copy_MEM_model_interface.re)
         begin
-            MEM_model_interface.re = 1'b1;
-            MEM_model_interface.raddr = update_MEM_model_interface.raddr;
-        end
-        else if (writeback_MEM_model_interface.re)
-        begin
-            MEM_model_interface.re = 1'b1;
-            MEM_model_interface.raddr = writeback_MEM_model_interface.raddr;
+            MEM_model_interface1.re = 1'b1;
+            MEM_model_interface1.raddr = copy_MEM_model_interface.raddr;
         end
         else
         begin
-            MEM_model_interface.re = 1'b0;
-            MEM_model_interface.raddr = 0;
+            MEM_model_interface1.re = 1'b0;
+            MEM_model_interface1.raddr = 0;
+        end
+
+        if (update_MEM_model_interface.re)
+        begin
+            MEM_model_interface2.re = 1'b1;
+            MEM_model_interface2.raddr = update_MEM_model_interface.raddr;
+        end
+        else if (writeback_MEM_model_interface.re)
+        begin
+            MEM_model_interface2.re = 1'b1;
+            MEM_model_interface2.raddr = writeback_MEM_model_interface.raddr;
+        end
+        else
+        begin
+            MEM_model_interface2.re = 1'b0;
+            MEM_model_interface2.raddr = 0;
         end
 
         // MEM_labels request arbitration
@@ -770,21 +850,34 @@ module glm_top
         // MEM_model write arbitration
         if (load_MEM_model_interface.we)
         begin
-            MEM_model_interface.we = 1'b1;
-            MEM_model_interface.waddr = load_MEM_model_interface.waddr;
-            MEM_model_interface.wdata = load_MEM_model_interface.wdata;
+            MEM_model_interface1.we = 1'b1;
+            MEM_model_interface1.waddr = load_MEM_model_interface.waddr;
+            MEM_model_interface1.wdata = load_MEM_model_interface.wdata;
         end
-        else if (update_MEM_model_interface.we)
+        else if (copy_MEM_model_interface.we)
         begin
-            MEM_model_interface.we = 1'b1;
-            MEM_model_interface.waddr = update_MEM_model_interface.waddr;
-            MEM_model_interface.wdata = update_MEM_model_interface.wdata;
+            MEM_model_interface1.we = 1'b1;
+            MEM_model_interface1.waddr = copy_MEM_model_interface.waddr;
+            MEM_model_interface1.wdata = copy_MEM_model_interface.wdata;
         end
         else
         begin
-            MEM_model_interface.we = 1'b0;
-            MEM_model_interface.waddr = 0;
-            MEM_model_interface.wdata = 0;
+            MEM_model_interface1.we = 1'b0;
+            MEM_model_interface1.waddr = 0;
+            MEM_model_interface1.wdata = 0;
+        end
+
+        if (update_MEM_model_interface.we)
+        begin
+            MEM_model_interface2.we = 1'b1;
+            MEM_model_interface2.waddr = update_MEM_model_interface.waddr;
+            MEM_model_interface2.wdata = update_MEM_model_interface.wdata;
+        end
+        else
+        begin
+            MEM_model_interface2.we = 1'b0;
+            MEM_model_interface2.waddr = 0;
+            MEM_model_interface2.wdata = 0;
         end
 
         // MEM_labels write arbitration
@@ -933,5 +1026,18 @@ module glm_top
         .MEM_model(update_MEM_model_interface.bram_readwrite),
         .FIFO_modelforward(FIFO_modelforward_interface.fifo_write)
     );
+
+    pipearch_copy
+    MEM_model_copy
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[6]),
+        .op_done(op_done[6]),
+        .regs(copy_regs),
+        .MEM_read(copy_MEM_model_interface.bram_read),
+        .MEM_write(copy_MEM_model_interface.bram_write)
+    );
+
 
 endmodule

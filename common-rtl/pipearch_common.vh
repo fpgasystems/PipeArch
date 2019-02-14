@@ -1,14 +1,8 @@
 `ifndef PIPEARCH_COMMON
 `define PIPEARCH_COMMON
 
-parameter LOG2_MEMORY_SIZE = 12;
-parameter LOG2_PROGRAM_SIZE = 5;
-parameter PROGRAM_SIZE = 2**LOG2_PROGRAM_SIZE;
-parameter NUM_REGS = 3;
-parameter REGS_WIDTH = 32*NUM_REGS;
 parameter LOG2_PREFETCH_SIZE = 9;
 parameter PREFETCH_SIZE = 2**LOG2_PREFETCH_SIZE - 16;
-parameter LOG2_INTERNAL_SIZE = 9;
 
 typedef struct packed {
     logic[15:0] offset;

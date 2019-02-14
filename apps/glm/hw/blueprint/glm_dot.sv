@@ -8,7 +8,7 @@ module glm_dot
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [5],
+    input logic [31:0] regs [6],
 
     fifobram_interface.fifo_read FIFO_input,
     fifobram_interface.bram_read MEM_labels,
@@ -24,6 +24,7 @@ module glm_dot
     typedef enum logic [1:0]
     {
         STATE_IDLE,
+        STATE_RESET,
         STATE_READ,
         STATE_DONE
     } t_dotstate;
@@ -34,6 +35,7 @@ module glm_dot
     //   Instruction Information
     //
     // *************************************************************************
+    logic [15:0] num_iterations;
     logic read_from_modelforward;
     logic perform_label_subtraction;
     logic [15:0] num_lines_to_process;
@@ -47,6 +49,7 @@ module glm_dot
     // *************************************************************************
     logic [15:0] num_requested_lines;
     logic [15:0] num_processed_lines;
+    logic [15:0] num_performed_iterations;
 
     // *************************************************************************
     //
@@ -74,9 +77,13 @@ module glm_dot
     );
     always_ff @(posedge clk)
     begin
-        subtract_trigger <= MEM_labels.rvalid;
-        subtract_vector1 <= (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
-        subtract_vector2 <= MEM_labels.rdata;
+        subtract_trigger <= 1'b0;
+        if (MEM_labels.rvalid && perform_label_subtraction && dot_state == STATE_READ)
+        begin
+            subtract_trigger <= 1'b1;
+            subtract_vector1 <= (read_from_modelforward) ? FIFO_modelforward.rdata : MEM_model.rdata;
+            subtract_vector2 <= MEM_labels.rdata;
+        end
     end
 
     logic FIFO_input_rvalid_d [3:0];
@@ -146,7 +153,6 @@ module glm_dot
         end
         else
         begin
-
             case (dot_state)
                 STATE_IDLE:
                 begin
@@ -158,7 +164,9 @@ module glm_dot
                         num_lines_to_process <= regs[3][15:0];
                         MEM_model_load_offset <= regs[4][15:0];
                         MEM_labels_load_offset <= regs[4][31:16];
+                        num_iterations <= regs[5][15:0];
                         // *************************************************************************
+                        num_performed_iterations <= 0;
                         num_requested_lines <= 32'b0;
                         num_processed_lines <= 32'b0;
                         dot_state <= STATE_READ;
@@ -167,28 +175,26 @@ module glm_dot
 
                 STATE_READ:
                 begin
-                    if (!FIFO_input.empty)
+                    if (!FIFO_input.empty && num_requested_lines < num_lines_to_process)
                     begin
                         if (perform_label_subtraction)
                         begin
-                            if (num_requested_lines < num_lines_to_process)
+                            if (!read_from_modelforward)
                             begin
                                 FIFO_input.re <= 1'b1;
-                                if (!read_from_modelforward)
-                                begin
-                                    MEM_labels.re <= 1'b1;
-                                    MEM_labels.raddr <= MEM_labels_load_offset + num_requested_lines;
-                                    MEM_model.re <= 1'b1;
-                                    MEM_model.raddr <= MEM_model_load_offset + num_requested_lines;
-                                    num_requested_lines <= num_requested_lines + 1;
-                                end
-                                else if (!FIFO_modelforward.empty)
-                                begin
-                                    MEM_labels.re <= 1'b1;
-                                    MEM_labels.raddr <= MEM_labels_load_offset + num_requested_lines;
-                                    FIFO_modelforward.re <= 1'b1;
-                                    num_requested_lines <= num_requested_lines + 1;
-                                end
+                                MEM_labels.re <= 1'b1;
+                                MEM_labels.raddr <= MEM_labels_load_offset + num_requested_lines;
+                                MEM_model.re <= 1'b1;
+                                MEM_model.raddr <= MEM_model_load_offset + num_requested_lines;
+                                num_requested_lines <= num_requested_lines + 1;
+                            end
+                            else if (!FIFO_modelforward.empty)
+                            begin
+                                FIFO_input.re <= 1'b1;
+                                MEM_labels.re <= 1'b1;
+                                MEM_labels.raddr <= MEM_labels_load_offset + num_requested_lines;
+                                FIFO_modelforward.re <= 1'b1;
+                                num_requested_lines <= num_requested_lines + 1;
                             end
                         end
                         else
@@ -209,13 +215,29 @@ module glm_dot
                         end
                     end
 
+                    if (FIFO_input.re && num_requested_lines == num_lines_to_process)
+                    begin
+                        num_performed_iterations <= num_performed_iterations + 1;
+                        if (num_performed_iterations < num_iterations-1)
+                        begin
+                            num_requested_lines <= 32'b0;
+                        end
+                    end
+
                     if (dot_trigger)
                     begin
                         num_processed_lines <= num_processed_lines + 1;
                         if (num_processed_lines == num_lines_to_process-1)
                         begin
-                            dot_state <= STATE_IDLE;
-                            op_done <= 1'b1;
+                            if (num_performed_iterations == num_iterations)
+                            begin
+                                dot_state <= STATE_IDLE;
+                                op_done <= 1'b1;
+                            end
+                            else
+                            begin
+                                num_processed_lines <= 32'b0;
+                            end
                         end
                     end
                 end

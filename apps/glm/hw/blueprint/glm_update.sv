@@ -8,7 +8,7 @@ module glm_update
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [5],
+    input logic [31:0] regs [6],
 
     fifobram_interface.fifo_read FIFO_samplesforward,
     fifobram_interface.fifo_read FIFO_gradient,
@@ -25,6 +25,7 @@ module glm_update
     {
         STATE_IDLE,
         STATE_GRADIENT_GET,
+        STATE_GRADIENT_RECEIVE,
         STATE_MAIN
     } t_updatestate;
     t_updatestate update_state;
@@ -34,6 +35,7 @@ module glm_update
     //   Instruction Information
     //
     // *************************************************************************
+    logic [15:0] num_iterations;
     logic [15:0] MEM_model_offset;
     logic [15:0] MEM_model_length;
     logic write_to_model_forward;
@@ -45,7 +47,10 @@ module glm_update
     // *************************************************************************
     logic [15:0] num_lines_multiplied_requested;
     logic [15:0] num_lines_multiplied;
+    logic [15:0] num_lines_multiplied_final;
     logic [15:0] num_lines_subtracted;
+    logic [15:0] num_performed_iterations;
+    logic [15:0] num_finished_iterations;
 
     // *************************************************************************
     //
@@ -79,8 +84,13 @@ module glm_update
     );
     always_ff @(posedge clk)
     begin
-        multiply_trigger <= FIFO_samplesforward.rvalid;
-        multiply_vector <= FIFO_samplesforward.rdata;
+        multiply_trigger <= 1'b0;
+        if (FIFO_samplesforward.rvalid && update_state == STATE_MAIN)
+        begin
+            multiply_trigger <= 1'b1;
+            multiply_scalar <= FIFO_gradient.rdata;
+            multiply_vector <= FIFO_samplesforward.rdata;
+        end
     end
 
     logic subtract_trigger;
@@ -104,9 +114,13 @@ module glm_update
     );
     always_ff @(posedge clk)
     begin
-        subtract_trigger <= MEM_model.rvalid;
-        subtract_vector1 <= MEM_model.rdata;
-        subtract_vector2 <= multiply_result;
+        subtract_trigger <= 1'b0;
+        if (multiply_valid && update_state == STATE_MAIN)
+        begin
+            subtract_trigger <= 1'b1;
+            subtract_vector1 <= MEM_model.rdata;
+            subtract_vector2 <= multiply_result;
+        end
     end
 
     always_ff @(posedge clk)
@@ -132,24 +146,15 @@ module glm_update
                         // *************************************************************************
                         MEM_model_offset <= regs[3][15:0];
                         MEM_model_length <= regs[3][31:16];
-                        write_to_model_forward <= regs[4][0];
+                        write_to_model_forward <= regs[4][31];
+                        num_iterations <= regs[4][15:0];
                         // *************************************************************************
+                        num_performed_iterations <= 0;
+                        num_finished_iterations <= 0;
                         num_lines_multiplied_requested <= 16'b0;
                         num_lines_multiplied <= 16'b0;
+                        num_lines_multiplied_final <= 16'b0;
                         num_lines_subtracted <= 16'b0;
-                        update_state <= STATE_GRADIENT_GET;
-                    end
-                end
-
-                STATE_GRADIENT_GET:
-                begin
-                    if (!FIFO_gradient.empty)
-                    begin
-                        FIFO_gradient.re <= 1'b1;
-                    end
-                    if (FIFO_gradient.rvalid)
-                    begin
-                        multiply_scalar <= FIFO_gradient.rdata;
                         update_state <= STATE_MAIN;
                     end
                 end
@@ -157,17 +162,41 @@ module glm_update
                 STATE_MAIN:
                 begin
 
-                    if ( (num_lines_multiplied_requested < MEM_model_length) && !FIFO_samplesforward.empty)
+                    if (num_lines_multiplied_requested == 0 && !FIFO_samplesforward.empty && !FIFO_gradient.empty)
+                    begin
+                        FIFO_gradient.re <= 1'b1;
+                        FIFO_samplesforward.re <= 1'b1;
+                        num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
+                    end
+                    else if (num_lines_multiplied_requested > 0 && num_lines_multiplied_requested < MEM_model_length && !FIFO_samplesforward.empty)
                     begin
                         FIFO_samplesforward.re <= 1'b1;
                         num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
                     end
 
+                    if (multiply_valid)
+                    begin
+                        num_lines_multiplied <= num_lines_multiplied + 1;
+                        if (num_lines_multiplied == MEM_model_length-1)
+                        begin
+                            num_lines_multiplied <= 0;
+                            num_performed_iterations <= num_performed_iterations + 1;
+                            if (num_performed_iterations < num_iterations-1)
+                            begin
+                                num_lines_multiplied_requested <= 16'b0;
+                            end
+                        end
+                    end
+
                     if (multiply_trigger_d[1])
                     begin
                         MEM_model.re <= 1'b1;
-                        MEM_model.raddr <= MEM_model_offset + num_lines_multiplied;
-                        num_lines_multiplied <= num_lines_multiplied + 1;
+                        MEM_model.raddr <= MEM_model_offset + num_lines_multiplied_final;
+                        num_lines_multiplied_final <= num_lines_multiplied_final + 1;
+                        if (num_lines_multiplied_final == MEM_model_length-1)
+                        begin
+                            num_lines_multiplied_final <= 0;
+                        end
                     end
 
                     if (write_to_model_forward)
@@ -184,8 +213,13 @@ module glm_update
                         num_lines_subtracted <= num_lines_subtracted + 1;
                         if (num_lines_subtracted == MEM_model_length-1)
                         begin
-                            op_done <= 1'b1;
-                            update_state <= STATE_IDLE;
+                            num_lines_subtracted <= 0;
+                            num_finished_iterations <= num_finished_iterations + 1;
+                            if (num_finished_iterations == num_iterations-1)
+                            begin
+                                op_done <= 1'b1;
+                                update_state <= STATE_IDLE;
+                            end
                         end
                     end
                 end

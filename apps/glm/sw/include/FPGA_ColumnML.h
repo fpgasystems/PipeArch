@@ -332,7 +332,7 @@ public:
 		pc++;
 
 		inst[pc].Dot(m_numFeaturesInCL, true, false, modelOffsetInBRAM, 0xFFFF);
-		inst[pc].AddJump(0, m_partitionSize-1, pcModify, pc+1);
+		inst[pc].Jump(0, m_partitionSize-1, pcModify, pc+1);
 		pc++;
 		// End---Innermost loop
 
@@ -341,7 +341,7 @@ public:
 		pc++;
 
 		inst[pc].Update(modelOffsetInBRAM, m_numFeaturesInCL, false);
-		inst[pc].AddJump(1, m_numPartitions-1, beginEpoch, pc+1);
+		inst[pc].Jump(1, m_numPartitions-1, beginEpoch, pc+1);
 		inst[pc].ResetIndex(0);
 		inst[pc].IncrementIndex(1);
 		pc++;
@@ -378,7 +378,7 @@ public:
 			pc++;
 
 			inst[pc].Dot(m_numFeaturesInCL, true, false, modelOffsetInBRAM, 0xFFFF);
-			inst[pc].AddJump(0, m_rest-1, pcRestSamples, pc+1);
+			inst[pc].Jump(0, m_rest-1, pcRestSamples, pc+1);
 			pc++;
 			// End---Innermost loop
 
@@ -396,7 +396,162 @@ public:
 			0, false, writebackModel);
 		pc++;
 
-		inst[pc].AddJump(2, numEpochs-1, beginEpoch, 0xFFFFFFFF);
+		inst[pc].Jump(2, numEpochs-1, beginEpoch, 0xFFFFFFFF);
+		inst[pc].ResetIndex(0);
+		inst[pc].ResetIndex(1);
+		inst[pc].IncrementIndex(2);
+		pc++;
+
+		// *************************************************************************
+		//
+		//   END Program
+		//
+		// *************************************************************************
+
+		auto outputHandle = m_fpga->allocBuffer((numEpochs*m_numFeaturesInCL+1)*64);
+		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
+		assert(NULL != output);
+
+		RunProgram(inst, pc, m_memory, output);
+
+		// Verify
+		xHistory = (float*)(output + 16);
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = Loss(type, xHistory + e*m_alignedNumFeatures, lambda, args);
+			std::cout << "loss " << e << ": " << loss << std::endl;
+		}
+	}
+
+	void fSGD_minibatch(
+		ModelType type,
+		float* xHistory,
+		uint32_t numEpochs,
+		uint32_t minibatchSize, 
+		float stepSize,
+		float lambda,
+		AdditionalArguments* args)
+	{
+		if (m_memory == nullptr) {
+			cout << "m_memory is nullptr!" << endl;
+			exit(1);
+		}
+		if (m_partitionSize%minibatchSize > 0) {
+			cout << "m_partitionSize%minibatchSize = 0 must hold!" << endl;
+			exit(1);
+		}
+		if (m_partitionSize/minibatchSize == 1) {
+			cout << "m_partitionSize/minibatchSize > 1 must hold!" << endl;
+			exit(1);
+		}
+
+		float scaledStepSize = stepSize/minibatchSize;
+
+		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
+
+		uint32_t model1OffsetInBRAM = 0;
+		uint32_t model2OffsetInBRAM = m_modelChunk.m_lengthInCL;
+		uint32_t labelOffsetInBRAM = 0;
+
+		AccessProperties accessModel(5);
+		accessModel.Set(2, model2OffsetInBRAM, m_modelChunk.m_lengthInCL);
+
+		AccessProperties accessLabels(5);
+		accessLabels.Set(3, labelOffsetInBRAM, m_partitionSizeInCL);
+
+		AccessProperties minibatchAccessSamples(5);
+		minibatchAccessSamples.Set(0, 0, minibatchSize*m_numFeaturesInCL);
+		minibatchAccessSamples.Set(1, 0, minibatchSize*m_numFeaturesInCL);
+
+		AccessProperties accessSamples(5);
+		accessSamples.Set(0, 0, m_numFeaturesInCL);
+		accessSamples.Set(1, 0, m_numFeaturesInCL);
+
+		AccessProperties writebackModel(2);
+		writebackModel.Set(0, model2OffsetInBRAM, m_numFeaturesInCL);
+
+		// *************************************************************************
+		//
+		//   START Program
+		//
+		// *************************************************************************
+		uint32_t pc = 0;
+
+		// Load model
+		inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, accessModel);
+		inst[pc].ResetIndex(0);
+		inst[pc].ResetIndex(1);
+		inst[pc].ResetIndex(2);
+		pc++;
+
+		// Load labels in partition
+		inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
+		uint32_t pcLabels = pc;
+		pc++;
+
+		inst[pc].Prefetch(m_samplesChunk.m_offsetInCL, m_partitionSize*m_numFeaturesInCL, 0, m_partitionSize*m_numFeaturesInCL, 0);
+		inst[pc].MakeNonBlocking();
+		pc++;
+
+		// Start---Innermost loop
+		inst[pc].Load(m_samplesChunk.m_offsetInCL, minibatchSize*m_numFeaturesInCL, m_numFeaturesInCL, m_partitionSize*m_numFeaturesInCL, 0, minibatchAccessSamples);
+		uint32_t pcSamples = pc;
+		inst[pc].MakeNonBlocking();
+		pc++;
+
+		inst[pc].Copy(model2OffsetInBRAM, model1OffsetInBRAM, m_numFeaturesInCL);
+		inst[pc].MakeNonBlocking();
+		pc++;
+
+		inst[pc].Dot(minibatchSize, m_numFeaturesInCL, false, false, model1OffsetInBRAM, 0xFFFF);
+		inst[pc].MakeNonBlocking();
+		pc++;
+
+		inst[pc].Modify(minibatchSize, labelOffsetInBRAM, type, 0, scaledStepSize, lambda);
+		inst[pc].MakeNonBlocking();
+		pc++;
+
+		inst[pc].Update(minibatchSize, model2OffsetInBRAM, m_numFeaturesInCL, false);
+		inst[pc].IncrementIndex(0, minibatchSize);
+		inst[pc].Jump(0, m_partitionSize-minibatchSize, pcSamples, pc+2);
+		pc++;
+		// End---Innermost loop
+
+		inst[pc].Jump(1, m_numPartitions-1, pcLabels, pc+1);
+		inst[pc].ResetIndex(0);
+		inst[pc].IncrementIndex(1);
+		pc++;
+
+		if ( m_rest > 0 ) {
+			accessLabels.Set(3, labelOffsetInBRAM, m_restInCL);
+			inst[pc].Load(m_labelsChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, accessLabels);
+			pc++;
+
+			// Start---Innermost loop
+			inst[pc].Load(m_samplesChunk.m_offsetInCL, m_numFeaturesInCL, m_numFeaturesInCL, m_numFeaturesInCL*m_partitionSize, 0, accessSamples);
+			inst[pc].MakeNonBlocking();
+			uint32_t pcRestSamples = pc;
+			pc++;
+
+			inst[pc].Dot(m_numFeaturesInCL, false, false, model2OffsetInBRAM, 0xFFFF);
+			pc++;
+
+			inst[pc].Modify(labelOffsetInBRAM, type, 0, stepSize, lambda);
+			pc++;
+
+			inst[pc].Update(model2OffsetInBRAM, m_numFeaturesInCL, false);
+			inst[pc].Jump(0, m_rest-1, pcRestSamples, pc+1);
+			inst[pc].IncrementIndex(0);
+			pc++;
+			// End---Innermost loop
+		}
+
+		// WriteBack
+		inst[pc].WriteBack(false, 1, m_numFeaturesInCL,
+			0, 0, m_numFeaturesInCL,
+			0, false, writebackModel);
+		pc++;
+
+		inst[pc].Jump(2, numEpochs-1, pcLabels, 0xFFFFFFFF);
 		inst[pc].ResetIndex(0);
 		inst[pc].ResetIndex(1);
 		inst[pc].IncrementIndex(2);
@@ -485,12 +640,12 @@ public:
 		pc++;
 
 		inst[pc].Update(modelOffsetInBRAM, m_numFeaturesInCL, false);
-		inst[pc].AddJump(0, m_partitionSize-1, pcSamples, pc+1);
+		inst[pc].Jump(0, m_partitionSize-1, pcSamples, pc+1);
 		inst[pc].IncrementIndex(0);
 		pc++;
 		// End---Innermost loop
 
-		inst[pc].AddJump(1, m_numPartitions-1, pcLabels, pc+1);
+		inst[pc].Jump(1, m_numPartitions-1, pcLabels, pc+1);
 		inst[pc].ResetIndex(0);
 		inst[pc].IncrementIndex(1);
 		pc++;
@@ -513,7 +668,7 @@ public:
 			pc++;
 
 			inst[pc].Update(modelOffsetInBRAM, m_numFeaturesInCL, false);
-			inst[pc].AddJump(0, m_rest-1, pcRestSamples, pc+1);
+			inst[pc].Jump(0, m_rest-1, pcRestSamples, pc+1);
 			inst[pc].IncrementIndex(0);
 			pc++;
 			// End---Innermost loop
@@ -525,7 +680,7 @@ public:
 			0, false, writebackModel);
 		pc++;
 
-		inst[pc].AddJump(2, numEpochs-1, pcLabels, 0xFFFFFFFF);
+		inst[pc].Jump(2, numEpochs-1, pcLabels, 0xFFFFFFFF);
 		inst[pc].ResetIndex(0);
 		inst[pc].ResetIndex(1);
 		inst[pc].IncrementIndex(2);
@@ -644,7 +799,7 @@ public:
 		pc++;
 
 		inst[pc].Dot(m_partitionSizeInCL, true, true, residualOffsetInBRAM, labelOffsetInBRAM);
-		inst[pc].AddJump(0, m_cstore->m_numFeatures-1, pcModify, pc+1);
+		inst[pc].Jump(0, m_cstore->m_numFeatures-1, pcModify, pc+1);
 		pc++;
 		// End---Innermost loop
 
@@ -662,12 +817,12 @@ public:
 		inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
 			0, m_numFeaturesInCL, 0,
 			1, true, writebackModel);
-		inst[pc].AddJump(1, m_numPartitions-1, 0, pc+1);
+		inst[pc].Jump(1, m_numPartitions-1, 0, pc+1);
 		inst[pc].ResetIndex(0);
 		inst[pc].IncrementIndex(1);
 		pc++;
 
-		inst[pc].AddJump(2, numEpochs-1, 0, 0xFFFFFFFF);
+		inst[pc].Jump(2, numEpochs-1, 0, 0xFFFFFFFF);
 		inst[pc].ResetIndex(0);
 		inst[pc].ResetIndex(1);
 		inst[pc].IncrementIndex(2);
@@ -723,7 +878,7 @@ public:
 		uint32_t pcLoad = pc;
 		pc++;
 
-		inst[pc].AddJump(2, numIterations-1, pcLoad, 0xFFFFFFFF);
+		inst[pc].Jump(2, numIterations-1, pcLoad, 0xFFFFFFFF);
 		inst[pc].IncrementIndex(2);
 		pc++;
 
@@ -762,7 +917,7 @@ public:
 		inst[pc].WriteBack(0, 1, numLines, 0, 0, 0, 0, true, accessWriteback);
 		pc++;
 
-		inst[pc].AddJump(2, 0, pcLoad, 0xFFFFFFFF);
+		inst[pc].Jump(2, 0, pcLoad, 0xFFFFFFFF);
 		pc++;
 
 		auto inputHandle = m_fpga->allocBuffer(numLines*64);

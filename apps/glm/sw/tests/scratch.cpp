@@ -13,16 +13,17 @@ int main(int argc, char* argv[]) {
 	uint32_t numFeatures = 0;
 	uint32_t numEpochs = 10;
 	uint32_t minibatchSize = 1;
-	if (!(argc == 5)) {
-		cout << "Usage: ./app <pathToDataset> <numSamples> <numFeatures> <numEpochs>" << endl;
+	if (!(argc == 6)) {
+		cout << "Usage: ./app <pathToDataset> <numSamples> <numFeatures> <minibatchSize> <numEpochs>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
 	numSamples = atoi(argv[2]);
 	numFeatures = atoi(argv[3]);
-	numEpochs = atoi(argv[4]);
+	minibatchSize = atoi(argv[4]);
+	numEpochs = atoi(argv[5]);
 
-	uint32_t partitionSize = 32;
+	uint32_t partitionSize = 128;
 
 	FPGA_ColumnML columnML(AFU_ACCEL_UUID);
 
@@ -47,9 +48,10 @@ int main(int argc, char* argv[]) {
 	args.m_numSamples = columnML.m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
 
-	// columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
-	// columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
-	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
+	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+	columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
+	columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
+	// columnML.fSGD_minibatch(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 	// columnML.fSGD_blocking(type, nullptr, numEpochs, stepSize, lambda, &args);
 
 	// columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
@@ -58,7 +60,7 @@ int main(int argc, char* argv[]) {
 
 	// columnML.ReadBandwidth(numEpochs);
 
-	columnML.Correctness();
+	// columnML.Correctness();
 
 	return 0;
 }

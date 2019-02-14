@@ -98,8 +98,8 @@ module glm_writeback
     //
     // *************************************************************************
     logic [1:0] offset_accumulate;
-    logic [32:0] num_sent_lines;
-    logic [32:0] num_ack_lines;
+    logic [31:0] num_sent_lines;
+    logic [31:0] num_ack_lines;
 
     always_ff @(posedge clk)
     begin
