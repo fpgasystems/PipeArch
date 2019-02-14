@@ -2,21 +2,11 @@
    "version": 1,
    "afu-image": {
       "power": 0,
-      "clock-frequency-high": "auto",
-      "clock-frequency-low": "auto",
+      "clock-frequency-high": 310,
+      "clock-frequency-low": 155,
       "afu-top-interface":
          {
-            "class": "ccip_std_afu",
-            "module-ports" :
-               [
-                  {
-                     "class": "cci-p",
-                     "params":
-                        {
-                           "clock": "pClkDiv2"
-                        }
-                  }
-               ]
+            "class": "ccip_std_afu"
          },
       "accelerator-clusters":
          [

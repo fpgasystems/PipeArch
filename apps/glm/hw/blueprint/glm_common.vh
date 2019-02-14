@@ -1,6 +1,8 @@
 `ifndef GLM_COMMON
 `define GLM_COMMON
 
+parameter NUM_INSTANCES = 2;
+
 parameter LOG2_MEMORY_SIZE = 12;
 parameter LOG2_PROGRAM_SIZE = 5;
 parameter PROGRAM_SIZE = 2**LOG2_PROGRAM_SIZE;

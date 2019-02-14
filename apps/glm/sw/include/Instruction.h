@@ -51,7 +51,7 @@ public:
 		m_data[2] = 0xEFFFFFFF;
 	}
 
-	void Copy(volatile uint32_t* data) {
+	void LoadInstruction(volatile uint32_t* data) {
 		for (uint32_t i = 0; i < NUM_WORDS; i++) {
 			data[i] = m_data[i];
 		}

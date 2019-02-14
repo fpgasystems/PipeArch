@@ -50,22 +50,22 @@ typedef logic [NUM_CSR_MGR_COUNTER_BITS - 1 : 0] t_csr_mgr_counter;
 // The CSR definitions here are generic.  The meanings of CSR locations
 // are determined by individual applications.
 //
-localparam NUM_APP_CSRS = 8;
+localparam NUM_APP_CSRS = 16;
+
+typedef struct packed
+{
+    logic [63:0] data;
+}
+t_cpu_rd_csrs;
+
+typedef struct packed
+{
+    logic [63:0] data;
+    logic en;
+}
+t_cpu_wr_csrs;
 
 interface app_csrs();
-
-    typedef struct packed
-    {
-        logic [63:0] data;
-    }
-    t_cpu_rd_csrs;
-
-    typedef struct packed
-    {
-        logic [63:0] data;
-        logic en;
-    }
-    t_cpu_wr_csrs;
 
     // Each application must provide an AFU ID
     logic [127:0] afu_id;
@@ -91,6 +91,12 @@ interface app_csrs();
        (
         output afu_id,
         output cpu_rd_csrs,
+        input  cpu_wr_csrs
+        );
+
+    // Instance (slow clock) port
+    modport inst
+        (
         input  cpu_wr_csrs
         );
 

@@ -1,6 +1,7 @@
 C:../opae/base/hw/rtl/base_sources.txt
 
 +incdir+.
+top.sv
 pipearch_prefetch.sv
 pipearch_copy.sv
 
@@ -28,3 +29,7 @@ IP/fp_gt_arria10/fp_gt_arria10.qip
 IP/fp_lt_arria10/fp_lt_arria10.qip
 IP/fp_mult_arria10/fp_mult_arria10.qip
 IP/fp_subtract_arria10/fp_subtract_arria10.qip
+
+IP/async_fifo/async_fifo.vhd
+IP/async_fifo/async_fifo_fifo_160.v
+IP/async_fifo/async_fifo_fifo_160_ack.v

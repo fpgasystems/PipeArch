@@ -38,7 +38,8 @@
 //
 module app_afu
    (
-    input  logic clk,
+    input logic clk,
+    input logic userclk,
 
     // Connection toward the host.  Reset comes in here.
     cci_mpf_if.to_fiu fiu,
@@ -123,6 +124,7 @@ module app_afu
     pipearch_top_inst
     (
     .clk,
+    .userclk,
     .reset,
     .cp2af_sRx(mpf2af_sRx),
     .af2cp_sTx(af2mpf_sTx),

@@ -50,8 +50,8 @@ int main(int argc, char* argv[]) {
 
 	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 	columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
-	columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
-	// columnML.fSGD_minibatch(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
+	columnML.fSGD_minibatch(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 	// columnML.fSGD_blocking(type, nullptr, numEpochs, stepSize, lambda, &args);
 
 	// columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);

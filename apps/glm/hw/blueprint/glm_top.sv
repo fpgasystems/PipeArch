@@ -14,12 +14,7 @@ module glm_top
     output t_if_ccip_Tx af2cp_sTx,
 
     // CSR connections
-    app_csrs.app csrs,
-
-    // MPF tracks outstanding requests.  These will be true as long as
-    // reads or unacknowledged writes are still in flight.
-    input  logic c0NotEmpty,
-    input  logic c1NotEmpty
+    input t_cpu_wr_csrs wr_csrs [4]
 );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PROGRAM_SIZE)) program_access();
@@ -36,7 +31,6 @@ module glm_top
     //   COMMON FUNCTIONS
     //
     // =================================
-
     //
     // Convert between byte addresses and line addresses.  The conversion
     // is simple: adding or removing low zero bits.
@@ -51,25 +45,6 @@ module glm_top
     function automatic t_byteAddr clAddrToByteAddr(t_cci_clAddr addr);
         return {addr, CL_BYTE_IDX_BITS'(0)};
     endfunction
-
-    // ====================================================================
-    //
-    //  CSRs (simple connections to the external CSR management engine)
-    //
-    // ====================================================================
-    always_comb
-    begin
-        // The AFU ID is a unique ID for a given program.  Here we generated
-        // one with the "uuidgen" program and stored it in the AFU's JSON file.
-        // ASE and synthesis setup scripts automatically invoke afu_json_mgr
-        // to extract the UUID into afu_json_info.vh.
-        csrs.afu_id = `AFU_ACCEL_UUID;
-        // Default
-        for (int i = 0; i < NUM_APP_CSRS; i = i + 1)
-        begin
-            csrs.cpu_rd_csrs[i].data = 64'(0);
-        end
-    end
 
     t_ccip_clAddr in_addr;
     t_ccip_clAddr out_addr;
@@ -90,26 +65,26 @@ module glm_top
         end
         else
         begin
-            if (csrs.cpu_wr_csrs[0].en)
+            if (wr_csrs[0].en)
             begin
-                in_addr <= byteAddrToClAddr(csrs.cpu_wr_csrs[0].data);
+                in_addr <= byteAddrToClAddr(wr_csrs[0].data);
             end
 
-            if (csrs.cpu_wr_csrs[1].en)
+            if (wr_csrs[1].en)
             begin
-                out_addr <= byteAddrToClAddr(csrs.cpu_wr_csrs[1].data);
+                out_addr <= byteAddrToClAddr(wr_csrs[1].data);
             end
 
-            if (csrs.cpu_wr_csrs[2].en)
+            if (wr_csrs[2].en)
             begin
-                program_addr <= byteAddrToClAddr(csrs.cpu_wr_csrs[2].data);
+                program_addr <= byteAddrToClAddr(wr_csrs[2].data);
             end
 
-            start <= csrs.cpu_wr_csrs[3].en;
-            if (csrs.cpu_wr_csrs[3].en)
+            start <= wr_csrs[3].en;
+            if (wr_csrs[3].en)
             begin
-                program_length <= csrs.cpu_wr_csrs[3].data[15:0];
-                vc_select <= t_ccip_vc'(csrs.cpu_wr_csrs[3].data[17:16]);
+                program_length <= wr_csrs[3].data[15:0];
+                vc_select <= t_ccip_vc'(wr_csrs[3].data[17:16]);
             end
 
         end

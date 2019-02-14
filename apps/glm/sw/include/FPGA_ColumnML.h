@@ -196,7 +196,7 @@ public:
 		cout << "CopyDataToFPGAMemory END" << endl;
 	}
 
-	void RunProgram(Instruction inst[], uint32_t numInstructions, volatile float* input, volatile float* output) {
+	shared_buffer::ptr_t StartProgram(Instruction inst[], uint32_t numInstructions, volatile float* input, volatile float* output, uint32_t whichInstance) {
 
 		std::vector<Instruction> instructions;
 		for (uint32_t i = 0; i < numInstructions; i++) {
@@ -204,14 +204,24 @@ public:
 		}
 
 		// Copy program to FPGA memory
-		auto programMemoryHandle = m_fpga->allocBuffer(instructions.size()*64);
+		shared_buffer::ptr_t programMemoryHandle = m_fpga->allocBuffer(instructions.size()*64);
 		auto programMemory = reinterpret_cast<volatile uint32_t*>(programMemoryHandle->c_type());
 		uint32_t k = 0;
 		for (Instruction i: instructions) {
-			i.Copy(programMemory + k*Instruction::NUM_WORDS);
+			i.LoadInstruction(programMemory + k*Instruction::NUM_WORDS);
 			k++;
 		}
 
+		uint32_t vc_select = 0;
+		m_csrs->writeCSR(whichInstance*4 + 0, intptr_t(input));
+		m_csrs->writeCSR(whichInstance*4 + 1, intptr_t(output));
+		m_csrs->writeCSR(whichInstance*4 + 2, intptr_t(programMemory));
+		m_csrs->writeCSR(whichInstance*4 + 3, (vc_select << 16) | (uint32_t)instructions.size());
+
+		return programMemoryHandle;
+	}
+
+	void JoinProgram(volatile float* output, shared_buffer::ptr_t& programMemoryHandle) {
 		// Spin, waiting for the value in memory to change to something non-zero.
 		struct timespec pause;
 		// Longer when simulating
@@ -219,12 +229,6 @@ public:
 		pause.tv_nsec = 100;
 
 		double start = get_time();
-
-		uint32_t vc_select = 0;
-		m_csrs->writeCSR(0, intptr_t(input));
-		m_csrs->writeCSR(1, intptr_t(output));
-		m_csrs->writeCSR(2, intptr_t(programMemory));
-		m_csrs->writeCSR(3, (vc_select << 16) | (uint32_t)instructions.size());
 
 		output[0] = 0;
 		while (0 == output[0]) {
@@ -252,6 +256,10 @@ public:
 					<< vtp_stats.numTLBMisses4KB << endl
 					<< "# VTP L2 2MB hit / miss: " << vtp_stats.numTLBHits2MB << " / "
 					<< vtp_stats.numTLBMisses2MB << endl;
+		}
+
+		if (programMemoryHandle != NULL) {
+			programMemoryHandle->release();
 		}
 	}
 
@@ -412,7 +420,8 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, m_memory, output);
+		auto handle = StartProgram(inst, pc, m_memory, output, 0);
+		JoinProgram(output, handle);
 
 		// Verify
 		xHistory = (float*)(output + 16);
@@ -499,7 +508,7 @@ public:
 		pc++;
 
 		inst[pc].Copy(model2OffsetInBRAM, model1OffsetInBRAM, m_numFeaturesInCL);
-		inst[pc].MakeNonBlocking();
+		// inst[pc].MakeNonBlocking();
 		pc++;
 
 		inst[pc].Dot(minibatchSize, m_numFeaturesInCL, false, false, model1OffsetInBRAM, 0xFFFF);
@@ -567,10 +576,27 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, m_memory, output);
+		auto outputHandle2 = m_fpga->allocBuffer((numEpochs*m_numFeaturesInCL+1)*64);
+		auto output2 = reinterpret_cast<volatile float*>(outputHandle2->c_type());
+		assert(NULL != output2);
+
+		auto handle = StartProgram(inst, pc, m_memory, output, 0);
+
+		auto handle2 = StartProgram(inst, pc, m_memory, output2, 1);
+
+		JoinProgram(output, handle);
+
+		JoinProgram(output2, handle2);
 
 		// Verify
 		xHistory = (float*)(output + 16);
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = Loss(type, xHistory + e*m_alignedNumFeatures, lambda, args);
+			std::cout << "loss " << e << ": " << loss << std::endl;
+		}
+
+		// Verify
+		xHistory = (float*)(output2 + 16);
 		for (uint32_t e = 0; e < numEpochs; e++) {
 			float loss = Loss(type, xHistory + e*m_alignedNumFeatures, lambda, args);
 			std::cout << "loss " << e << ": " << loss << std::endl;
@@ -696,7 +722,8 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, m_memory, output);
+		auto handle = StartProgram(inst, pc, m_memory, output, 0);
+		JoinProgram(output, handle);
 
 		// Verify
 		xHistory = (float*)(output + 16);
@@ -837,7 +864,8 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, m_memory, output);
+		auto handle = StartProgram(inst, pc, m_memory, output, 0);
+		JoinProgram(output, handle);
 
 		// Verify
 		std::vector<float> avgModel(m_alignedNumFeatures);
@@ -890,7 +918,8 @@ public:
 		auto output = reinterpret_cast<volatile float*>(outputHandle->c_type());
 		assert(NULL != output);
 
-		RunProgram(inst, pc, input, output);
+		auto handle = StartProgram(inst, pc, input, output, 0);
+		JoinProgram(output, handle);
 	}
 
 	void Correctness() {
@@ -936,7 +965,8 @@ public:
 			output[i] = 0;
 		}
 
-		RunProgram(inst, pc, (volatile float*)input, (volatile float*)output);
+		auto handle = StartProgram(inst, pc, (volatile float*)input, (volatile float*)output, 0);
+		JoinProgram((volatile float*)output, handle);
 
 		for (uint32_t i = 0; i < numLines*16; i++) {
 			cout << "input[" << i << "]: " << input[i] << endl;
