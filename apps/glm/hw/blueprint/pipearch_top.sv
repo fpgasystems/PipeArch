@@ -152,82 +152,21 @@ module pipearch_top
             //     current_Tx_c0_2d <= current_Tx_c0_1d;
             // end
         end
-        if (NUM_INSTANCES == 1)
+        always_ff @(posedge clk)
         begin
-            always_ff @(posedge clk)
+            for (int i = 1; i < NUM_INSTANCES; i++)
             begin
+                if (!Tx_c0[i].rdempty) begin
+                    current_Tx_c0 <= i;
+                end
+            end
+            if (!Tx_c0[0].rdempty && current_Tx_c0 == NUM_INSTANCES-1) begin
                 current_Tx_c0 <= 0;
             end
-        end
-        else if (NUM_INSTANCES == 2)
-        begin
-            always_ff @(posedge clk)
+            for (int i = 1; i < NUM_INSTANCES; i++)
             begin
-                if (current_Tx_c0 == 0 && !Tx_c0[1].rdempty) begin
-                    current_Tx_c0 <= 1;
-                end
-                else if (current_Tx_c0 == 1 && !Tx_c0[0].rdempty) begin
-                    current_Tx_c0 <= 0;
-                end
-                else if (!Tx_c0[1].rdempty) begin
-                    current_Tx_c0 <= 1;
-                end
-                else begin
-                    current_Tx_c0 <= 0;
-                end
-            end
-        end
-        else if (NUM_INSTANCES == 3)
-        begin
-            always_ff @(posedge clk)
-            begin
-                if (current_Tx_c0 == 0 && !Tx_c0[1].rdempty) begin
-                    current_Tx_c0 <= 1;
-                end
-                else if (current_Tx_c0 == 1 && !Tx_c0[2].rdempty) begin
-                    current_Tx_c0 <= 2;
-                end
-                else if (current_Tx_c0 == 2 && !Tx_c0[0].rdempty) begin
-                    current_Tx_c0 <= 0;
-                end
-                else if (!Tx_c0[2].rdempty) begin
-                    current_Tx_c0 <= 2;
-                end
-                else if (!Tx_c0[1].rdempty) begin
-                    current_Tx_c0 <= 1;
-                end
-                else begin
-                    current_Tx_c0 <= 0;
-                end
-            end
-        end
-        else if (NUM_INSTANCES == 4)
-        begin
-            always_ff @(posedge clk)
-            begin
-                if (current_Tx_c0 == 0 && !Tx_c0[1].rdempty) begin
-                    current_Tx_c0 <= 1;
-                end
-                else if (current_Tx_c0 == 1 && !Tx_c0[2].rdempty) begin
-                    current_Tx_c0 <= 2;
-                end
-                else if (current_Tx_c0 == 2 && !Tx_c0[3].rdempty) begin
-                    current_Tx_c0 <= 3;
-                end
-                else if (current_Tx_c0 == 3 && !Tx_c0[0].rdempty) begin
-                    current_Tx_c0 <= 0;
-                end
-                else if (!Tx_c0[3].rdempty) begin
-                    current_Tx_c0 <= 3;
-                end
-                else if (!Tx_c0[2].rdempty) begin
-                    current_Tx_c0 <= 2;
-                end
-                else if (!Tx_c0[1].rdempty) begin
-                    current_Tx_c0 <= 1;
-                end
-                else begin
-                    current_Tx_c0 <= 0;
+                if (!Tx_c0[i].rdempty && current_Tx_c0 == i-1) begin
+                    current_Tx_c0 <= i;
                 end
             end
         end
@@ -282,82 +221,21 @@ module pipearch_top
                 current_Tx_c1_2d <= current_Tx_c1_1d;
             end
         end
-        if (NUM_INSTANCES == 1)
+        always_ff @(posedge clk)
         begin
-            always_ff @(posedge clk)
+            for (int i = 1; i < NUM_INSTANCES; i++)
             begin
+                if (!Tx_c1[i].rdempty) begin
+                    current_Tx_c1 <= i;
+                end
+            end
+            if (!Tx_c1[0].rdempty && current_Tx_c1 == NUM_INSTANCES-1) begin
                 current_Tx_c1 <= 0;
             end
-        end
-        else if (NUM_INSTANCES == 2)
-        begin
-            always_ff @(posedge clk)
+            for (int i = 1; i < NUM_INSTANCES; i++)
             begin
-                if (current_Tx_c1 == 0 && !Tx_c1[1].rdempty) begin
-                    current_Tx_c1 <= 1;
-                end
-                else if (current_Tx_c1 == 1 && !Tx_c1[0].rdempty) begin
-                    current_Tx_c1 <= 0;
-                end
-                else if (!Tx_c1[1].rdempty) begin
-                    current_Tx_c1 <= 1;
-                end
-                else begin
-                    current_Tx_c1 <= 0;
-                end
-            end
-        end
-        else if (NUM_INSTANCES == 3)
-        begin
-            always_ff @(posedge clk)
-            begin
-                if (current_Tx_c1 == 0 && !Tx_c1[1].rdempty) begin
-                    current_Tx_c1 <= 1;
-                end
-                else if (current_Tx_c1 == 1 && !Tx_c1[2].rdempty) begin
-                    current_Tx_c1 <= 2;
-                end
-                else if (current_Tx_c1 == 2 && !Tx_c1[0].rdempty) begin
-                    current_Tx_c1 <= 0;
-                end
-                else if (!Tx_c1[2].rdempty) begin
-                    current_Tx_c1 <= 2;
-                end
-                else if (!Tx_c1[1].rdempty) begin
-                    current_Tx_c1 <= 1;
-                end
-                else begin
-                    current_Tx_c1 <= 0;
-                end
-            end
-        end
-        else if (NUM_INSTANCES == 4)
-        begin
-            always_ff @(posedge clk)
-            begin
-                if (current_Tx_c1 == 0 && !Tx_c1[1].rdempty) begin
-                    current_Tx_c1 <= 1;
-                end
-                else if (current_Tx_c1 == 1 && !Tx_c1[2].rdempty) begin
-                    current_Tx_c1 <= 2;
-                end
-                else if (current_Tx_c1 == 2 && !Tx_c1[3].rdempty) begin
-                    current_Tx_c1 <= 3;
-                end
-                else if (current_Tx_c1 == 3 && !Tx_c1[0].rdempty) begin
-                    current_Tx_c1 <= 0;
-                end
-                else if (!Tx_c1[3].rdempty) begin
-                    current_Tx_c1 <= 3;
-                end
-                else if (!Tx_c1[2].rdempty) begin
-                    current_Tx_c1 <= 2;
-                end
-                else if (!Tx_c1[1].rdempty) begin
-                    current_Tx_c1 <= 1;
-                end
-                else begin
-                    current_Tx_c1 <= 0;
+                if (!Tx_c1[i].rdempty && current_Tx_c1 == i-1) begin
+                    current_Tx_c1 <= i;
                 end
             end
         end

@@ -213,6 +213,7 @@ public:
 		}
 
 		uint32_t vc_select = 0;
+		output[0] = 0;
 		m_csrs->writeCSR(whichInstance*4 + 0, intptr_t(input));
 		m_csrs->writeCSR(whichInstance*4 + 1, intptr_t(output));
 		m_csrs->writeCSR(whichInstance*4 + 2, intptr_t(programMemory));
@@ -230,7 +231,6 @@ public:
 
 		double start = get_time();
 
-		output[0] = 0;
 		while (0 == output[0]) {
 			nanosleep(&pause, NULL);
 		};
