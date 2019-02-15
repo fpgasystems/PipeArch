@@ -217,8 +217,6 @@ module pipearch_top
                     Tx_c1[index].rdreq <= 1'b1;
                 end
                 Tx_c1[index].valid <= Tx_c1[index].rdreq && !Tx_c1[index].rdempty;
-                current_Tx_c1_1d <= current_Tx_c1;
-                current_Tx_c1_2d <= current_Tx_c1_1d;
             end
         end
         always_ff @(posedge clk)
@@ -242,6 +240,8 @@ module pipearch_top
     endgenerate
     always_ff @(posedge clk)
     begin
+        current_Tx_c1_1d <= current_Tx_c1;
+        current_Tx_c1_2d <= current_Tx_c1_1d;
         af2cp_sTx.c1 <= intermediate_af2cp_sTx[current_Tx_c1_2d].c1;
         af2cp_sTx.c1.hdr.mdata[15:14] <= current_Tx_c1_2d;
         af2cp_sTx.c1.valid <= 1'b0;
