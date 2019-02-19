@@ -51,18 +51,62 @@ int main(int argc, char* argv[]) {
 	args.m_numSamples = columnML.m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
 
-	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 
-	columnML.CreateMemoryLayout(glm, RowStore, partitionSize);
-	auto programHandle = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
-	glm.JoinProgram(columnML.m_outputHandle, programHandle);
-	// Verify
-	auto output = reinterpret_cast<volatile float*>(columnML.m_outputHandle->c_type());
-	float* xHistory = (float*)(output + 16);
-	for (uint32_t e = 0; e < numEpochs; e++) {
-		float loss = columnML.Loss(type, xHistory + e*columnML.m_alignedNumFeatures, lambda, &args);
-		std::cout << "loss " << e << ": " << loss << std::endl;
+	// Set memory format / decide on SGD or SCD
+	MemoryFormat format = ColumnStore;
+	columnML.CreateMemoryLayout(glm, format, partitionSize);
+
+
+
+	ResultHandle resultHandle;
+	if (format == RowStore) {
+		columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+
+		if (minibatchSize == 1) {
+			resultHandle = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
+		}
+		else {
+			resultHandle = glm.fSGD_minibatch(columnML, type, numEpochs, minibatchSize, stepSize, lambda, &args);
+		}
 	}
+	else {
+		columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
+
+		resultHandle = glm.fSCD(columnML, type, numEpochs, stepSize, lambda, &args);
+	}
+
+	glm.JoinProgram(resultHandle);
+
+	// Verify
+	if (format == RowStore) {
+		auto output = reinterpret_cast<volatile float*>(resultHandle.m_outputHandle->c_type());
+		float* xHistory = (float*)(output + 16);
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = columnML.Loss(type, xHistory + e*columnML.m_alignedNumFeatures, lambda, &args);
+			std::cout << "loss " << e << ": " << loss << std::endl;
+		}
+	}
+	else {
+		std::vector<float> avgModel(columnML.m_alignedNumFeatures);
+		for (uint32_t p = 0; p < columnML.m_numPartitions; p++) {
+			for (uint32_t j = 0; j < columnML.m_alignedNumFeatures; j++) {
+				if (p == 0) {
+					avgModel[j] = columnML.m_model[p*columnML.m_alignedNumFeatures + j];
+				}
+				else {
+					avgModel[j] += columnML.m_model[p*columnML.m_alignedNumFeatures + j];
+				}
+				// cout << "p: " << p << ", avgModel[" << j <<  "]: " << avgModel[j] << endl;
+			}
+		}
+		for (uint32_t j = 0; j < columnML.m_alignedNumFeatures; j++) {
+			avgModel[j] /= columnML.m_numPartitions;
+		}
+		float loss = columnML.Loss(type, avgModel.data(), lambda, &args);
+		std::cout << "loss: " << loss << std::endl;
+	}
+
+
 
 	// columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
 	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);

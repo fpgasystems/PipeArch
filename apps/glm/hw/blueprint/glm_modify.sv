@@ -35,6 +35,7 @@ module glm_modify
     // *************************************************************************
     logic [15:0] num_iterations;
     logic [15:0] offset_by_index;
+    logic [15:0] offset_by_index_write;
     logic [3:0] position_by_index;
     logic [3:0] write_position_by_index;
     logic [15:0] MEM_labels_load_offset;
@@ -131,7 +132,8 @@ module glm_modify
                     if (op_start)
                     begin
                         // *************************************************************************
-                        offset_by_index <= regs[0];
+                        offset_by_index <= regs[0][15:0];
+                        offset_by_index_write <= regs[0][15:0];
                         position_by_index <= regs[0][3:0];
                         write_position_by_index <= regs[0][3:0];
                         num_iterations <= regs[3][31:16];
@@ -153,7 +155,7 @@ module glm_modify
                     begin
                         FIFO_dot.re <= 1'b1;
                         MEM_labels.re <= 1'b1;
-                        MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index >> 4);
+                        MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index[15:4]);
                         num_performed_iterations <= num_performed_iterations + 1;
                         offset_by_index <= offset_by_index + 1;
                     end
@@ -204,7 +206,7 @@ module glm_modify
                     if (mult_status[0])
                     begin
                         MEM_labels.re <= 1'b1;
-                        MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index >> 4);
+                        MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index[15:4]);
                         offset_by_index <= offset_by_index + 1;
                     end
 
@@ -222,7 +224,8 @@ module glm_modify
                     if (sub_regs.done)
                     begin
                         MEM_labels.we <= 1'b1;
-                        MEM_labels.waddr <= MEM_labels_load_offset + offset_by_index;
+                        MEM_labels.waddr <= MEM_labels_load_offset + (offset_by_index_write[15:4]);
+                        offset_by_index_write <= offset_by_index_write + 1;
                         MEM_labels.wdata <= lineFromLabelsMem;
                         MEM_labels.wdata[write_position_by_index*32+31 -: 32] <= sub_regs.result;
                         write_position_by_index <= write_position_by_index + 1;
