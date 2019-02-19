@@ -279,4 +279,9 @@ public:
 		m_data[3] = (length << 16) | (loadOffset & 0xFFFF);
 		m_data[4] = (length << 16) | (storeOffset & 0xFFFF);
 	}
+
+	void Sync()
+	{
+		m_data[15] |= (8 << 4);
+	}
 };

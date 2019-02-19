@@ -14,7 +14,10 @@ module glm_top
     output t_if_ccip_Tx af2cp_sTx,
 
     // CSR connections
-    input t_cpu_wr_csrs wr_csrs [4]
+    input t_cpu_wr_csrs wr_csrs [4],
+
+    output logic synchronize,
+    input logic synchronize_done
 );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PROGRAM_SIZE)) program_access();
@@ -405,6 +408,13 @@ module glm_top
                                                                                 // [31:16] memory1 load/store length in cachelines
     // reg[4] = instruction[4]                                                  // [0] write to model_forward_fifo
 
+    // if opcode == 0x7N ---- copy
+    // reg[3] = instruction[3]                                                  // [15:0] memory1 load offset in cacheline
+                                                                                // [31:16] memory1 load length in cachelines
+    // reg[4] = instruction[4]                                                  // [15:0] memory1 store offset in cacheline
+                                                                                // [31:16] memory1 store length in cachelines
+
+    // if opcode == 0x8N ---- synchronize
 
     logic [15:0] program_counter;
     logic [31:0] instruction [16];
@@ -446,6 +456,9 @@ module glm_top
             end
         end
     end
+
+    assign synchronize = op_start[7];
+    assign op_done[7] = synchronize_done;
 
     always_ff @(posedge clk)
     begin
@@ -582,6 +595,11 @@ module glm_top
                                 copy_regs[2] <= temp_regs[2];
                                 copy_regs[3] <= instruction[3];
                                 copy_regs[4] <= instruction[4];
+                            end
+
+                            4'h8: // synchronize
+                            begin
+                                op_start[7] <= 1'b1;
                             end
 
                         endcase

@@ -54,13 +54,14 @@ module pipearch_top
         end
     end
 
-    t_cpu_wr_csrs intermediate_csrs[0 : NUM_APP_CSRS-1];
-    t_cpu_wr_csrs inst_csrs[0 : NUM_APP_CSRS-1];
+    t_cpu_wr_csrs intermediate_csrs[0:NUM_APP_CSRS-1];
+    t_cpu_wr_csrs inst_csrs[0:NUM_APP_CSRS-1];
+    t_async_access csrs_access[0:NUM_APP_CSRS-1];
     genvar index;
     generate
         for(index = 0; index < NUM_APP_CSRS; index = index + 1)
         begin: gen_csr_cross
-            t_async_access csrs_access;
+            
             async_fifo
             #(.FIFO_WIDTH( $bits(csrs.cpu_wr_csrs[index]) ), .FIFO_DEPTH_BITS(LOG2_PREFETCH_SIZE-3), .ACK(0))
             async_fifo_csrs (
@@ -68,21 +69,21 @@ module pipearch_top
                 .data(csrs.cpu_wr_csrs[index]),
                 .wrreq(csrs.cpu_wr_csrs[index].en),
                 .rdclk(userclk),
-                .rdreq(csrs_access.rdreq),
+                .rdreq(csrs_access[index].rdreq),
                 .q(intermediate_csrs[index]),
-                .rdempty(csrs_access.rdempty),
+                .rdempty(csrs_access[index].rdempty),
                 .wrfull()
             );
             always_ff @(posedge userclk)
             begin
-                csrs_access.rdreq <= 1'b0;
-                if (!csrs_access.rdempty)
+                csrs_access[index].rdreq <= 1'b0;
+                if (!csrs_access[index].rdempty)
                 begin
-                    csrs_access.rdreq <= 1'b1;
+                    csrs_access[index].rdreq <= 1'b1;
                 end
-                csrs_access.valid <= csrs_access.rdreq && !csrs_access.rdempty;
+                csrs_access[index].valid <= csrs_access[index].rdreq && !csrs_access[index].rdempty;
                 inst_csrs[index] <= intermediate_csrs[index];
-                inst_csrs[index].en <= csrs_access.valid;
+                inst_csrs[index].en <= csrs_access[index].valid;
             end
         end
     endgenerate
@@ -152,25 +153,25 @@ module pipearch_top
             //     current_Tx_c0_2d <= current_Tx_c0_1d;
             // end
         end
-        always_ff @(posedge clk)
+    endgenerate
+    always_ff @(posedge clk)
+    begin
+        for (int i = 1; i < NUM_INSTANCES; i=i+1)
         begin
-            for (int i = 1; i < NUM_INSTANCES; i++)
-            begin
-                if (!Tx_c0[i].rdempty) begin
-                    current_Tx_c0 <= i;
-                end
-            end
-            if (!Tx_c0[0].rdempty && current_Tx_c0 == NUM_INSTANCES-1) begin
-                current_Tx_c0 <= 0;
-            end
-            for (int i = 1; i < NUM_INSTANCES; i++)
-            begin
-                if (!Tx_c0[i].rdempty && current_Tx_c0 == i-1) begin
-                    current_Tx_c0 <= i;
-                end
+            if (!Tx_c0[i].rdempty) begin
+                current_Tx_c0 <= i;
             end
         end
-    endgenerate
+        if (!Tx_c0[0].rdempty && current_Tx_c0 == NUM_INSTANCES-1) begin
+            current_Tx_c0 <= 0;
+        end
+        for (int i = 1; i < NUM_INSTANCES; i=i+1)
+        begin
+            if (!Tx_c0[i].rdempty && current_Tx_c0 == i-1) begin
+                current_Tx_c0 <= i;
+            end
+        end
+    end
     always_ff @(posedge clk)
     begin
         // af2cp_sTx.c0 <= intermediate_af2cp_sTx[current_Tx_c0_2d].c0;
@@ -219,25 +220,25 @@ module pipearch_top
                 Tx_c1[index].valid <= Tx_c1[index].rdreq && !Tx_c1[index].rdempty;
             end
         end
-        always_ff @(posedge clk)
+    endgenerate
+    always_ff @(posedge clk)
+    begin
+        for (int i = 1; i < NUM_INSTANCES; i=i+1)
         begin
-            for (int i = 1; i < NUM_INSTANCES; i++)
-            begin
-                if (!Tx_c1[i].rdempty) begin
-                    current_Tx_c1 <= i;
-                end
-            end
-            if (!Tx_c1[0].rdempty && current_Tx_c1 == NUM_INSTANCES-1) begin
-                current_Tx_c1 <= 0;
-            end
-            for (int i = 1; i < NUM_INSTANCES; i++)
-            begin
-                if (!Tx_c1[i].rdempty && current_Tx_c1 == i-1) begin
-                    current_Tx_c1 <= i;
-                end
+            if (!Tx_c1[i].rdempty) begin
+                current_Tx_c1 <= i;
             end
         end
-    endgenerate
+        if (!Tx_c1[0].rdempty && current_Tx_c1 == NUM_INSTANCES-1) begin
+            current_Tx_c1 <= 0;
+        end
+        for (int i = 1; i < NUM_INSTANCES; i=i+1)
+        begin
+            if (!Tx_c1[i].rdempty && current_Tx_c1 == i-1) begin
+                current_Tx_c1 <= i;
+            end
+        end
+    end
     always_ff @(posedge clk)
     begin
         current_Tx_c1_1d <= current_Tx_c1;
@@ -326,6 +327,10 @@ module pipearch_top
     //  Instantiate
     //
     // ====================================================================
+    logic [NUM_INSTANCES-1:0] synchronize_compare;
+    logic [NUM_INSTANCES-1:0] synchronize;
+    logic [NUM_INSTANCES-1:0] synchronize_done;
+
     generate
         for (index = 0; index < NUM_INSTANCES; index = index + 1)
         begin: gen_glm_top
@@ -336,9 +341,28 @@ module pipearch_top
                 .reset(inst_reset),
                 .cp2af_sRx(inst_cp2af_sRx[index]),
                 .af2cp_sTx(inst_af2cp_sTx[index]),
-                .wr_csrs(inst_csrs[index*4 +: 4])
+                .wr_csrs(inst_csrs[index*4 +: 4]),
+                .synchronize(synchronize[index]),
+                .synchronize_done(synchronize_done[index])
             );
         end
     endgenerate
+
+    always_ff @(posedge userclk)
+    begin
+        if (inst_csrs[NUM_APP_CSRS-1].en)
+        begin
+            synchronize_compare <= inst_csrs[NUM_APP_CSRS-1][NUM_INSTANCES-1];
+        end
+
+        synchronize_done <= 0;
+        if (synchronize == synchronize_compare)
+        begin
+            for (int i = 0; i < NUM_INSTANCES; i=i+1)
+            begin
+                synchronize_done[i] <= 1'b1;
+            end
+        end
+    end
 
 endmodule // pipearch_top

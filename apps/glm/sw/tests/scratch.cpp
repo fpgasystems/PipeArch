@@ -1,5 +1,6 @@
 #include <iostream>
 #include "FPGA_ColumnML.h"
+#include "GlmMachine.h"
 
 // State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script
 #include "afu_json_info.h"
@@ -25,7 +26,9 @@ int main(int argc, char* argv[]) {
 
 	uint32_t partitionSize = 128;
 
-	FPGA_ColumnML columnML(AFU_ACCEL_UUID);
+	GlmMachine glm(AFU_ACCEL_UUID);
+
+	FPGA_ColumnML columnML;
 
 	float stepSize = 0.01;
 	float lambda = 0;
@@ -48,10 +51,24 @@ int main(int argc, char* argv[]) {
 	args.m_numSamples = columnML.m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
 
-	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
-	columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
+	columnML.CreateMemoryLayout(glm, RowStore, partitionSize);
+
+	auto programHandle = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
+
+	glm.JoinProgram(columnML.m_outputHandle, programHandle);
+
+	// Verify
+	auto output = reinterpret_cast<volatile float*>(columnML.m_outputHandle->c_type());
+	float* xHistory = (float*)(output + 16);
+	for (uint32_t e = 0; e < numEpochs; e++) {
+		float loss = columnML.Loss(type, xHistory + e*columnML.m_alignedNumFeatures, lambda, &args);
+		std::cout << "loss " << e << ": " << loss << std::endl;
+	}
+
+	// columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+	// columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
 	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
-	columnML.fSGD_minibatch(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+	// columnML.fSGD_minibatch(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 	// columnML.fSGD_blocking(type, nullptr, numEpochs, stepSize, lambda, &args);
 
 	// columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
