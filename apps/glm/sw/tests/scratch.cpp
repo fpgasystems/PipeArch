@@ -51,12 +51,11 @@ int main(int argc, char* argv[]) {
 	args.m_numSamples = columnML.m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
 
+	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+
 	columnML.CreateMemoryLayout(glm, RowStore, partitionSize);
-
 	auto programHandle = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
-
 	glm.JoinProgram(columnML.m_outputHandle, programHandle);
-
 	// Verify
 	auto output = reinterpret_cast<volatile float*>(columnML.m_outputHandle->c_type());
 	float* xHistory = (float*)(output + 16);
@@ -65,7 +64,6 @@ int main(int argc, char* argv[]) {
 		std::cout << "loss " << e << ": " << loss << std::endl;
 	}
 
-	// columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 	// columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
 	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
 	// columnML.fSGD_minibatch(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);

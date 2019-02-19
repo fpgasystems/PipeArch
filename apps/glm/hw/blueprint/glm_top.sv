@@ -668,12 +668,24 @@ module glm_top
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface1();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface2();
-    bram2
+    // bram2
+    // #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
+    // MEM_model (
+    //     .clk,
+    //     .access1(MEM_model_interface1.bram_source),
+    //     .access2(MEM_model_interface2.bram_source)
+    // );
+    bram
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
-    MEM_model (
+    MEM_model1 (
         .clk,
-        .access1(MEM_model_interface1.bram_source),
-        .access2(MEM_model_interface2.bram_source)
+        .access(MEM_model_interface1.bram_source)
+    );
+    bram
+    #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
+    MEM_model2 (
+        .clk,
+        .access(MEM_model_interface2.bram_source)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_labels_interface();
@@ -768,8 +780,8 @@ module glm_top
     assign writeback_MEM_labels_interface.rvalid = MEM_labels_interface.rvalid;
     assign writeback_MEM_labels_interface.rdata = MEM_labels_interface.rdata;
 
-    assign copy_MEM_model_interface.rvalid = MEM_model_interface1.rvalid;
-    assign copy_MEM_model_interface.rdata = MEM_model_interface1.rdata;
+    assign copy_MEM_model_interface.rvalid = MEM_model_interface2.rvalid;
+    assign copy_MEM_model_interface.rdata = MEM_model_interface2.rdata;
 
     always_comb
     begin
@@ -778,11 +790,6 @@ module glm_top
         begin
             MEM_model_interface1.re = 1'b1;
             MEM_model_interface1.raddr = dot_MEM_model_interface.raddr;
-        end
-        else if (copy_MEM_model_interface.re)
-        begin
-            MEM_model_interface1.re = 1'b1;
-            MEM_model_interface1.raddr = copy_MEM_model_interface.raddr;
         end
         else
         begin
@@ -794,6 +801,11 @@ module glm_top
         begin
             MEM_model_interface2.re = 1'b1;
             MEM_model_interface2.raddr = update_MEM_model_interface.raddr;
+        end
+        else if (copy_MEM_model_interface.re)
+        begin
+            MEM_model_interface2.re = 1'b1;
+            MEM_model_interface2.raddr = copy_MEM_model_interface.raddr;
         end
         else if (writeback_MEM_model_interface.re)
         begin
@@ -860,7 +872,13 @@ module glm_top
             MEM_model_interface1.wdata = 0;
         end
 
-        if (update_MEM_model_interface.we)
+        if (load_MEM_model_interface.we)
+        begin
+            MEM_model_interface2.we = 1'b1;
+            MEM_model_interface2.waddr = load_MEM_model_interface.waddr;
+            MEM_model_interface2.wdata = load_MEM_model_interface.wdata;
+        end
+        else if (update_MEM_model_interface.we)
         begin
             MEM_model_interface2.we = 1'b1;
             MEM_model_interface2.waddr = update_MEM_model_interface.waddr;
@@ -1031,6 +1049,5 @@ module glm_top
         .MEM_read(copy_MEM_model_interface.bram_read),
         .MEM_write(copy_MEM_model_interface.bram_write)
     );
-
 
 endmodule
