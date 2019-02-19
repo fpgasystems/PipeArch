@@ -49,7 +49,3 @@ IP/fp_lt_arria10/sim/fp_lt_arria10.v
 
 IP/fp_subtract_arria10/altera_fp_functions_160/sim/fp_subtract_arria10_altera_fp_functions_160_m3dr3hq.vhd
 IP/fp_subtract_arria10/sim/fp_subtract_arria10.v
-
-IP/async_fifo/async_fifo.vhd
-IP/async_fifo/async_fifo_fifo_160.v
-IP/async_fifo/async_fifo_fifo_160_ack.v

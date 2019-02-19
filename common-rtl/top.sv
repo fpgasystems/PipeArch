@@ -120,17 +120,42 @@ module app_afu
     end
 
     // Connect to the AFU
-    pipearch_top
-    pipearch_top_inst
+    // pipearch_top
+    // pipearch_top_inst
+    // (
+    // .clk,
+    // .userclk,
+    // .reset,
+    // .cp2af_sRx(mpf2af_sRx),
+    // .af2cp_sTx(af2mpf_sTx),
+    // .csrs,
+    // .c0NotEmpty,
+    // .c1NotEmpty
+    // );
+
+    glm_top
+    glm_top_inst
     (
     .clk,
-    .userclk,
     .reset,
     .cp2af_sRx(mpf2af_sRx),
     .af2cp_sTx(af2mpf_sTx),
-    .csrs,
-    .c0NotEmpty,
-    .c1NotEmpty
+    .wr_csrs(csrs.cpu_wr_csrs[0:3]),
+    .synchronize(),
+    .synchronize_done()
     );
+    always_comb
+    begin
+        // The AFU ID is a unique ID for a given program.  Here we generated
+        // one with the "uuidgen" program and stored it in the AFU's JSON file.
+        // ASE and synthesis setup scripts automatically invoke afu_json_mgr
+        // to extract the UUID into afu_json_info.vh.
+        csrs.afu_id = `AFU_ACCEL_UUID;
+        // Default
+        for (int i = 0; i < NUM_APP_CSRS; i = i + 1)
+        begin
+            csrs.cpu_rd_csrs[i].data = 64'(0);
+        end
+    end
 
 endmodule // app_afu
