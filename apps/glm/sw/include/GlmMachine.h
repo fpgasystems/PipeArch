@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 
 #include "Instruction.h"
 #include "FPGA_ColumnML.h"
@@ -8,13 +9,18 @@ struct ResultHandle
 {
 	shared_buffer::ptr_t m_programMemoryHandle;
 	shared_buffer::ptr_t m_outputHandle;
+	uint32_t m_instanceId;
 };
 
 class GlmMachine : public iFPGA {
-public:
-	GlmMachine(const char* accel_uuid) : iFPGA(accel_uuid) {}
-
 private:
+	static const uint32_t MAX_MEMORY_SIZE = (1 << 10)*16;
+	static const uint32_t NUM_INSTANCES = 1;
+
+	std::mutex m_mutex;
+	uint32_t m_numJobsRunning[NUM_INSTANCES];
+
+
 	shared_buffer::ptr_t StartProgram(Instruction inst[], uint32_t numInstructions, shared_buffer::ptr_t inputHandle, shared_buffer::ptr_t outputHandle, uint32_t whichInstance) {
 
 		std::vector<Instruction> instructions;
@@ -37,17 +43,31 @@ private:
 		auto outputMemory = reinterpret_cast<volatile uint32_t*>(outputHandle->c_type());
 		assert(NULL != outputMemory);
 
+		m_mutex.lock();
+
+		uint32_t whichThread = m_numJobsRunning[whichInstance];
 		uint32_t vc_select = 0;
 		outputMemory[0] = 0;
-		iFPGA::writeCSR(whichInstance*4 + 0, intptr_t(inputMemory));
-		iFPGA::writeCSR(whichInstance*4 + 1, intptr_t(outputMemory));
-		iFPGA::writeCSR(whichInstance*4 + 2, intptr_t(programMemory));
-		iFPGA::writeCSR(whichInstance*4 + 3, (vc_select << 16) | (uint32_t)instructions.size());
+		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (whichThread << 16) | (instructions.size() & 0xFFFF) );
+		iFPGA::writeCSR(whichInstance*4 + 1, intptr_t(programMemory));
+		iFPGA::writeCSR(whichInstance*4 + 2, intptr_t(inputMemory));
+		iFPGA::writeCSR(whichInstance*4 + 3, intptr_t(outputMemory));
+
+		m_numJobsRunning[whichInstance]++;
+
+		m_mutex.unlock();
 
 		return programMemoryHandle;
 	}
 
 public:
+
+	GlmMachine(const char* accel_uuid) : iFPGA(accel_uuid) {
+		for (uint32_t i = 0; i < NUM_INSTANCES; i++) {
+			m_numJobsRunning[i] = 0;
+		}
+	}
+
 	void JoinProgram(ResultHandle& handle) {
 
 		auto output = reinterpret_cast<volatile float*>(handle.m_outputHandle->c_type());
@@ -70,6 +90,10 @@ public:
 		cout << "Time: " << end-start << endl;
 
 		printMPF();
+
+		m_mutex.lock();
+		m_numJobsRunning[handle.m_instanceId]++;
+		m_mutex.unlock();
 
 		if (handle.m_programMemoryHandle != NULL) {
 			handle.m_programMemoryHandle->release();

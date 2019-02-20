@@ -49,47 +49,62 @@ module glm_top
         return {addr, CL_BYTE_IDX_BITS'(0)};
     endfunction
 
-    t_ccip_clAddr in_addr;
-    t_ccip_clAddr out_addr;
-    t_ccip_clAddr program_addr;
-    logic [15:0] program_length;
-    logic start;
+    typedef enum logic [1:0]
+    {
+        THREAD_IDLE,
+        THREAD_LOAD_PROGRAM,
+        THREAD_WAITING,
+        THREAD_RUNNING
+    } t_thread_status;
+
+    typedef struct packed
+    {
+        t_thread_status status;
+        logic [15:0] program_length;
+        t_ccip_clAddr program_addr;
+        t_ccip_clAddr in_addr;
+        t_ccip_clAddr out_addr;
+    } t_thread_context;
+
+    t_thread_context thread_context [MAX_NUM_THREADS];
+    logic [LOG2_MAX_NUM_THREADS-1:0] thread_status_select;
     t_ccip_vc vc_select;
 
     always_ff @(posedge clk)
     begin
         if (reset)
         begin
-            in_addr <= t_ccip_clAddr'(0);
-            out_addr <= t_ccip_clAddr'(0);
-            program_addr <= t_ccip_clAddr'(0);
-            program_length <= 15'b0;
-            start <= 1'b0;
+            for (int i = 0; i < MAX_NUM_THREADS; i++)
+            begin
+                thread_context[i] <= t_thread_context'(0);
+            end
+            thread_status_select <= 0;
         end
         else
         begin
             if (wr_csrs[0].en)
             begin
-                in_addr <= byteAddrToClAddr(wr_csrs[0].data);
+                thread_context[wr_csrs[0].data[16+LOG2_MAX_NUM_THREADS-1:16]].program_length <= wr_csrs[0].data[15:0];
+                thread_status_select <= wr_csrs[0].data[16+LOG2_MAX_NUM_THREADS-1:16];
+                vc_select <= t_ccip_vc'(wr_csrs[0].data[31:30]);
             end
 
             if (wr_csrs[1].en)
             begin
-                out_addr <= byteAddrToClAddr(wr_csrs[1].data);
+                thread_context[thread_status_select].program_addr <= byteAddrToClAddr(wr_csrs[1].data);
             end
 
             if (wr_csrs[2].en)
             begin
-                program_addr <= byteAddrToClAddr(wr_csrs[2].data);
+                thread_context[thread_status_select].in_addr <= byteAddrToClAddr(wr_csrs[2].data);
             end
 
-            start <= wr_csrs[3].en;
+            thread_context[thread_status_select].status <= THREAD_IDLE;
             if (wr_csrs[3].en)
             begin
-                program_length <= wr_csrs[3].data[15:0];
-                vc_select <= t_ccip_vc'(wr_csrs[3].data[17:16]);
+                thread_context[thread_status_select].status <= THREAD_LOAD_PROGRAM;
+                thread_context[thread_status_select].out_addr <= byteAddrToClAddr(wr_csrs[3].data);
             end
-
         end
     end
 
@@ -116,6 +131,7 @@ module glm_top
     t_rxtxstate request_state;
     t_rxtxstate receive_state;
     t_machinestate machine_state;
+    logic [LOG2_MAX_NUM_THREADS-1:0] current_thread;
 
     // =========================================================================
     //
@@ -136,6 +152,7 @@ module glm_top
             request_state <= RXTX_STATE_IDLE;
             receive_state <= RXTX_STATE_IDLE;
             program_access.we <= 1'b0;
+            current_thread <= 0;
         end
         else
         begin
@@ -147,7 +164,7 @@ module glm_top
             case (request_state)
                 RXTX_STATE_IDLE:
                 begin
-                    if (start)
+                    if (thread_context[current_thread].status == THREAD_LOAD_PROGRAM)
                     begin
                         request_state <= RXTX_STATE_PROGRAM_READ;
                         program_length_request <= 15'b0;
@@ -156,13 +173,13 @@ module glm_top
 
                 RXTX_STATE_PROGRAM_READ:
                 begin
-                    if (program_length_request < program_length && !cp2af_sRx.c0TxAlmFull)
+                    if (program_length_request < thread_context[current_thread].program_length && !cp2af_sRx.c0TxAlmFull)
                     begin
                         af2cp_sTx.c0.valid <= 1'b1;
                         af2cp_sTx.c0.hdr.vc_sel <= vc_select;
-                        af2cp_sTx.c0.hdr.address <= program_addr + program_length_request;
+                        af2cp_sTx.c0.hdr.address <= thread_context[current_thread].program_addr + program_length_request;
                         program_length_request <= program_length_request + 1;
-                        if (program_length_request == program_length - 1)
+                        if (program_length_request == thread_context[current_thread].program_length - 1)
                         begin
                             request_state <= RXTX_STATE_PROGRAM_EXECUTE;
                         end
@@ -197,7 +214,7 @@ module glm_top
             case (receive_state)
                 RXTX_STATE_IDLE:
                 begin
-                    if (start)
+                    if (thread_context[current_thread].status == THREAD_LOAD_PROGRAM)
                     begin
                         receive_state <= RXTX_STATE_PROGRAM_READ;
                         program_length_receive <= 15'b0;
@@ -212,7 +229,7 @@ module glm_top
                         program_access.waddr <= program_length_receive;
                         program_access.wdata <= cp2af_sRx.c0.data;
                         program_length_receive <= program_length_receive + 1;
-                        if (program_length_receive == program_length-1)
+                        if (program_length_receive == thread_context[current_thread].program_length-1)
                         begin
                             receive_state <= RXTX_STATE_PROGRAM_EXECUTE;
                         end 
@@ -262,7 +279,7 @@ module glm_top
         begin
             af2cp_sTx.c1.valid <= 1'b1;
             af2cp_sTx.c1.data <= t_ccip_clData'(64'h1);
-            af2cp_sTx.c1.hdr.address <= out_addr;
+            af2cp_sTx.c1.hdr.address <= thread_context[current_thread].out_addr;
             af2cp_sTx.c1.hdr.vc_sel <= vc_select;
         end
     end
@@ -613,19 +630,16 @@ module glm_top
                             4'h1:
                             begin
                                 program_counter <= conditional(temp_regs[0], instruction[13], instruction[14][31:16], instruction[14][15:0]);
-                                // program_counter <= (temp_regs[0] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
                             end
 
                             4'h2:
                             begin
                                 program_counter <= conditional(temp_regs[1], instruction[13], instruction[14][31:16], instruction[14][15:0]);
-                                // program_counter <= (temp_regs[1] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
                             end
 
                             4'h3:
                             begin
                                 program_counter <= conditional(temp_regs[2], instruction[13], instruction[14][31:16], instruction[14][15:0]);
-                                // program_counter <= (temp_regs[2] == instruction[13]) ? instruction[14][15:0] : instruction[14][31:16];
                             end
                         endcase
 
@@ -668,13 +682,6 @@ module glm_top
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface1();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_model_interface2();
-    // bram2
-    // #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
-    // MEM_model (
-    //     .clk,
-    //     .access1(MEM_model_interface1.bram_source),
-    //     .access2(MEM_model_interface2.bram_source)
-    // );
     bram
     #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE))
     MEM_model1 (
@@ -1071,7 +1078,7 @@ module glm_top
         .op_start(op_start[0]),
         .op_done(op_done[0]),
         .regs(prefetch_regs),
-        .in_addr,
+        .in_addr(thread_context[current_thread].in_addr),
         .c0TxAlmFull(execute_load_c0TxAlmFull),
         .cp2af_sRx_c0(execute_load_cp2af_sRx_c0),
         .af2cp_sTx_c0(execute_load_af2cp_sTx_c0),
@@ -1088,7 +1095,7 @@ module glm_top
         .op_start(op_start[1]),
         .op_done(op_done[1]),
         .regs(load_regs),
-        .in_addr,
+        .in_addr(thread_context[current_thread].in_addr),
         .c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
         .cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
         .af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0),
@@ -1108,8 +1115,8 @@ module glm_top
         .op_start(op_start[2]),
         .op_done(op_done[2]),
         .regs(writeback_regs),
-        .in_addr,
-        .out_addr,
+        .in_addr(thread_context[current_thread].in_addr),
+        .out_addr(thread_context[current_thread].out_addr),
         .MEM_model(writeback_MEM_model_interface.bram_read),
         .MEM_labels(writeback_MEM_labels_interface.bram_read),
         .c1TxAlmFull(execute_writeback_c1TxAlmFull),

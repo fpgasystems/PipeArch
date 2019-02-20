@@ -2,6 +2,8 @@
 `define GLM_COMMON
 
 parameter NUM_INSTANCES = 1;
+parameter LOG2_MAX_NUM_THREADS = 1;
+parameter MAX_NUM_THREADS = 2**LOG2_MAX_NUM_THREADS;
 
 parameter LOG2_MEMORY_SIZE = 10;
 parameter LOG2_PROGRAM_SIZE = 5;

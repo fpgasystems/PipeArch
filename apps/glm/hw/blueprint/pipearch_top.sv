@@ -171,6 +171,10 @@ module pipearch_top
                 current_Tx_c0 <= i;
             end
         end
+        if (reset)
+        begin
+            current_Tx_c0 <= 0;
+        end
     end
     always_ff @(posedge clk)
     begin
@@ -181,9 +185,15 @@ module pipearch_top
         // begin
         //     af2cp_sTx.c0.valid <= 1'b1;
         // end
-        af2cp_sTx.c0 <= intermediate_af2cp_sTx[current_Tx_c0].c0;
-        af2cp_sTx.c0.hdr.mdata[15:14] <= current_Tx_c0;
-        af2cp_sTx.c0.valid <= Tx_c0[current_Tx_c0].rdreq && !Tx_c0[current_Tx_c0].rdempty;
+        af2cp_sTx.c0.hdr <= t_cci_c0_ReqMemHdr'(0);
+        af2cp_sTx.c0.valid <= 1'b0;
+        
+        if (Tx_c0[current_Tx_c0].rdreq && !Tx_c0[current_Tx_c0].rdempty)
+        begin
+            af2cp_sTx.c0.valid <= 1'b1;
+            af2cp_sTx.c0.hdr <= intermediate_af2cp_sTx[current_Tx_c0].c0.hdr;
+            af2cp_sTx.c0.hdr.mdata[15:14] <= current_Tx_c0;
+        end
     end
 
     // ====================================================================
@@ -238,16 +248,27 @@ module pipearch_top
                 current_Tx_c1 <= i;
             end
         end
+
+        current_Tx_c1_1d <= current_Tx_c1;
+        current_Tx_c1_2d <= current_Tx_c1_1d;
+        if (reset)
+        begin
+            current_Tx_c1 <= 0;
+            current_Tx_c1_1d <= 0;
+            current_Tx_c1_2d <= 0;
+        end
     end
     always_ff @(posedge clk)
     begin
-        current_Tx_c1_1d <= current_Tx_c1;
-        current_Tx_c1_2d <= current_Tx_c1_1d;
-        af2cp_sTx.c1 <= intermediate_af2cp_sTx[current_Tx_c1_2d].c1;
-        af2cp_sTx.c1.hdr.mdata[15:14] <= current_Tx_c1_2d;
+        af2cp_sTx.c1.hdr <= t_cci_c1_ReqMemHdr'(0);
+        af2cp_sTx.c1.hdr.sop <= 1'b1;
         af2cp_sTx.c1.valid <= 1'b0;
+
+        af2cp_sTx.c1.data <= intermediate_af2cp_sTx[current_Tx_c1_2d].c1.data;
         if (Tx_c1[current_Tx_c1_2d].valid)
         begin
+            af2cp_sTx.c1.hdr <= intermediate_af2cp_sTx[current_Tx_c1_2d].c1.hdr;
+            af2cp_sTx.c1.hdr.mdata[15:14] <= current_Tx_c1_2d;
             af2cp_sTx.c1.valid <= 1'b1;
         end
     end
