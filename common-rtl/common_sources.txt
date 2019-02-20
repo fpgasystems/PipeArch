@@ -32,3 +32,5 @@ IP/fp_subtract_arria10/fp_subtract_arria10.qip
 IP/async_fifo/async_fifo.vhd
 IP/async_fifo/async_fifo_fifo_160.v
 IP/async_fifo/async_fifo_fifo_160_ack.v
+IP/async_fifo/async_fifo_fifo_160.sdc
+IP/async_fifo/async_fifo_fifo_160_ack.sdc
