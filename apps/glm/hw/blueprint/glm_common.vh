@@ -3,7 +3,7 @@
 
 parameter NUM_INSTANCES = 1;
 
-parameter LOG2_MEMORY_SIZE = 12;
+parameter LOG2_MEMORY_SIZE = 10;
 parameter LOG2_PROGRAM_SIZE = 5;
 parameter PROGRAM_SIZE = 2**LOG2_PROGRAM_SIZE;
 parameter NUM_REGS = 3;

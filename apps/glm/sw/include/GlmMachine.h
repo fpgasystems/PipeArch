@@ -263,12 +263,11 @@ public:
 
 		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
 
-		uint32_t model1OffsetInBRAM = 0;
-		uint32_t model2OffsetInBRAM = cML.m_modelChunk.m_lengthInCL;
+		uint32_t modelOffsetInBRAM = 0;
 		uint32_t labelOffsetInBRAM = 0;
 
 		AccessProperties accessModel(5);
-		accessModel.Set(2, model2OffsetInBRAM, cML.m_modelChunk.m_lengthInCL);
+		accessModel.Set(2, modelOffsetInBRAM, cML.m_modelChunk.m_lengthInCL);
 
 		AccessProperties accessLabels(5);
 		accessLabels.Set(3, labelOffsetInBRAM, cML.m_partitionSizeInCL);
@@ -282,7 +281,7 @@ public:
 		accessSamples.Set(1, 0, cML.m_numFeaturesInCL);
 
 		AccessProperties writebackModel(2);
-		writebackModel.Set(0, model2OffsetInBRAM, cML.m_numFeaturesInCL);
+		writebackModel.Set(0, modelOffsetInBRAM, cML.m_numFeaturesInCL);
 
 		// *************************************************************************
 		//
@@ -313,11 +312,11 @@ public:
 		inst[pc].MakeNonBlocking();
 		pc++;
 
-		inst[pc].Copy(model2OffsetInBRAM, model1OffsetInBRAM, cML.m_numFeaturesInCL);
+		inst[pc].Copy(modelOffsetInBRAM, modelOffsetInBRAM, cML.m_numFeaturesInCL);
 		// inst[pc].MakeNonBlocking();
 		pc++;
 
-		inst[pc].Dot(minibatchSize, cML.m_numFeaturesInCL, false, false, model1OffsetInBRAM, 0xFFFF);
+		inst[pc].Dot(minibatchSize, cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
 		inst[pc].MakeNonBlocking();
 		pc++;
 
@@ -325,7 +324,7 @@ public:
 		inst[pc].MakeNonBlocking();
 		pc++;
 
-		inst[pc].Update(minibatchSize, model2OffsetInBRAM, cML.m_numFeaturesInCL, false);
+		inst[pc].Update(minibatchSize, modelOffsetInBRAM, cML.m_numFeaturesInCL, false);
 		inst[pc].IncrementIndex(0, minibatchSize);
 		inst[pc].Jump(0, cML.m_partitionSize-minibatchSize, pcSamples, pc+2);
 		pc++;
@@ -347,13 +346,13 @@ public:
 			uint32_t pcRestSamples = pc;
 			pc++;
 
-			inst[pc].Dot(cML.m_numFeaturesInCL, false, false, model2OffsetInBRAM, 0xFFFF);
+			inst[pc].Dot(cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
 			pc++;
 
 			inst[pc].Modify(labelOffsetInBRAM, type, 0, stepSize, lambda);
 			pc++;
 
-			inst[pc].Update(model2OffsetInBRAM, cML.m_numFeaturesInCL, false);
+			inst[pc].Update(modelOffsetInBRAM, cML.m_numFeaturesInCL, false);
 			inst[pc].Jump(0, cML.m_rest-1, pcRestSamples, pc+1);
 			inst[pc].IncrementIndex(0);
 			pc++;
@@ -519,6 +518,231 @@ public:
 		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, cML.m_handle, resultHandle.m_outputHandle, 0);
 
 		return resultHandle;
+	}
+
+	ResultHandle fSGD_blocking(
+		FPGA_ColumnML& cML,
+		ModelType type,
+		uint32_t numEpochs,
+		float stepSize,
+		float lambda,
+		AdditionalArguments* args)
+	{
+		if (cML.m_memory == nullptr) {
+			cout << "cML.m_memory is nullptr!" << endl;
+			exit(1);
+		}
+
+		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
+
+		uint32_t modelOffsetInBRAM = 0;
+		uint32_t labelOffsetInBRAM = 0;
+
+		AccessProperties accessModel(5);
+		accessModel.Set(2, modelOffsetInBRAM, cML.m_modelChunk.m_lengthInCL);
+
+		AccessProperties accessLabels(5);
+		accessLabels.Set(3, labelOffsetInBRAM, cML.m_partitionSizeInCL);
+
+		AccessProperties accessSamples(5);
+		accessSamples.Set(0, 0, cML.m_numFeaturesInCL);
+		accessSamples.Set(1, 0, cML.m_numFeaturesInCL);
+
+		AccessProperties writebackModel(2);
+		writebackModel.Set(0, modelOffsetInBRAM, cML.m_numFeaturesInCL);
+
+		// *************************************************************************
+		//
+		//   START Program
+		//
+		// *************************************************************************
+		uint32_t pc = 0;
+
+		// Load model
+		inst[pc].Load(cML.m_modelChunk.m_offsetInCL, cML.m_modelChunk.m_lengthInCL, 0, 0, 0, accessModel);
+		inst[pc].ResetIndex(0);
+		inst[pc].ResetIndex(1);
+		inst[pc].ResetIndex(2);
+		pc++;
+
+		// Load labels in partition
+		inst[pc].Load(cML.m_labelsChunk.m_offsetInCL, cML.m_partitionSizeInCL, 0, cML.m_partitionSizeInCL, 0, accessLabels);
+		uint32_t pcLabels = pc;
+		pc++;
+
+		// Start---Innermost loop
+		inst[pc].Load(cML.m_samplesChunk.m_offsetInCL, cML.m_numFeaturesInCL, cML.m_numFeaturesInCL, cML.m_numFeaturesInCL*cML.m_partitionSize, 0, accessSamples);
+		inst[pc].MakeNonBlocking();
+		uint32_t pcSamples = pc;
+		pc++;
+
+		inst[pc].Copy(modelOffsetInBRAM, modelOffsetInBRAM, cML.m_numFeaturesInCL);
+		pc++;
+
+		inst[pc].Dot(cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
+		pc++;
+
+		inst[pc].Modify(labelOffsetInBRAM, type, 0, stepSize, lambda);
+		pc++;
+
+		inst[pc].Update(modelOffsetInBRAM, cML.m_numFeaturesInCL, false);
+		inst[pc].Jump(0, cML.m_partitionSize-1, pcSamples, pc+1);
+		inst[pc].IncrementIndex(0);
+		pc++;
+		// End---Innermost loop
+
+		inst[pc].Jump(1, cML.m_numPartitions-1, pcLabels, pc+1);
+		inst[pc].ResetIndex(0);
+		inst[pc].IncrementIndex(1);
+		pc++;
+
+		if ( cML.m_rest > 0 ) {
+			accessLabels.Set(3, labelOffsetInBRAM, cML.m_restInCL);
+			inst[pc].Load(cML.m_labelsChunk.m_offsetInCL, cML.m_restInCL, 0, cML.m_partitionSizeInCL, 0, accessLabels);
+			pc++;
+
+			// Start---Innermost loop
+			inst[pc].Load(cML.m_samplesChunk.m_offsetInCL, cML.m_numFeaturesInCL, cML.m_numFeaturesInCL, cML.m_numFeaturesInCL*cML.m_partitionSize, 0, accessSamples);
+			inst[pc].MakeNonBlocking();
+			uint32_t pcRestSamples = pc;
+			pc++;
+
+			inst[pc].Dot(cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
+			pc++;
+
+			inst[pc].Modify(labelOffsetInBRAM, type, 0, stepSize, lambda);
+			pc++;
+
+			inst[pc].Update(modelOffsetInBRAM, cML.m_numFeaturesInCL, false);
+			inst[pc].Jump(0, cML.m_rest-1, pcRestSamples, pc+1);
+			inst[pc].IncrementIndex(0);
+			pc++;
+			// End---Innermost loop
+		}
+
+		// WriteBack
+		inst[pc].WriteBack(false, 1, cML.m_numFeaturesInCL,
+			0, 0, cML.m_numFeaturesInCL,
+			0, false, writebackModel);
+		pc++;
+
+		inst[pc].Jump(2, numEpochs-1, pcLabels, 0xFFFFFFFF);
+		inst[pc].ResetIndex(0);
+		inst[pc].ResetIndex(1);
+		inst[pc].IncrementIndex(2);
+		pc++;
+
+		// *************************************************************************
+		//
+		//   END Program
+		//
+		// *************************************************************************
+
+		ResultHandle resultHandle;
+
+		resultHandle.m_outputHandle = iFPGA::malloc((numEpochs*cML.m_numFeaturesInCL+1)*64);
+		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, cML.m_handle, resultHandle.m_outputHandle, 0);
+
+		return resultHandle;
+	}
+
+	void ReadBandwidth(uint32_t numIterations) {
+
+		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
+
+		uint32_t numLines = 2048;
+
+		AccessProperties accessSamples(5);
+		accessSamples.Set(2, 0, numLines);
+
+		uint32_t pc = 0;
+
+		inst[pc].Prefetch(0, numIterations*numLines, 0, 0, 0);
+		inst[pc].MakeNonBlocking();
+		pc++;
+
+		inst[pc].Load(0, numLines, 0, 0, 0, accessSamples);
+		uint32_t pcLoad = pc;
+		pc++;
+
+		inst[pc].Jump(2, numIterations-1, pcLoad, 0xFFFFFFFF);
+		inst[pc].IncrementIndex(2);
+		pc++;
+
+		auto inputHandle = iFPGA::malloc(numIterations*numLines*64);
+
+		ResultHandle resultHandle;
+		resultHandle.m_outputHandle = iFPGA::malloc(64);
+		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, inputHandle, resultHandle.m_outputHandle, 0);
+
+		JoinProgram(resultHandle);
+	}
+
+	void Correctness() {
+
+		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
+
+		uint32_t numLines = 4;
+
+		AccessProperties accessRead(5);
+		accessRead.Set(2, 0, numLines);
+
+		AccessProperties accessWriteback(2);
+		accessWriteback.Set(0, 0, numLines);
+
+		uint32_t pc = 0;
+
+		// inst[pc].Prefetch(0, numLines, 0, 0, 0);
+		// pc++;
+
+		inst[pc].Load(0, numLines, 0, 0, 0, accessRead);
+		uint32_t pcLoad = pc;
+		pc++;
+
+		inst[pc].WriteBack(0, 1, numLines, 0, 0, 0, 0, true, accessWriteback);
+		pc++;
+
+		inst[pc].Jump(2, 0, pcLoad, 0xFFFFFFFF);
+		pc++;
+
+		auto inputHandle = iFPGA::malloc(numLines*64);
+		auto input = reinterpret_cast<volatile int*>(inputHandle->c_type());
+		assert(NULL != input);
+
+		for (uint32_t i = 0; i < numLines*16; i++) {
+			input[i] = i+1;
+		}
+
+		ResultHandle resultHandle;
+
+		resultHandle.m_outputHandle = iFPGA::malloc((numLines+1)*64);
+		auto output = reinterpret_cast<volatile int*>(resultHandle.m_outputHandle->c_type());
+		assert(NULL != output);
+
+		for (uint32_t i = 0; i < (numLines+1)*16; i++) {
+			output[i] = 0;
+		}
+
+		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, inputHandle, resultHandle.m_outputHandle, 0);
+		JoinProgram(resultHandle);
+
+		for (uint32_t i = 0; i < numLines*16; i++) {
+			cout << "input[" << i << "]: " << input[i] << endl;
+		}
+		for (uint32_t i = 0; i < (numLines+1)*16; i++) {
+			cout << "output[" << i << "]: " << output[i] << endl;
+		}
+
+		bool pass = true;
+		for (uint32_t i = 0; i < numLines*16; i++) {
+			if (input[i] != output[16+i]) {
+				pass = false;
+				cout << "Missmatch at " << i << ". output[" << 16+i << "]: " << output[16+i] << endl;
+			}
+		}
+		if (pass) {
+			cout << "PASS!" << endl;
+		}
 	}
 
 };

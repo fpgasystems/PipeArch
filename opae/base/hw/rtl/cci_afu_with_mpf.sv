@@ -301,7 +301,8 @@ module ccip_std_afu
       app
        (
         .clk(afu_clk),
-        .userclk(uClk_usr),
+        // .userclk(uClk_usr),
+        .userclk(pClkDiv2),
         .fiu(afu),
         .csrs,
         .c0NotEmpty,

@@ -52,8 +52,9 @@ int main(int argc, char* argv[]) {
 	args.m_constantStepSize = true;
 
 
+
 	// Set memory format / decide on SGD or SCD
-	MemoryFormat format = ColumnStore;
+	MemoryFormat format = RowStore;
 	columnML.CreateMemoryLayout(glm, format, partitionSize);
 
 
@@ -64,6 +65,7 @@ int main(int argc, char* argv[]) {
 
 		if (minibatchSize == 1) {
 			resultHandle = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
+			// resultHandle = glm.fSGD_blocking(columnML, type, numEpochs, stepSize, lambda, &args);
 		}
 		else {
 			resultHandle = glm.fSGD_minibatch(columnML, type, numEpochs, minibatchSize, stepSize, lambda, &args);
@@ -105,21 +107,6 @@ int main(int argc, char* argv[]) {
 		float loss = columnML.Loss(type, avgModel.data(), lambda, &args);
 		std::cout << "loss: " << loss << std::endl;
 	}
-
-
-
-	// columnML.CopyDataToFPGAMemory(RowStore, partitionSize);
-	// columnML.fSGD(type, nullptr, numEpochs, stepSize, lambda, &args);
-	// columnML.fSGD_minibatch(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
-	// columnML.fSGD_blocking(type, nullptr, numEpochs, stepSize, lambda, &args);
-
-	// columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
-	// columnML.CopyDataToFPGAMemory(ColumnStore, partitionSize);
-	// columnML.fSCD(type, nullptr, numEpochs, stepSize, lambda, &args);
-
-	// columnML.ReadBandwidth(numEpochs);
-
-	// columnML.Correctness();
 
 	return 0;
 }
