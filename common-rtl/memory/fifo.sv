@@ -53,27 +53,26 @@ begin
 	internal_empty <= empty;
 	access.rvalid <= 1'b0;
 
+	// Write
+	if (access.we)
+	begin
+		memory[waddr] <= access.wdata;
+		waddr <= waddr+1;
+	end
+
+	// Read
+	if (access.re && internal_empty == 1'b0)
+	begin
+		access.rvalid <= 1'b1;
+		access.rdata <= memory[raddr];
+		raddr <= raddr+1;
+	end
+
+	// Reset
 	if (reset)
 	begin
 		waddr <= 0;
 		raddr <= 0;
-	end
-	else
-	begin
-		// Write
-		if (access.we)
-		begin
-			memory[waddr] <= access.wdata;
-			waddr <= waddr+1;
-		end
-
-		// Read
-		if (access.re && internal_empty == 1'b0)
-		begin
-			access.rvalid <= 1'b1;
-			access.rdata <= memory[raddr];
-			raddr <= raddr+1;
-		end
 	end
 end
 

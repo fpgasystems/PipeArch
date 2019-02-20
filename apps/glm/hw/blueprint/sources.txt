@@ -9,3 +9,4 @@ glm_writeback.sv
 glm_dot.sv
 glm_modify.sv
 glm_update.sv
+reset.sdc

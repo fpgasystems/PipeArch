@@ -783,6 +783,131 @@ module glm_top
     assign copy_MEM_model_interface.rvalid = MEM_model_interface2.rvalid;
     assign copy_MEM_model_interface.rdata = MEM_model_interface2.rdata;
 
+    always_ff @(posedge clk)
+    begin
+/*
+        // MEM_model request arbitration
+        if (dot_MEM_model_interface.re)
+        begin
+            MEM_model_interface1.re <= 1'b1;
+            MEM_model_interface1.raddr <= dot_MEM_model_interface.raddr;
+        end
+        else
+        begin
+            MEM_model_interface1.re <= 1'b0;
+            MEM_model_interface1.raddr <= 0;
+        end
+
+        if (update_MEM_model_interface.re)
+        begin
+            MEM_model_interface2.re <= 1'b1;
+            MEM_model_interface2.raddr <= update_MEM_model_interface.raddr;
+        end
+        else if (copy_MEM_model_interface.re)
+        begin
+            MEM_model_interface2.re <= 1'b1;
+            MEM_model_interface2.raddr <= copy_MEM_model_interface.raddr;
+        end
+        else if (writeback_MEM_model_interface.re)
+        begin
+            MEM_model_interface2.re <= 1'b1;
+            MEM_model_interface2.raddr <= writeback_MEM_model_interface.raddr;
+        end
+        else
+        begin
+            MEM_model_interface2.re <= 1'b0;
+            MEM_model_interface2.raddr <= 0;
+        end
+
+        // MEM_labels request arbitration
+        if (modify_MEM_labels_interface.re)
+        begin
+            MEM_labels_interface.re <= 1'b1;
+            MEM_labels_interface.raddr <= modify_MEM_labels_interface.raddr;
+        end
+        else if (dot_MEM_labels_interface.re)
+        begin
+            MEM_labels_interface.re <= 1'b1;
+            MEM_labels_interface.raddr <= dot_MEM_labels_interface.raddr;
+        end
+        else if (writeback_MEM_labels_interface.re)
+        begin
+            MEM_labels_interface.re <= 1'b1;
+            MEM_labels_interface.raddr <= writeback_MEM_labels_interface.raddr;
+        end
+        else
+        begin
+            MEM_labels_interface.re <= 1'b0;
+            MEM_labels_interface.raddr <= 0;
+        end
+
+        // MEM_accessprops request arbitration
+        if (load_MEM_accessprops_interface.re)
+        begin
+            MEM_accessprops_interface.re <= 1'b1;
+            MEM_accessprops_interface.raddr <= load_MEM_accessprops_interface.raddr;
+        end
+        else
+        begin
+            MEM_accessprops_interface.re <= 1'b0;
+            MEM_accessprops_interface.raddr <= 0;
+        end
+*/
+
+        // MEM_model write arbitration
+        MEM_model_interface1.we <= 1'b0;
+        if (load_MEM_model_interface.we)
+        begin
+            MEM_model_interface1.we <= 1'b1;
+            MEM_model_interface1.waddr <= load_MEM_model_interface.waddr;
+            MEM_model_interface1.wdata <= load_MEM_model_interface.wdata;
+        end
+        else if (copy_MEM_model_interface.we)
+        begin
+            MEM_model_interface1.we <= 1'b1;
+            MEM_model_interface1.waddr <= copy_MEM_model_interface.waddr;
+            MEM_model_interface1.wdata <= copy_MEM_model_interface.wdata;
+        end
+    
+        MEM_model_interface2.we <= 1'b0;
+        if (load_MEM_model_interface.we)
+        begin
+            MEM_model_interface2.we <= 1'b1;
+            MEM_model_interface2.waddr <= load_MEM_model_interface.waddr;
+            MEM_model_interface2.wdata <= load_MEM_model_interface.wdata;
+        end
+        else if (update_MEM_model_interface.we)
+        begin
+            MEM_model_interface2.we <= 1'b1;
+            MEM_model_interface2.waddr <= update_MEM_model_interface.waddr;
+            MEM_model_interface2.wdata <= update_MEM_model_interface.wdata;
+        end
+
+        // MEM_labels write arbitration
+        MEM_labels_interface.we <= 1'b0;
+        if (load_MEM_labels_interface.we)
+        begin
+            MEM_labels_interface.we <= 1'b1;
+            MEM_labels_interface.waddr <= load_MEM_labels_interface.waddr;
+            MEM_labels_interface.wdata <= load_MEM_labels_interface.wdata;
+        end
+        else if (modify_MEM_labels_interface.we)
+        begin
+            MEM_labels_interface.we <= 1'b1;
+            MEM_labels_interface.waddr <= modify_MEM_labels_interface.waddr;
+            MEM_labels_interface.wdata <= modify_MEM_labels_interface.wdata;
+        end
+
+        // MEM_accessprops write arbitration
+        MEM_accessprops_interface.we <= 1'b0;
+        if (load_MEM_accessprops_interface.we)
+        begin
+            MEM_accessprops_interface.we <= 1'b1;
+            MEM_accessprops_interface.waddr <= load_MEM_accessprops_interface.waddr;
+            MEM_accessprops_interface.wdata <= load_MEM_accessprops_interface.wdata;
+        end
+    end
+
     always_comb
     begin
         // MEM_model request arbitration
@@ -851,7 +976,7 @@ module glm_top
             MEM_accessprops_interface.re = 1'b0;
             MEM_accessprops_interface.raddr = 0;
         end
-
+/*
         // MEM_model write arbitration
         if (load_MEM_model_interface.we)
         begin
@@ -924,7 +1049,9 @@ module glm_top
             MEM_accessprops_interface.waddr = 0;
             MEM_accessprops_interface.wdata = 0;
         end
+*/
     end
+
 
     // =========================================================================
     //
