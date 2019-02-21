@@ -61,7 +61,6 @@ module pipearch_top
     generate
         for(index = 0; index < NUM_APP_CSRS; index = index + 1)
         begin: gen_csr_cross
-            
             async_fifo
             #(.FIFO_WIDTH( $bits(csrs.cpu_wr_csrs[index]) ), .FIFO_DEPTH_BITS(LOG2_PREFETCH_SIZE-3), .ACK(0))
             async_fifo_csrs (
@@ -100,10 +99,14 @@ module pipearch_top
     end
     logic transfer_reset;
     logic inst_reset;
+    assign transfer_reset = reset | reset_d;
     always_ff @(posedge userclk)
     begin
-        transfer_reset <= reset | reset_d;
-        inst_reset <= transfer_reset;
+        inst_reset <= 1'b1;
+        if (transfer_reset == 1'b0)
+        begin
+            inst_reset <= 1'b0;
+        end
     end
 
     // ====================================================================
@@ -121,9 +124,31 @@ module pipearch_top
     //  Handle read request
     //
     // ====================================================================
-    logic [1:0] current_Tx_c0 = 0;
-    // logic [1:0] current_Tx_c0_1d = 0;
-    // logic [1:0] current_Tx_c0_2d = 0;
+    logic [1:0] current_Tx_c0;
+    // always_ff @(posedge clk)
+    // begin
+    //     for (int i = 1; i < NUM_INSTANCES; i=i+1)
+    //     begin
+    //         if (!Tx_c0[i].rdempty) begin
+    //             current_Tx_c0 <= i;
+    //         end
+    //     end
+    //     if (!Tx_c0[0].rdempty && current_Tx_c0 == NUM_INSTANCES-1) begin
+    //         current_Tx_c0 <= 0;
+    //     end
+    //     for (int i = 1; i < NUM_INSTANCES; i=i+1)
+    //     begin
+    //         if (!Tx_c0[i].rdempty && current_Tx_c0 == i-1) begin
+    //             current_Tx_c0 <= i;
+    //         end
+    //     end
+    //     if (reset)
+    //     begin
+    //         current_Tx_c0 <= 0;
+    //     end
+    // end
+    assign current_Tx_c0 = 0;
+
     t_async_access Tx_c0 [NUM_INSTANCES];
     generate
         for (index = 0; index < NUM_INSTANCES; index = index + 1)
@@ -141,53 +166,13 @@ module pipearch_top
                 .rdempty(Tx_c0[index].rdempty),
                 .wrfull(inst_cp2af_sRx[index].c0TxAlmFull)
             );
-            // always_ff @(posedge clk)
-            // begin
-            //     Tx_c0[index].rdreq <= 1'b0;
-            //     if (!Tx_c0[index].rdempty && !cp2af_sRx.c0TxAlmFull && current_Tx_c0 == index)
-            //     begin
-            //         Tx_c0[index].rdreq <= 1'b1;
-            //     end
-            //     Tx_c0[index].valid <= Tx_c0[index].rdreq && !Tx_c0[index].rdempty;
-            //     current_Tx_c0_1d <= current_Tx_c0;
-            //     current_Tx_c0_2d <= current_Tx_c0_1d;
-            // end
         end
     endgenerate
     always_ff @(posedge clk)
     begin
-        for (int i = 1; i < NUM_INSTANCES; i=i+1)
-        begin
-            if (!Tx_c0[i].rdempty) begin
-                current_Tx_c0 <= i;
-            end
-        end
-        if (!Tx_c0[0].rdempty && current_Tx_c0 == NUM_INSTANCES-1) begin
-            current_Tx_c0 <= 0;
-        end
-        for (int i = 1; i < NUM_INSTANCES; i=i+1)
-        begin
-            if (!Tx_c0[i].rdempty && current_Tx_c0 == i-1) begin
-                current_Tx_c0 <= i;
-            end
-        end
-        if (reset)
-        begin
-            current_Tx_c0 <= 0;
-        end
-    end
-    always_ff @(posedge clk)
-    begin
-        // af2cp_sTx.c0 <= intermediate_af2cp_sTx[current_Tx_c0_2d].c0;
-        // af2cp_sTx.c0.hdr.mdata[15:14] <= current_Tx_c0_2d;
-        // af2cp_sTx.c0.valid <= 1'b0;
-        // if (Tx_c0[current_Tx_c0_2d].valid)
-        // begin
-        //     af2cp_sTx.c0.valid <= 1'b1;
-        // end
         af2cp_sTx.c0.hdr <= t_cci_c0_ReqMemHdr'(0);
         af2cp_sTx.c0.valid <= 1'b0;
-        
+
         if (Tx_c0[current_Tx_c0].rdreq && !Tx_c0[current_Tx_c0].rdempty)
         begin
             af2cp_sTx.c0.valid <= 1'b1;
@@ -201,9 +186,40 @@ module pipearch_top
     //  Handle write request
     //
     // ====================================================================
-    logic [1:0] current_Tx_c1 = 0;
-    logic [1:0] current_Tx_c1_1d = 0;
-    logic [1:0] current_Tx_c1_2d = 0;
+    logic [1:0] current_Tx_c1;
+    logic [1:0] current_Tx_c1_1d;
+    logic [1:0] current_Tx_c1_2d;
+    // always_ff @(posedge clk)
+    // begin
+    //     for (int i = 1; i < NUM_INSTANCES; i=i+1)
+    //     begin
+    //         if (!Tx_c1[i].rdempty) begin
+    //             current_Tx_c1 <= i;
+    //         end
+    //     end
+    //     if (!Tx_c1[0].rdempty && current_Tx_c1 == NUM_INSTANCES-1) begin
+    //         current_Tx_c1 <= 0;
+    //     end
+    //     for (int i = 1; i < NUM_INSTANCES; i=i+1)
+    //     begin
+    //         if (!Tx_c1[i].rdempty && current_Tx_c1 == i-1) begin
+    //             current_Tx_c1 <= i;
+    //         end
+    //     end
+
+    //     current_Tx_c1_1d <= current_Tx_c1;
+    //     current_Tx_c1_2d <= current_Tx_c1_1d;
+    //     if (reset)
+    //     begin
+    //         current_Tx_c1 <= 0;
+    //         current_Tx_c1_1d <= 0;
+    //         current_Tx_c1_2d <= 0;
+    //     end
+    // end
+    assign current_Tx_c1 = 0;
+    assign current_Tx_c1_1d = 0;
+    assign current_Tx_c1_2d = 0;
+    
     t_async_access Tx_c1 [NUM_INSTANCES];
     generate
         for (index = 0; index < NUM_INSTANCES; index = index + 1)
@@ -231,33 +247,6 @@ module pipearch_top
             end
         end
     endgenerate
-    always_ff @(posedge clk)
-    begin
-        for (int i = 1; i < NUM_INSTANCES; i=i+1)
-        begin
-            if (!Tx_c1[i].rdempty) begin
-                current_Tx_c1 <= i;
-            end
-        end
-        if (!Tx_c1[0].rdempty && current_Tx_c1 == NUM_INSTANCES-1) begin
-            current_Tx_c1 <= 0;
-        end
-        for (int i = 1; i < NUM_INSTANCES; i=i+1)
-        begin
-            if (!Tx_c1[i].rdempty && current_Tx_c1 == i-1) begin
-                current_Tx_c1 <= i;
-            end
-        end
-
-        current_Tx_c1_1d <= current_Tx_c1;
-        current_Tx_c1_2d <= current_Tx_c1_1d;
-        if (reset)
-        begin
-            current_Tx_c1 <= 0;
-            current_Tx_c1_1d <= 0;
-            current_Tx_c1_2d <= 0;
-        end
-    end
     always_ff @(posedge clk)
     begin
         af2cp_sTx.c1.hdr <= t_cci_c1_ReqMemHdr'(0);

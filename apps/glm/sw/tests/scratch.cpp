@@ -28,6 +28,9 @@ int main(int argc, char* argv[]) {
 
 	GlmMachine glm(AFU_ACCEL_UUID);
 
+	glm.Correctness();
+
+
 	FPGA_ColumnML columnML;
 
 	float stepSize = 0.01;

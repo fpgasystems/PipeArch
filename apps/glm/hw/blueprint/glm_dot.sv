@@ -48,6 +48,7 @@ module glm_dot
     //
     // *************************************************************************
     logic [15:0] num_requested_lines;
+    logic [15:0] num_read_lines;
     logic [15:0] num_processed_lines;
     logic [15:0] num_performed_iterations;
 
@@ -167,8 +168,9 @@ module glm_dot
                         num_iterations <= regs[5][15:0];
                         // *************************************************************************
                         num_performed_iterations <= 0;
-                        num_requested_lines <= 32'b0;
-                        num_processed_lines <= 32'b0;
+                        num_requested_lines <= 0;
+                        num_read_lines <= 0;
+                        num_processed_lines <= 0;
                         dot_state <= STATE_READ;
                     end
                 end
@@ -215,12 +217,17 @@ module glm_dot
                         end
                     end
 
-                    if (FIFO_input.re && num_requested_lines == num_lines_to_process)
+                    if (FIFO_input.rvalid)
                     begin
-                        num_performed_iterations <= num_performed_iterations + 1;
-                        if (num_performed_iterations < num_iterations-1)
+                        num_read_lines <= num_read_lines + 1;
+                        if (num_read_lines == num_lines_to_process-1)
                         begin
-                            num_requested_lines <= 32'b0;
+                            num_read_lines <= 0;
+                            num_performed_iterations <= num_performed_iterations + 1;
+                            if (num_performed_iterations < num_iterations-1)
+                            begin
+                                num_requested_lines <= 32'b0;
+                            end
                         end
                     end
 

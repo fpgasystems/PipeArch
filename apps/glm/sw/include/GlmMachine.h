@@ -238,7 +238,7 @@ public:
 		// WriteBack
 		inst[pc].WriteBack(false, 1, cML.m_numFeaturesInCL,
 			0, 0, cML.m_numFeaturesInCL,
-			0, false, writebackModel);
+			0, true, writebackModel);
 		pc++;
 
 		inst[pc].Jump(2, numEpochs-1, beginEpoch, 0xFFFFFFFF);
@@ -386,7 +386,7 @@ public:
 		// WriteBack
 		inst[pc].WriteBack(false, 1, cML.m_numFeaturesInCL,
 			0, 0, cML.m_numFeaturesInCL,
-			0, false, writebackModel);
+			0, true, writebackModel);
 		pc++;
 
 		inst[pc].Jump(2, numEpochs-1, pcLabels, 0xFFFFFFFF);
@@ -647,7 +647,7 @@ public:
 		// WriteBack
 		inst[pc].WriteBack(false, 1, cML.m_numFeaturesInCL,
 			0, 0, cML.m_numFeaturesInCL,
-			0, false, writebackModel);
+			0, true, writebackModel);
 		pc++;
 
 		inst[pc].Jump(2, numEpochs-1, pcLabels, 0xFFFFFFFF);
