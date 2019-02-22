@@ -5,11 +5,27 @@
 #include "Instruction.h"
 #include "FPGA_ColumnML.h"
 
-struct ResultHandle
+class ResultHandle
 {
+public:
 	shared_buffer::ptr_t m_programMemoryHandle;
 	shared_buffer::ptr_t m_outputHandle;
 	uint32_t m_instanceId;
+
+	ResultHandle() {
+		m_programMemoryHandle = NULL;
+		m_outputHandle = NULL;
+		m_instanceId = 0;
+	}
+
+	~ResultHandle() {
+		if (m_programMemoryHandle != NULL) {
+			m_programMemoryHandle->release();
+		}
+		if (m_outputHandle != NULL) {
+			m_outputHandle->release();
+		}
+	}
 };
 
 class GlmMachine : public iFPGA {
@@ -76,6 +92,7 @@ public:
 		// Spin, waiting for the value in memory to change to something non-zero.
 		struct timespec pause;
 		// Longer when simulating
+		cout << "iFPGA::hwIsSimulated(): " << iFPGA::hwIsSimulated() << endl;
 		pause.tv_sec = (iFPGA::hwIsSimulated() ? 1 : 0);
 		pause.tv_nsec = 100;
 
@@ -94,10 +111,6 @@ public:
 		m_mutex.lock();
 		m_numJobsRunning[handle.m_instanceId]++;
 		m_mutex.unlock();
-
-		if (handle.m_programMemoryHandle != NULL) {
-			handle.m_programMemoryHandle->release();
-		}
 	}
 
 	ResultHandle fSGD(
@@ -146,6 +159,11 @@ public:
 		pc++;
 
 		uint32_t beginEpoch = pc;
+		
+		inst[pc].Copy(modelOffsetInBRAM, modelOffsetInBRAM, cML.m_numFeaturesInCL);
+		inst[pc].MakeNonBlocking();
+		pc++;
+
 		// Load labels in partition
 		inst[pc].Load(cML.m_labelsChunk.m_offsetInCL, cML.m_partitionSizeInCL, 0, cML.m_partitionSizeInCL, 0, accessLabels);
 		pc++;
@@ -193,6 +211,11 @@ public:
 
 		if ( cML.m_rest > 1 ) {
 			accessLabels.Set(3, labelOffsetInBRAM, cML.m_restInCL);
+
+			inst[pc].Copy(modelOffsetInBRAM, modelOffsetInBRAM, cML.m_numFeaturesInCL);
+			inst[pc].MakeNonBlocking();
+			pc++;
+
 			inst[pc].Load(cML.m_labelsChunk.m_offsetInCL, cML.m_restInCL, 0, cML.m_partitionSizeInCL, 0, accessLabels);
 			pc++;
 
@@ -300,10 +323,6 @@ public:
 		minibatchAccessSamples.Set(0, 0, minibatchSize*cML.m_numFeaturesInCL);
 		minibatchAccessSamples.Set(1, 0, minibatchSize*cML.m_numFeaturesInCL);
 
-		AccessProperties accessSamples(5);
-		accessSamples.Set(0, 0, cML.m_numFeaturesInCL);
-		accessSamples.Set(1, 0, cML.m_numFeaturesInCL);
-
 		AccessProperties writebackModel(2);
 		writebackModel.Set(0, modelOffsetInBRAM, cML.m_numFeaturesInCL);
 
@@ -337,7 +356,6 @@ public:
 		pc++;
 
 		inst[pc].Copy(modelOffsetInBRAM, modelOffsetInBRAM, cML.m_numFeaturesInCL);
-		// inst[pc].MakeNonBlocking();
 		pc++;
 
 		inst[pc].Dot(minibatchSize, cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
@@ -350,7 +368,7 @@ public:
 
 		inst[pc].Update(minibatchSize, modelOffsetInBRAM, cML.m_numFeaturesInCL, false);
 		inst[pc].IncrementIndex(0, minibatchSize);
-		inst[pc].Jump(0, cML.m_partitionSize-minibatchSize, pcSamples, pc+2);
+		inst[pc].Jump(0, cML.m_partitionSize-minibatchSize, pcSamples, pc+1);
 		pc++;
 		// End---Innermost loop
 
@@ -365,20 +383,24 @@ public:
 			pc++;
 
 			// Start---Innermost loop
-			inst[pc].Load(cML.m_samplesChunk.m_offsetInCL, cML.m_numFeaturesInCL, cML.m_numFeaturesInCL, cML.m_numFeaturesInCL*cML.m_partitionSize, 0, accessSamples);
+			minibatchAccessSamples.Set(0, 0, cML.m_rest*cML.m_numFeaturesInCL);
+			minibatchAccessSamples.Set(1, 0, cML.m_rest*cML.m_numFeaturesInCL);
+			inst[pc].Load(cML.m_samplesChunk.m_offsetInCL, cML.m_rest*cML.m_numFeaturesInCL, cML.m_numFeaturesInCL, cML.m_numFeaturesInCL*cML.m_partitionSize, 0, minibatchAccessSamples);
 			inst[pc].MakeNonBlocking();
 			uint32_t pcRestSamples = pc;
 			pc++;
 
-			inst[pc].Dot(cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
+			inst[pc].Copy(modelOffsetInBRAM, modelOffsetInBRAM, cML.m_numFeaturesInCL);
 			pc++;
 
-			inst[pc].Modify(labelOffsetInBRAM, type, 0, stepSize, lambda);
+			inst[pc].Dot(cML.m_rest, cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
 			pc++;
 
-			inst[pc].Update(modelOffsetInBRAM, cML.m_numFeaturesInCL, false);
-			inst[pc].Jump(0, cML.m_rest-1, pcRestSamples, pc+1);
-			inst[pc].IncrementIndex(0);
+			inst[pc].Modify(cML.m_rest, labelOffsetInBRAM, type, 0, scaledStepSize, lambda);
+			pc++;
+
+			inst[pc].Update(cML.m_rest, modelOffsetInBRAM, cML.m_numFeaturesInCL, false);
+			inst[pc].Jump(0, 0, pcRestSamples, pc+1);
 			pc++;
 			// End---Innermost loop
 		}

@@ -24,16 +24,16 @@ int main(int argc, char* argv[]) {
 	minibatchSize = atoi(argv[4]);
 	numEpochs = atoi(argv[5]);
 
-	uint32_t partitionSize = 128;
+	uint32_t partitionSize = 16000;
 
 	GlmMachine glm(AFU_ACCEL_UUID);
 
-	glm.Correctness();
+	// glm.Correctness();
 
 
 	FPGA_ColumnML columnML;
 
-	float stepSize = 0.01;
+	float stepSize;
 	float lambda = 0;
 
 	ModelType type;
@@ -64,6 +64,7 @@ int main(int argc, char* argv[]) {
 
 	ResultHandle resultHandle;
 	if (format == RowStore) {
+		stepSize = 0.01;
 		columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 
 		if (minibatchSize == 1) {
@@ -75,6 +76,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	else {
+		stepSize = 1;
 		columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
 
 		resultHandle = glm.fSCD(columnML, type, numEpochs, stepSize, lambda, &args);

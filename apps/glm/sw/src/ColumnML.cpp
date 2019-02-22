@@ -208,6 +208,7 @@ void ColumnML::SGD(
 					regularizer /= (float)(epoch+1);
 					x[j] -= scaledStepSize/(float)(epoch+1)*gradient[j] + regularizer;
 				}
+				// cout << "x[" << j << "]: " << x[j] << endl;
 				
 				gradient[j] = 0.0;
 			}

@@ -210,7 +210,7 @@ module app_afu
         .C2TX_DEPTH_RADIX(2),
         .C0RX_DEPTH_RADIX(LOG2_PREFETCH_SIZE),
         .C1RX_DEPTH_RADIX(LOG2_PREFETCH_SIZE),
-        .EXTRA_ALMOST_FULL_STAGES(0)
+        .EXTRA_ALMOST_FULL_STAGES(16)
     )
     clock_cross(
         .bb_softreset(reset),

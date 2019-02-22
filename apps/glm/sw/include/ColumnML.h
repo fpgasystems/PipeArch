@@ -284,8 +284,10 @@ private:
 		float dot = getDot(x, sampleIndex);
 		// cout << sampleIndex << " dot: " << dot << endl;
 		dot -= m_cstore->m_labels[sampleIndex];
+		// cout << sampleIndex << " error: " << dot << endl;
 		for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 			gradient[j] += dot*m_cstore->m_samples[j][sampleIndex];
+			// cout << "multiply[" << j << "]: " << dot*m_cstore->m_samples[j][sampleIndex] << endl;
 		}
 
 	}

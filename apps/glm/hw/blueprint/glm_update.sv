@@ -123,6 +123,17 @@ module glm_update
         end
     end
 
+    logic [31:0] debug_MEM_model_wdata [16];
+    logic [31:0] debug_multiply_result [16];
+    always_comb
+    begin
+        for (int i = 0; i < 16; i++)
+        begin
+            debug_MEM_model_wdata[i] = MEM_model.wdata[i*32+31 -: 32];
+            debug_multiply_result[i] = multiply_result[i*32+31 -: 32];
+        end
+    end
+
     always_ff @(posedge clk)
     begin
         FIFO_gradient.re <= 1'b0;
@@ -162,13 +173,13 @@ module glm_update
                 STATE_MAIN:
                 begin
 
-                    if (num_lines_multiplied_requested == 0 && !FIFO_samplesforward.empty && !FIFO_gradient.empty)
+                    if (num_lines_multiplied_requested == 0 && !FIFO_samplesforward.empty && !FIFO_gradient.empty && !FIFO_modelforward.almostfull)
                     begin
                         FIFO_gradient.re <= 1'b1;
                         FIFO_samplesforward.re <= 1'b1;
                         num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
                     end
-                    else if (num_lines_multiplied_requested > 0 && num_lines_multiplied_requested < MEM_model_length && !FIFO_samplesforward.empty)
+                    else if (num_lines_multiplied_requested > 0 && num_lines_multiplied_requested < MEM_model_length && !FIFO_samplesforward.empty && !FIFO_modelforward.almostfull)
                     begin
                         FIFO_samplesforward.re <= 1'b1;
                         num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;

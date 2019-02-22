@@ -226,9 +226,13 @@ module glm_modify
                         MEM_labels.we <= 1'b1;
                         MEM_labels.waddr <= MEM_labels_load_offset + (offset_by_index_write[15:4]);
                         offset_by_index_write <= offset_by_index_write + 1;
-                        MEM_labels.wdata <= lineFromLabelsMem;
-                        MEM_labels.wdata[write_position_by_index*32+31 -: 32] <= sub_regs.result;
+
+                        for (int i = 0; i < 16; i++)
+                        begin
+                            MEM_labels.wdata[i*32+31 -: 32] <= (i == write_position_by_index) ? sub_regs.result : lineFromLabelsMem[i*32+31 -: 32];
+                        end
                         write_position_by_index <= write_position_by_index + 1;
+
                         write_num_performed_iterations <= write_num_performed_iterations + 1;
                         if (write_num_performed_iterations == num_iterations-1)
                         begin
