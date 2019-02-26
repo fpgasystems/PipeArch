@@ -28,8 +28,3 @@ IP/fp_gt_arria10/fp_gt_arria10.qip
 IP/fp_lt_arria10/fp_lt_arria10.qip
 IP/fp_mult_arria10/fp_mult_arria10.qip
 IP/fp_subtract_arria10/fp_subtract_arria10.qip
-
-IP/quartus_ip/platform_utils_avalon_dc_fifo.sdc
-IP/quartus_ip/platform_utils_dc_fifo.sdc
-IP/quartus_ip/platform_utils_avalon_dc_fifo.v
-IP/quartus_ip/platform_utils__dc_fifo.v

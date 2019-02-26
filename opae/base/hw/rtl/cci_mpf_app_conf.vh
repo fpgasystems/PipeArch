@@ -37,3 +37,6 @@
 
 // Ordered responses are required by the application
 `define MPF_CONF_SORT_READ_RESPONSES 1
+
+// Preserve write mdata to decide which instance it belongs to
+`define MPF_CONF_PRESERVE_WRITE_MDATA 1

@@ -1,7 +1,7 @@
 `ifndef GLM_COMMON
 `define GLM_COMMON
 
-parameter NUM_INSTANCES = 1;
+parameter NUM_INSTANCES = 2;
 parameter LOG2_MAX_NUM_THREADS = 1;
 parameter MAX_NUM_THREADS = 2**LOG2_MAX_NUM_THREADS;
 

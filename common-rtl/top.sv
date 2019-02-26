@@ -121,124 +121,123 @@ module app_afu
     end
 
     // Connect to the AFU
-    // pipearch_top
-    // pipearch_top_inst
-    // (
-    // .clk,
-    // .userclk,
-    // .reset,
-    // .cp2af_sRx(mpf2af_sRx),
-    // .af2cp_sTx(af2mpf_sTx),
-    // .csrs,
-    // .c0NotEmpty,
-    // .c1NotEmpty
+    pipearch_top
+    pipearch_top_inst
+    (
+        .clk,
+        .userclk,
+        .reset,
+        .cp2af_sRx(mpf2af_sRx),
+        .af2cp_sTx(af2mpf_sTx),
+        .csrs,
+        .c0NotEmpty,
+        .c1NotEmpty
+    );
+
+    // always_comb
+    // begin
+    //     // The AFU ID is a unique ID for a given program.  Here we generated
+    //     // one with the "uuidgen" program and stored it in the AFU's JSON file.
+    //     // ASE and synthesis setup scripts automatically invoke afu_json_mgr
+    //     // to extract the UUID into afu_json_info.vh.
+    //     csrs.afu_id = `AFU_ACCEL_UUID;
+    //     // Default
+    //     for (int i = 0; i < NUM_APP_CSRS; i = i + 1)
+    //     begin
+    //         csrs.cpu_rd_csrs[i].data = 64'(0);
+    //     end
+    // end
+
+    // typedef struct packed
+    // {
+    //     logic rdreq;
+    //     logic rdempty;
+    //     logic valid;
+    // }
+    // t_async_access;
+
+    // t_cpu_wr_csrs intermediate_csrs[0:NUM_APP_CSRS-1];
+    // t_cpu_wr_csrs inst_csrs[0:NUM_APP_CSRS-1];
+    // t_async_access csrs_access[0:NUM_APP_CSRS-1];
+    // genvar index;
+    // generate
+    //     for(index = 0; index < NUM_APP_CSRS; index = index + 1)
+    //     begin: gen_csr_cross
+    //         platform_utils_dc_fifo
+    //         #(.DATA_WIDTH( /*$bits(csrs.cpu_wr_csrs[index])*/64 ), .DEPTH_RADIX(LOG2_PREFETCH_SIZE-3))
+    //         async_fifo_csrs (
+    //             .data(csrs.cpu_wr_csrs[index].data),
+    //             .wrreq(csrs.cpu_wr_csrs[index].en),
+    //             .rdreq(csrs_access[index].rdreq),
+    //             .wrclk(clk),
+    //             .rdclk(userclk),
+    //             .aclr(reset),
+    //             .q(intermediate_csrs[index].data),
+    //             .rdusedw(),
+    //             .wrusedw(),
+    //             .rdfull(),
+    //             .rdempty(csrs_access[index].rdempty),
+    //             .wrfull(),
+    //             .wralmfull(),
+    //             .wrempty()
+    //         );
+    //         always_ff @(posedge userclk)
+    //         begin
+    //             csrs_access[index].rdreq <= 1'b0;
+    //             if (!csrs_access[index].rdempty)
+    //             begin
+    //                 csrs_access[index].rdreq <= 1'b1;
+    //             end
+    //             csrs_access[index].valid <= csrs_access[index].rdreq && !csrs_access[index].rdempty;
+    //             inst_csrs[index].data <= intermediate_csrs[index].data;
+    //             inst_csrs[index].en <= csrs_access[index].valid;
+    //         end
+    //     end
+    // endgenerate
+
+    // // ====================================================================
+    // //
+    // //  Intermediate signals
+    // //
+    // // ====================================================================
+    // t_if_ccip_Tx inst_af2cp_sTx;
+    // t_if_ccip_Rx inst_cp2af_sRx;
+    // logic inst_reset;
+
+    // platform_utils_ccip_async_shim
+    // #(
+    //     .DEBUG_ENABLE(0),
+    //     .C2TX_DEPTH_RADIX(2),
+    //     .C0RX_DEPTH_RADIX(LOG2_PREFETCH_SIZE),
+    //     .C1RX_DEPTH_RADIX(LOG2_PREFETCH_SIZE),
+    //     .EXTRA_ALMOST_FULL_STAGES(16)
+    // )
+    // clock_cross(
+    //     .bb_softreset(reset),
+    //     .bb_clk(clk),
+    //     .bb_tx(af2mpf_sTx),
+    //     .bb_rx(mpf2af_sRx),
+    //     .bb_pwrState(),
+    //     .bb_error(),
+    //     .afu_softreset(inst_reset),
+    //     .afu_clk(userclk),
+    //     .afu_tx(inst_af2cp_sTx),
+    //     .afu_rx(inst_cp2af_sRx),
+    //     .afu_pwrState(),
+    //     .afu_error()
     // );
 
-    always_comb
-    begin
-        // The AFU ID is a unique ID for a given program.  Here we generated
-        // one with the "uuidgen" program and stored it in the AFU's JSON file.
-        // ASE and synthesis setup scripts automatically invoke afu_json_mgr
-        // to extract the UUID into afu_json_info.vh.
-        csrs.afu_id = `AFU_ACCEL_UUID;
-        // Default
-        for (int i = 0; i < NUM_APP_CSRS; i = i + 1)
-        begin
-            csrs.cpu_rd_csrs[i].data = 64'(0);
-        end
-    end
 
-    typedef struct packed
-    {
-        logic rdreq;
-        logic rdempty;
-        logic valid;
-    }
-    t_async_access;
-
-    t_cpu_wr_csrs intermediate_csrs[0:NUM_APP_CSRS-1];
-    t_cpu_wr_csrs inst_csrs[0:NUM_APP_CSRS-1];
-    t_async_access csrs_access[0:NUM_APP_CSRS-1];
-    genvar index;
-    generate
-        for(index = 0; index < NUM_APP_CSRS; index = index + 1)
-        begin: gen_csr_cross
-            platform_utils_dc_fifo
-            #(.DATA_WIDTH( /*$bits(csrs.cpu_wr_csrs[index])*/64 ), .DEPTH_RADIX(LOG2_PREFETCH_SIZE-3))
-            async_fifo_csrs (
-                .data(csrs.cpu_wr_csrs[index].data),
-                .wrreq(csrs.cpu_wr_csrs[index].en),
-                .rdreq(csrs_access[index].rdreq),
-                .wrclk(clk),
-                .rdclk(userclk),
-                .aclr(reset),
-                .q(intermediate_csrs[index].data),
-                .rdusedw(),
-                .wrusedw(),
-                .rdfull(),
-                .rdempty(csrs_access[index].rdempty),
-                .wrfull(),
-                .wralmfull(),
-                .wrempty()
-            );
-            always_ff @(posedge userclk)
-            begin
-                csrs_access[index].rdreq <= 1'b0;
-                if (!csrs_access[index].rdempty)
-                begin
-                    csrs_access[index].rdreq <= 1'b1;
-                end
-                csrs_access[index].valid <= csrs_access[index].rdreq && !csrs_access[index].rdempty;
-                inst_csrs[index].data <= intermediate_csrs[index].data;
-                inst_csrs[index].en <= csrs_access[index].valid;
-            end
-        end
-    endgenerate
-
-    // ====================================================================
-    //
-    //  Intermediate signals
-    //
-    // ====================================================================
-    t_if_ccip_Tx inst_af2cp_sTx;
-    t_if_ccip_Rx inst_cp2af_sRx;
-    logic inst_reset;
-
-    platform_utils_ccip_async_shim
-    #(
-        .DEBUG_ENABLE(0),
-        .C2TX_DEPTH_RADIX(2),
-        .C0RX_DEPTH_RADIX(LOG2_PREFETCH_SIZE),
-        .C1RX_DEPTH_RADIX(LOG2_PREFETCH_SIZE),
-        .EXTRA_ALMOST_FULL_STAGES(16)
-    )
-    clock_cross(
-        .bb_softreset(reset),
-        .bb_clk(clk),
-        .bb_tx(af2mpf_sTx),
-        .bb_rx(mpf2af_sRx),
-        .bb_pwrState(),
-        .bb_error(),
-        .afu_softreset(inst_reset),
-        .afu_clk(userclk),
-        .afu_tx(inst_af2cp_sTx),
-        .afu_rx(inst_cp2af_sRx),
-        .afu_pwrState(),
-        .afu_error()
-    );
-
-
-    glm_top
-    glm_top_inst
-    (
-    .clk(userclk),
-    .reset(inst_reset),
-    .cp2af_sRx(inst_cp2af_sRx),
-    .af2cp_sTx(inst_af2cp_sTx),
-    .wr_csrs(inst_csrs[0:3]),
-    .synchronize(),
-    .synchronize_done()
-    );
-    
+    // glm_top
+    // glm_top_inst
+    // (
+    // .clk(userclk),
+    // .reset(inst_reset),
+    // .cp2af_sRx(inst_cp2af_sRx),
+    // .af2cp_sTx(inst_af2cp_sTx),
+    // .wr_csrs(inst_csrs[0:3]),
+    // .synchronize(),
+    // .synchronize_done()
+    // );
 
 endmodule // app_afu

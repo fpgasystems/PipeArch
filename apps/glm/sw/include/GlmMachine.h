@@ -10,11 +10,13 @@ class ResultHandle
 public:
 	shared_buffer::ptr_t m_programMemoryHandle;
 	shared_buffer::ptr_t m_outputHandle;
+	uint32_t m_programSize;
 	uint32_t m_instanceId;
 
 	ResultHandle() {
 		m_programMemoryHandle = NULL;
 		m_outputHandle = NULL;
+		m_programSize = 0;
 		m_instanceId = 0;
 	}
 
@@ -36,44 +38,29 @@ private:
 	std::mutex m_mutex;
 	uint32_t m_numJobsRunning[NUM_INSTANCES];
 
-
-	shared_buffer::ptr_t StartProgram(Instruction inst[], uint32_t numInstructions, shared_buffer::ptr_t inputHandle, shared_buffer::ptr_t outputHandle, uint32_t whichInstance) {
-
+	ResultHandle CreateProgram(Instruction inst[], uint32_t numInstructions, uint32_t outputSizeInBytes) {
 		std::vector<Instruction> instructions;
 		for (uint32_t i = 0; i < numInstructions; i++) {
 			instructions.push_back(inst[i]);
 		}
 
+		ResultHandle resultHandle;
+
 		// Copy program to FPGA memory
-		shared_buffer::ptr_t programMemoryHandle = iFPGA::malloc(instructions.size()*64);
-		auto programMemory = reinterpret_cast<volatile uint32_t*>(programMemoryHandle->c_type());
+		resultHandle.m_programMemoryHandle = iFPGA::malloc(instructions.size()*64);
+		auto programMemory = reinterpret_cast<volatile uint32_t*>(resultHandle.m_programMemoryHandle->c_type());
 		assert(NULL != programMemory);
 		uint32_t k = 0;
 		for (Instruction i: instructions) {
 			i.LoadInstruction(programMemory + k*Instruction::NUM_WORDS);
 			k++;
 		}
+		resultHandle.m_programSize = instructions.size();
 
-		auto inputMemory = reinterpret_cast<volatile uint32_t*>(inputHandle->c_type());
-		assert(NULL != inputMemory);
-		auto outputMemory = reinterpret_cast<volatile uint32_t*>(outputHandle->c_type());
-		assert(NULL != outputMemory);
+		// Allocate output memory
+		resultHandle.m_outputHandle = iFPGA::malloc(outputSizeInBytes);
 
-		m_mutex.lock();
-
-		uint32_t whichThread = m_numJobsRunning[whichInstance];
-		uint32_t vc_select = 0;
-		outputMemory[0] = 0;
-		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (whichThread << 16) | (instructions.size() & 0xFFFF) );
-		iFPGA::writeCSR(whichInstance*4 + 1, intptr_t(programMemory));
-		iFPGA::writeCSR(whichInstance*4 + 2, intptr_t(inputMemory));
-		iFPGA::writeCSR(whichInstance*4 + 3, intptr_t(outputMemory));
-
-		m_numJobsRunning[whichInstance]++;
-
-		m_mutex.unlock();
-
-		return programMemoryHandle;
+		return resultHandle;
 	}
 
 public:
@@ -82,6 +69,29 @@ public:
 		for (uint32_t i = 0; i < NUM_INSTANCES; i++) {
 			m_numJobsRunning[i] = 0;
 		}
+	}
+
+	void StartProgram(shared_buffer::ptr_t inputHandle, ResultHandle& resultHandle, uint32_t whichInstance) {
+		auto programMemory = reinterpret_cast<volatile uint32_t*>(resultHandle.m_programMemoryHandle->c_type());
+		assert(NULL != programMemory);
+		auto inputMemory = reinterpret_cast<volatile uint32_t*>(inputHandle->c_type());
+		assert(NULL != inputMemory);
+		auto outputMemory = reinterpret_cast<volatile uint32_t*>(resultHandle.m_outputHandle->c_type());
+		assert(NULL != outputMemory);
+
+		m_mutex.lock();
+
+		uint32_t whichThread = m_numJobsRunning[whichInstance];
+		uint32_t vc_select = 0;
+		outputMemory[0] = 0;
+		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (whichThread << 16) | (resultHandle.m_programSize & 0xFFFF) );
+		iFPGA::writeCSR(whichInstance*4 + 1, intptr_t(programMemory));
+		iFPGA::writeCSR(whichInstance*4 + 2, intptr_t(inputMemory));
+		iFPGA::writeCSR(whichInstance*4 + 3, intptr_t(outputMemory));
+
+		m_numJobsRunning[whichInstance]++;
+
+		m_mutex.unlock();
 	}
 
 	void JoinProgram(ResultHandle& handle) {
@@ -276,12 +286,7 @@ public:
 		//
 		// *************************************************************************
 
-		ResultHandle resultHandle;
-
-		resultHandle.m_outputHandle = iFPGA::malloc((numEpochs*cML.m_numFeaturesInCL+1)*64);
-		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, cML.m_handle, resultHandle.m_outputHandle, 0);
-
-		return resultHandle;
+		return CreateProgram(inst, pc, (numEpochs*cML.m_numFeaturesInCL+1)*64);
 	}
 
 	ResultHandle fSGD_minibatch(
@@ -423,12 +428,7 @@ public:
 		//
 		// *************************************************************************
 
-		ResultHandle resultHandle;
-
-		resultHandle.m_outputHandle = iFPGA::malloc((numEpochs*cML.m_numFeaturesInCL+1)*64);
-		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, cML.m_handle, resultHandle.m_outputHandle, 0);
-
-		return resultHandle;
+		return CreateProgram(inst, pc, (numEpochs*cML.m_numFeaturesInCL+1)*64);
 	}
 
 	ResultHandle fSCD(
@@ -558,12 +558,7 @@ public:
 		//
 		// *************************************************************************
 
-		ResultHandle resultHandle;
-
-		resultHandle.m_outputHandle = iFPGA::malloc(64);
-		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, cML.m_handle, resultHandle.m_outputHandle, 0);
-
-		return resultHandle;
+		return CreateProgram(inst, pc, 64);
 	}
 
 	ResultHandle fSGD_blocking(
@@ -684,12 +679,7 @@ public:
 		//
 		// *************************************************************************
 
-		ResultHandle resultHandle;
-
-		resultHandle.m_outputHandle = iFPGA::malloc((numEpochs*cML.m_numFeaturesInCL+1)*64);
-		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, cML.m_handle, resultHandle.m_outputHandle, 0);
-
-		return resultHandle;
+		return CreateProgram(inst, pc, (numEpochs*cML.m_numFeaturesInCL+1)*64);
 	}
 
 	void ReadBandwidth(uint32_t numIterations) {
@@ -717,10 +707,8 @@ public:
 
 		auto inputHandle = iFPGA::malloc(numIterations*numLines*64);
 
-		ResultHandle resultHandle;
-		resultHandle.m_outputHandle = iFPGA::malloc(64);
-		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, inputHandle, resultHandle.m_outputHandle, 0);
-
+		ResultHandle resultHandle = CreateProgram(inst, pc, 64);
+		StartProgram(inputHandle, resultHandle, 0);
 		JoinProgram(resultHandle);
 	}
 
@@ -759,9 +747,8 @@ public:
 			input[i] = i+1;
 		}
 
-		ResultHandle resultHandle;
+		ResultHandle resultHandle = CreateProgram(inst, pc, (numLines+1)*64);
 
-		resultHandle.m_outputHandle = iFPGA::malloc((numLines+1)*64);
 		auto output = reinterpret_cast<volatile int*>(resultHandle.m_outputHandle->c_type());
 		assert(NULL != output);
 
@@ -769,7 +756,7 @@ public:
 			output[i] = 0;
 		}
 
-		resultHandle.m_programMemoryHandle = StartProgram(inst, pc, inputHandle, resultHandle.m_outputHandle, 0);
+		StartProgram(inputHandle, resultHandle, 0);
 		JoinProgram(resultHandle);
 
 		for (uint32_t i = 0; i < numLines*16; i++) {

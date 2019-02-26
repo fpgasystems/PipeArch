@@ -82,6 +82,8 @@ int main(int argc, char* argv[]) {
 		resultHandle = glm.fSCD(columnML, type, numEpochs, stepSize, lambda, &args);
 	}
 
+	glm.StartProgram(columnML.m_handle, resultHandle, 0);
+
 	glm.JoinProgram(resultHandle);
 
 	// Verify

@@ -1,7 +1,7 @@
 include ../../../opae/base/sw/base_include.mk
 
 # Primary test name
-TEST = scratch
+TEST = multi
 
 # Build directory
 OBJDIR = obj
