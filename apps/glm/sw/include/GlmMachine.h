@@ -399,9 +399,11 @@ public:
 			pc++;
 
 			inst[pc].Dot(cML.m_rest, cML.m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
+			inst[pc].MakeNonBlocking();
 			pc++;
 
 			inst[pc].Modify(cML.m_rest, labelOffsetInBRAM, type, 0, scaledStepSize, lambda);
+			inst[pc].MakeNonBlocking();
 			pc++;
 
 			inst[pc].Update(cML.m_rest, modelOffsetInBRAM, cML.m_numFeaturesInCL, false);

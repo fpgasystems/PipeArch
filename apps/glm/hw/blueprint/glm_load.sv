@@ -124,13 +124,31 @@ module glm_load
     //
     // *************************************************************************
     logic[31:0] offset_by_index[3];
-    t_ccip_clAddr DRAM_load_offset;
-    t_ccip_clAddr running_DRAM_load_offset;
+    logic [$bits(t_ccip_clAddr)-32-1:0] upper_part_address;
+    logic [31:0] running_DRAM_load_offset;
     logic [31:0] DRAM_load_length;
     logic enable_multiline;
     logic use_accessprops;
     logic [LOG2_MEMORY_SIZE-1:0] accessprops_raddr;
     logic gen_syn_data;
+
+    // *************************************************************************
+    //
+    //   Counter
+    //
+    // *************************************************************************
+    logic [2:0] accessprops_position;
+    logic [31:0] accessprops_DRAM_offset;
+    logic [31:0] accessprops_DRAM_length;
+    logic [1:0] offset_accumulate;
+    logic [31:0] num_requested_lines;
+    logic [31:0] num_requested_lines_plus2;
+    logic [31:0] num_requested_lines_plus4;
+    logic [31:0] num_received_lines;
+    logic [31:0] num_forward_request_lines;
+    logic [31:0] num_lines_in_flight;
+    logic signed [31:0] prefetch_fifo_free_count;
+    logic signed [31:0] num_allowed_lines_to_request;
 
     // *************************************************************************
     //
@@ -151,8 +169,13 @@ module glm_load
     always_ff @(posedge clk)
     begin
         prefetch_fifo_access.we <= 1'b0;
+        if (op_start)
+        begin
+            num_received_lines <= 32'b0;
+        end
         if (cci_c0Rx_isReadRsp(cp2af_sRx_c0) && receive_state == STATE_READ)
         begin
+            num_received_lines <= num_received_lines + 1;
             prefetch_fifo_access.we <= 1'b1;
             if (gen_syn_data)
             begin
@@ -168,23 +191,6 @@ module glm_load
         end
         prefetch_fifo_access.re <= !(prefetch_fifo_access.empty) && !(from_load.almostfull);
     end
-
-    // *************************************************************************
-    //
-    //   Counter
-    //
-    // *************************************************************************
-    logic [2:0] accessprops_position;
-    logic [31:0] accessprops_DRAM_offset;
-    logic [31:0] accessprops_DRAM_length;
-    logic [1:0] offset_accumulate;
-    logic [31:0] num_requested_lines;
-    logic [31:0] num_requested_lines_plus2;
-    logic [31:0] num_requested_lines_plus4;
-    logic [31:0] num_received_lines;
-    logic [31:0] num_lines_in_flight;
-    logic signed [31:0] prefetch_fifo_free_count;
-    logic signed [31:0] num_allowed_lines_to_request;
 
     always_ff @(posedge clk)
     begin
@@ -225,8 +231,8 @@ module glm_load
                         offset_by_index[0] <= regs[0];
                         offset_by_index[1] <= regs[1];
                         offset_by_index[2] <= regs[2];
-                        DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr : in_addr + regs[3][29:0];
-                        running_DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr : in_addr + regs[3][29:0];
+                        upper_part_address <= in_addr[$bits(t_ccip_clAddr)-1:32];
+                        running_DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr[31:0] : in_addr[31:0] + regs[3][29:0];
                         DRAM_load_length <= regs[4][30:0];
                         enable_multiline <= regs[4][31];
                         use_accessprops <= regs[3][31];
@@ -261,7 +267,6 @@ module glm_load
                     end
                     else
                     begin
-                        DRAM_load_offset <= DRAM_load_offset + offset_by_index[offset_accumulate];
                         running_DRAM_load_offset <= running_DRAM_load_offset + offset_by_index[offset_accumulate];
                         if (offset_accumulate == 2)
                         begin
@@ -291,7 +296,6 @@ module glm_load
 
                 STATE_ADD_ACCESSPROPS:
                 begin
-                    DRAM_load_offset <= DRAM_load_offset + accessprops_DRAM_offset;
                     running_DRAM_load_offset <= running_DRAM_load_offset + accessprops_DRAM_offset;
                     DRAM_load_length <= accessprops_DRAM_length;
                     request_state <= STATE_READ;
@@ -306,7 +310,7 @@ module glm_load
                             (running_DRAM_load_offset[1:0] == 2'b0))
                         begin
                             af2cp_sTx_c0.valid <= 1'b1;
-                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'({upper_part_address, running_DRAM_load_offset});
                             af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
                             af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_4;
                             num_requested_lines <= num_requested_lines_plus4;
@@ -319,7 +323,7 @@ module glm_load
                             (running_DRAM_load_offset[0] == 1'b0))
                         begin
                             af2cp_sTx_c0.valid <= 1'b1;
-                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'({upper_part_address, running_DRAM_load_offset});
                             af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
                             af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_2;
                             num_requested_lines <= num_requested_lines_plus2;
@@ -330,7 +334,7 @@ module glm_load
                         else if (num_requested_lines < DRAM_load_length)
                         begin
                             af2cp_sTx_c0.valid <= 1'b1;
-                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                            af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'({upper_part_address, running_DRAM_load_offset});
                             af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
                             af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_1;
                             num_requested_lines <= num_requested_lines + 1;
@@ -362,7 +366,7 @@ module glm_load
                 begin
                     if (op_start)
                     begin
-                        num_received_lines <= 32'b0;
+                        num_forward_request_lines <= 32'b0;
                         if (regs[4][30:0] == 0 && regs[3][31] == 0)
                         begin
                             receive_state <= STATE_DONE;
@@ -380,8 +384,8 @@ module glm_load
                     begin
                         from_load.we <= 1'b1;
                         from_load.wdata <= prefetch_fifo_access.rdata;
-                        num_received_lines <= num_received_lines + 1;
-                        if (num_received_lines == DRAM_load_length-1)
+                        num_forward_request_lines <= num_forward_request_lines + 1;
+                        if (num_forward_request_lines == DRAM_load_length-1)
                         begin
                             receive_state <= STATE_DONE;
                         end

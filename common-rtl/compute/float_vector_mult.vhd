@@ -37,7 +37,7 @@ architecture behavioral of float_vector_mult is
 signal reset : std_logic;
 
 --constant TOTAL_LATENCY : integer := 5;
-constant TOTAL_LATENCY : integer := 3;
+constant TOTAL_LATENCY : integer := 4;
 
 type result_type is array (VALUES_PER_LINE-1 downto 0) of std_logic_vector(31 downto 0);
 signal internal_result : result_type;
@@ -66,7 +66,12 @@ GenFP_MULT: for k in 0 to VALUES_PER_LINE-1 generate
 		clk => clk,
 		q => internal_result(k));
 
-	result(k*32+31 downto k*32) <= internal_result(k);
+	process(clk)
+	begin
+	if clk'event and clk = '1' then
+		result(k*32+31 downto k*32) <= internal_result(k);
+	end if;
+	end process;
 end generate GenFP_MULT;
 
 --result_almost_valid <= internal_trigger(TOTAL_LATENCY-4);
