@@ -28,7 +28,7 @@ module pipearch_top
     //
     // ====================================================================
     (* preserve *) logic internal_reset[3:0] = '{1'b1, 1'b1, 1'b1, 1'b1};
-    assign inst_reset = internal_reset[3];
+    logic inst_reset;
 
     always @(posedge clk)
     begin
@@ -37,6 +37,7 @@ module pipearch_top
     always @(posedge userclk)
     begin
         internal_reset[3:1] <= internal_reset[2:0];
+        inst_reset <= internal_reset[3];
     end
 
     //
