@@ -295,6 +295,12 @@ module glm_top
     //
     // =========================================================================
 
+    function automatic logic[31:0] DSP27Mult(logic[31:0] left, logic[31:0] right);
+        logic[31:0] result;
+        result = left[26:0]*right[26:0];
+        return result;
+    endfunction 
+
     function automatic logic[31:0] updateIndex(logic[31:0] instruction, logic[31:0] regs);
         logic[31:0] result;
         case(instruction)
@@ -529,9 +535,9 @@ module glm_top
                             4'h1: // prefetch
                             begin
                                 op_start[0] <= 1'b1;
-                                prefetch_regs[0] <= temp_regs[0]*instruction[10];
-                                prefetch_regs[1] <= temp_regs[1]*instruction[11];
-                                prefetch_regs[2] <= temp_regs[2]*instruction[12];
+                                prefetch_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
+                                prefetch_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
+                                prefetch_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
                                 prefetch_regs[3] <= instruction[3]; // read offset
                                 prefetch_regs[4] <= instruction[4]; // read length in cachelines
                             end
@@ -539,9 +545,9 @@ module glm_top
                             4'h2: // load
                             begin
                                 op_start[1] <= 1'b1;
-                                load_regs[0] <= temp_regs[0]*instruction[10];
-                                load_regs[1] <= temp_regs[1]*instruction[11];
-                                load_regs[2] <= temp_regs[2]*instruction[12];
+                                load_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
+                                load_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
+                                load_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
                                 load_regs[3] <= instruction[3]; // read offset
                                 load_regs[4] <= instruction[4]; // read length in cachelines
                                 for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
@@ -553,9 +559,9 @@ module glm_top
                             4'h3: // writeback
                             begin
                                 op_start[2] <= 1'b1;
-                                writeback_regs[0] <= temp_regs[0]*instruction[10];
-                                writeback_regs[1] <= temp_regs[1]*instruction[11];
-                                writeback_regs[2] <= temp_regs[2]*instruction[12];
+                                writeback_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
+                                writeback_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
+                                writeback_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
                                 writeback_regs[3] <= instruction[3]; // store offset
                                 writeback_regs[4] <= instruction[4]; // store length in cachelines
                                 writeback_regs[5] <= instruction[5]; // channel select
