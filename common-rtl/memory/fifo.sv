@@ -11,6 +11,12 @@ module fifo
 	fifobram_interface.fifo_source access
 );
 
+logic internal_reset;
+always_ff @(posedge clk)
+begin
+    internal_reset <= reset;
+end
+
 logic [WIDTH-1:0] memory [2**LOG2_DEPTH-1:0];
 logic [LOG2_DEPTH-1:0] waddr;
 logic [LOG2_DEPTH-1:0] raddr;
@@ -24,7 +30,7 @@ assign access.empty = empty | internal_empty;
 
 always_ff @(negedge clk)
 begin
-	if (reset)
+	if (internal_reset)
 	begin
 		empty <= 1'b1;
 		count <= 0;
@@ -69,7 +75,7 @@ begin
 	end
 
 	// Reset
-	if (reset)
+	if (internal_reset)
 	begin
 		waddr <= 0;
 		raddr <= 0;

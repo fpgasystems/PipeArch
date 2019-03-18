@@ -1,12 +1,12 @@
 #pragma once
 
 #include <mutex>
+#include <thread>
 
 #include "Instruction.h"
 #include "FPGA_ColumnML.h"
 
-class ResultHandle
-{
+class ResultHandle {
 public:
 	shared_buffer::ptr_t m_programMemoryHandle;
 	shared_buffer::ptr_t m_outputHandle;

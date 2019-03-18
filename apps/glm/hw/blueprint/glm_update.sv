@@ -143,99 +143,97 @@ module glm_update
         FIFO_modelforward.we <= 1'b0;
         op_done <= 1'b0;
 
+        case(update_state)
+            STATE_IDLE:
+            begin
+                if (op_start)
+                begin
+                    // *************************************************************************
+                    MEM_model_offset <= regs[3][15:0];
+                    MEM_model_length <= regs[3][31:16];
+                    write_to_model_forward <= regs[4][31];
+                    num_iterations <= regs[4][15:0];
+                    // *************************************************************************
+                    num_performed_iterations <= 0;
+                    num_finished_iterations <= 0;
+                    num_lines_multiplied_requested <= 16'b0;
+                    num_lines_multiplied <= 16'b0;
+                    num_lines_multiplied_final <= 16'b0;
+                    num_lines_subtracted <= 16'b0;
+                    update_state <= STATE_MAIN;
+                end
+            end
+
+            STATE_MAIN:
+            begin
+
+                if (num_lines_multiplied_requested == 0 && !FIFO_samplesforward.empty && !FIFO_gradient.empty && !FIFO_modelforward.almostfull)
+                begin
+                    FIFO_gradient.re <= 1'b1;
+                    FIFO_samplesforward.re <= 1'b1;
+                    num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
+                end
+                else if (num_lines_multiplied_requested > 0 && num_lines_multiplied_requested < MEM_model_length && !FIFO_samplesforward.empty && !FIFO_modelforward.almostfull)
+                begin
+                    FIFO_samplesforward.re <= 1'b1;
+                    num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
+                end
+
+                if (multiply_valid)
+                begin
+                    num_lines_multiplied <= num_lines_multiplied + 1;
+                    if (num_lines_multiplied == MEM_model_length-1)
+                    begin
+                        num_lines_multiplied <= 0;
+                        num_performed_iterations <= num_performed_iterations + 1;
+                        if (num_performed_iterations < num_iterations-1)
+                        begin
+                            num_lines_multiplied_requested <= 16'b0;
+                        end
+                    end
+                end
+
+                if (multiply_trigger_d[1])
+                begin
+                    MEM_model.re <= 1'b1;
+                    MEM_model.raddr <= MEM_model_offset + num_lines_multiplied_final;
+                    num_lines_multiplied_final <= num_lines_multiplied_final + 1;
+                    if (num_lines_multiplied_final == MEM_model_length-1)
+                    begin
+                        num_lines_multiplied_final <= 0;
+                    end
+                end
+
+                if (write_to_model_forward)
+                begin
+                    FIFO_modelforward.we <= subtract_valid;
+                    FIFO_modelforward.wdata <= subtract_result;
+                end
+
+                if (subtract_valid)
+                begin
+                    MEM_model.we <= 1'b1;
+                    MEM_model.waddr <= MEM_model_offset + num_lines_subtracted;
+                    MEM_model.wdata <= subtract_result;
+                    num_lines_subtracted <= num_lines_subtracted + 1;
+                    if (num_lines_subtracted == MEM_model_length-1)
+                    begin
+                        num_lines_subtracted <= 0;
+                        num_finished_iterations <= num_finished_iterations + 1;
+                        if (num_finished_iterations == num_iterations-1)
+                        begin
+                            op_done <= 1'b1;
+                            update_state <= STATE_IDLE;
+                        end
+                    end
+                end
+            end
+
+        endcase
+
         if (reset)
         begin
             update_state <= STATE_IDLE;
-        end
-        else
-        begin
-            case(update_state)
-                STATE_IDLE:
-                begin
-                    if (op_start)
-                    begin
-                        // *************************************************************************
-                        MEM_model_offset <= regs[3][15:0];
-                        MEM_model_length <= regs[3][31:16];
-                        write_to_model_forward <= regs[4][31];
-                        num_iterations <= regs[4][15:0];
-                        // *************************************************************************
-                        num_performed_iterations <= 0;
-                        num_finished_iterations <= 0;
-                        num_lines_multiplied_requested <= 16'b0;
-                        num_lines_multiplied <= 16'b0;
-                        num_lines_multiplied_final <= 16'b0;
-                        num_lines_subtracted <= 16'b0;
-                        update_state <= STATE_MAIN;
-                    end
-                end
-
-                STATE_MAIN:
-                begin
-
-                    if (num_lines_multiplied_requested == 0 && !FIFO_samplesforward.empty && !FIFO_gradient.empty && !FIFO_modelforward.almostfull)
-                    begin
-                        FIFO_gradient.re <= 1'b1;
-                        FIFO_samplesforward.re <= 1'b1;
-                        num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
-                    end
-                    else if (num_lines_multiplied_requested > 0 && num_lines_multiplied_requested < MEM_model_length && !FIFO_samplesforward.empty && !FIFO_modelforward.almostfull)
-                    begin
-                        FIFO_samplesforward.re <= 1'b1;
-                        num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
-                    end
-
-                    if (multiply_valid)
-                    begin
-                        num_lines_multiplied <= num_lines_multiplied + 1;
-                        if (num_lines_multiplied == MEM_model_length-1)
-                        begin
-                            num_lines_multiplied <= 0;
-                            num_performed_iterations <= num_performed_iterations + 1;
-                            if (num_performed_iterations < num_iterations-1)
-                            begin
-                                num_lines_multiplied_requested <= 16'b0;
-                            end
-                        end
-                    end
-
-                    if (multiply_trigger_d[1])
-                    begin
-                        MEM_model.re <= 1'b1;
-                        MEM_model.raddr <= MEM_model_offset + num_lines_multiplied_final;
-                        num_lines_multiplied_final <= num_lines_multiplied_final + 1;
-                        if (num_lines_multiplied_final == MEM_model_length-1)
-                        begin
-                            num_lines_multiplied_final <= 0;
-                        end
-                    end
-
-                    if (write_to_model_forward)
-                    begin
-                        FIFO_modelforward.we <= subtract_valid;
-                        FIFO_modelforward.wdata <= subtract_result;
-                    end
-
-                    if (subtract_valid)
-                    begin
-                        MEM_model.we <= 1'b1;
-                        MEM_model.waddr <= MEM_model_offset + num_lines_subtracted;
-                        MEM_model.wdata <= subtract_result;
-                        num_lines_subtracted <= num_lines_subtracted + 1;
-                        if (num_lines_subtracted == MEM_model_length-1)
-                        begin
-                            num_lines_subtracted <= 0;
-                            num_finished_iterations <= num_finished_iterations + 1;
-                            if (num_finished_iterations == num_iterations-1)
-                            begin
-                                op_done <= 1'b1;
-                                update_state <= STATE_IDLE;
-                            end
-                        end
-                    end
-                end
-
-            endcase
         end
     end
 

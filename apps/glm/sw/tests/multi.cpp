@@ -1,6 +1,7 @@
 #include <iostream>
 #include "FPGA_ColumnML.h"
 #include "GlmMachine.h"
+#include "Server.h"
 
 // State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script
 #include "afu_json_info.h"
@@ -24,46 +25,61 @@ int main(int argc, char* argv[]) {
 
 	uint32_t partitionSize = 16000;
 
-	GlmMachine glm(AFU_ACCEL_UUID);
+	ColumnML columnML;
 
-	FPGA_ColumnML columnML;
+	Server server;
 
-	float stepSize = 0.01;
-	float lambda = 0;
+	// sleep(1);
 
-	ModelType type = linreg;
+	server.Request(&columnML);
+	server.Request(&columnML);
 
-	columnML.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
+	// sleep(1);
 
-	AdditionalArguments args;
-	args.m_firstSample = 0;
-	args.m_numSamples = columnML.m_cstore->m_numSamples;
-	args.m_constantStepSize = true;
+	// delete server;
 
-	MemoryFormat format = RowStore;
-	columnML.CreateMemoryLayout(glm, format, partitionSize);
 
-	columnML.SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
-	columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+	// GlmMachine glm(AFU_ACCEL_UUID);
 
-	ResultHandle resultHandle[2];
-	resultHandle[0] = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
-	resultHandle[1] = glm.fSGD_minibatch(columnML, type, numEpochs, minibatchSize, stepSize, lambda, &args);
+	// FPGA_ColumnML columnML;
 
-	glm.StartProgram(columnML.m_handle, resultHandle[0], 0);
-	glm.StartProgram(columnML.m_handle, resultHandle[1], 1);
+	// float stepSize = 0.01;
+	// float lambda = 0;
 
-	glm.JoinProgram(resultHandle[0]);
-	glm.JoinProgram(resultHandle[1]);
+	// ModelType type = linreg;
 
-	for (uint32_t i = 0; i < 2; i++) {
-		auto output = reinterpret_cast<volatile float*>(resultHandle[i].m_outputHandle->c_type());
-		float* xHistory = (float*)(output + 16);
-		for (uint32_t e = 0; e < numEpochs; e++) {
-			float loss = columnML.Loss(type, xHistory + e*columnML.m_alignedNumFeatures, lambda, &args);
-			std::cout << "loss " << e << ": " << loss << std::endl;
-		}
-	}
+	// columnML.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
+
+	// AdditionalArguments args;
+	// args.m_firstSample = 0;
+	// args.m_numSamples = columnML.m_cstore->m_numSamples;
+	// args.m_constantStepSize = true;
+
+	// MemoryFormat format = RowStore;
+	// columnML.CreateMemoryLayout(glm, format, partitionSize);
+
+	// columnML.SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
+	// columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+
+
+	// ResultHandle resultHandle[2];
+	// resultHandle[0] = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
+	// resultHandle[1] = glm.fSGD_minibatch(columnML, type, numEpochs, minibatchSize, stepSize, lambda, &args);
+
+	// glm.StartProgram(columnML.m_handle, resultHandle[0], 0);
+	// glm.StartProgram(columnML.m_handle, resultHandle[1], 1);
+
+	// glm.JoinProgram(resultHandle[0]);
+	// glm.JoinProgram(resultHandle[1]);
+
+	// for (uint32_t i = 0; i < 2; i++) {
+	// 	auto output = reinterpret_cast<volatile float*>(resultHandle[i].m_outputHandle->c_type());
+	// 	float* xHistory = (float*)(output + 16);
+	// 	for (uint32_t e = 0; e < numEpochs; e++) {
+	// 		float loss = columnML.Loss(type, xHistory + e*columnML.m_alignedNumFeatures, lambda, &args);
+	// 		std::cout << "loss " << e << ": " << loss << std::endl;
+	// 	}
+	// }
 
 	return 0;
 }

@@ -120,129 +120,127 @@ module glm_modify
         FIFO_gradient.we <= 1'b0;
         op_done <= 1'b0;
 
+        case (modify_state)
+            STATE_IDLE:
+            begin
+                if (op_start)
+                begin
+                    // *************************************************************************
+                    offset_by_index <= regs[0][15:0];
+                    offset_by_index_write <= regs[0][15:0];
+                    position_by_index <= regs[0][3:0];
+                    write_position_by_index <= regs[0][3:0];
+                    num_iterations <= regs[3][31:16];
+                    MEM_labels_load_offset <= regs[3][15:0];
+                    model_type <= regs[4][1:0];
+                    algorithm_type <= regs[4][2];
+                    step_size <= regs[5];
+                    lambda <= regs[6];
+                    // *************************************************************************
+                    num_performed_iterations <= 0;
+                    write_num_performed_iterations <= 0;
+                    modify_state <= (regs[4][2] == 1'b0) ? STATE_SGD_MAIN : STATE_SCD_MAIN;
+                end
+            end
+
+            STATE_SGD_MAIN:
+            begin
+                if (!FIFO_dot.empty && num_performed_iterations < num_iterations)
+                begin
+                    FIFO_dot.re <= 1'b1;
+                    MEM_labels.re <= 1'b1;
+                    MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index[15:4]);
+                    num_performed_iterations <= num_performed_iterations + 1;
+                    offset_by_index <= offset_by_index + 1;
+                end
+
+                if (FIFO_dot.rvalid && MEM_labels.rvalid)
+                begin
+                    sub_regs.trigger <= 1'b1;
+                    sub_regs.leftoperand <= FIFO_dot.rdata;
+                    sub_regs.rightoperand <= MEM_labels.rdata[position_by_index*32+31 -: 32];
+                    position_by_index <= position_by_index + 1;
+                end
+
+                if (sub_regs.done)
+                begin
+                    mult_regs.trigger <= 1'b1;
+                    mult_regs.leftoperand <= step_size;
+                    mult_regs.rightoperand <= sub_regs.result;
+                end
+
+                if (mult_regs.done)
+                begin
+                    FIFO_gradient.we <= 1'b1;
+                    FIFO_gradient.wdata <= mult_regs.result;
+                    write_num_performed_iterations <= write_num_performed_iterations + 1;
+                    if (write_num_performed_iterations == num_iterations-1)
+                    begin
+                        op_done <= 1'b1;
+                        modify_state <= STATE_IDLE;
+                    end
+                end
+            end
+
+            STATE_SCD_MAIN:
+            begin
+                if (!FIFO_dot.empty && num_performed_iterations < num_iterations)
+                begin
+                    FIFO_dot.re <= 1'b1;
+                    num_performed_iterations <= num_performed_iterations + 1;
+                end
+
+                if (FIFO_dot.rvalid)
+                begin
+                    mult_regs.trigger <= 1'b1;
+                    mult_regs.leftoperand <= step_size;
+                    mult_regs.rightoperand <= FIFO_dot.rdata;;
+                end
+
+                if (mult_status[0])
+                begin
+                    MEM_labels.re <= 1'b1;
+                    MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index[15:4]);
+                    offset_by_index <= offset_by_index + 1;
+                end
+
+                if (mult_regs.done)
+                begin
+                    sub_regs.trigger <= 1'b1;
+                    sub_regs.leftoperand <= MEM_labels.rdata[position_by_index*32+31 -: 32];
+                    sub_regs.rightoperand <= mult_regs.result;
+                    lineFromLabelsMem <= MEM_labels.rdata;
+                    FIFO_gradient.we <= 1'b1;
+                    FIFO_gradient.wdata <= mult_regs.result;
+                    position_by_index <= position_by_index + 1;
+                end
+
+                if (sub_regs.done)
+                begin
+                    MEM_labels.we <= 1'b1;
+                    MEM_labels.waddr <= MEM_labels_load_offset + (offset_by_index_write[15:4]);
+                    offset_by_index_write <= offset_by_index_write + 1;
+
+                    for (int i = 0; i < 16; i++)
+                    begin
+                        MEM_labels.wdata[i*32+31 -: 32] <= (i == write_position_by_index) ? sub_regs.result : lineFromLabelsMem[i*32+31 -: 32];
+                    end
+                    write_position_by_index <= write_position_by_index + 1;
+
+                    write_num_performed_iterations <= write_num_performed_iterations + 1;
+                    if (write_num_performed_iterations == num_iterations-1)
+                    begin
+                        op_done <= 1'b1;
+                        modify_state <= STATE_IDLE;
+                    end
+                end
+            end
+
+        endcase
+
         if (reset)
         begin
             modify_state <= STATE_IDLE;
-        end
-        else
-        begin
-            case (modify_state)
-                STATE_IDLE:
-                begin
-                    if (op_start)
-                    begin
-                        // *************************************************************************
-                        offset_by_index <= regs[0][15:0];
-                        offset_by_index_write <= regs[0][15:0];
-                        position_by_index <= regs[0][3:0];
-                        write_position_by_index <= regs[0][3:0];
-                        num_iterations <= regs[3][31:16];
-                        MEM_labels_load_offset <= regs[3][15:0];
-                        model_type <= regs[4][1:0];
-                        algorithm_type <= regs[4][2];
-                        step_size <= regs[5];
-                        lambda <= regs[6];
-                        // *************************************************************************
-                        num_performed_iterations <= 0;
-                        write_num_performed_iterations <= 0;
-                        modify_state <= (regs[4][2] == 1'b0) ? STATE_SGD_MAIN : STATE_SCD_MAIN;
-                    end
-                end
-
-                STATE_SGD_MAIN:
-                begin
-                    if (!FIFO_dot.empty && num_performed_iterations < num_iterations)
-                    begin
-                        FIFO_dot.re <= 1'b1;
-                        MEM_labels.re <= 1'b1;
-                        MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index[15:4]);
-                        num_performed_iterations <= num_performed_iterations + 1;
-                        offset_by_index <= offset_by_index + 1;
-                    end
-
-                    if (FIFO_dot.rvalid && MEM_labels.rvalid)
-                    begin
-                        sub_regs.trigger <= 1'b1;
-                        sub_regs.leftoperand <= FIFO_dot.rdata;
-                        sub_regs.rightoperand <= MEM_labels.rdata[position_by_index*32+31 -: 32];
-                        position_by_index <= position_by_index + 1;
-                    end
-
-                    if (sub_regs.done)
-                    begin
-                        mult_regs.trigger <= 1'b1;
-                        mult_regs.leftoperand <= step_size;
-                        mult_regs.rightoperand <= sub_regs.result;
-                    end
-
-                    if (mult_regs.done)
-                    begin
-                        FIFO_gradient.we <= 1'b1;
-                        FIFO_gradient.wdata <= mult_regs.result;
-                        write_num_performed_iterations <= write_num_performed_iterations + 1;
-                        if (write_num_performed_iterations == num_iterations-1)
-                        begin
-                            op_done <= 1'b1;
-                            modify_state <= STATE_IDLE;
-                        end
-                    end
-                end
-
-                STATE_SCD_MAIN:
-                begin
-                    if (!FIFO_dot.empty && num_performed_iterations < num_iterations)
-                    begin
-                        FIFO_dot.re <= 1'b1;
-                        num_performed_iterations <= num_performed_iterations + 1;
-                    end
-
-                    if (FIFO_dot.rvalid)
-                    begin
-                        mult_regs.trigger <= 1'b1;
-                        mult_regs.leftoperand <= step_size;
-                        mult_regs.rightoperand <= FIFO_dot.rdata;;
-                    end
-
-                    if (mult_status[0])
-                    begin
-                        MEM_labels.re <= 1'b1;
-                        MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index[15:4]);
-                        offset_by_index <= offset_by_index + 1;
-                    end
-
-                    if (mult_regs.done)
-                    begin
-                        sub_regs.trigger <= 1'b1;
-                        sub_regs.leftoperand <= MEM_labels.rdata[position_by_index*32+31 -: 32];
-                        sub_regs.rightoperand <= mult_regs.result;
-                        lineFromLabelsMem <= MEM_labels.rdata;
-                        FIFO_gradient.we <= 1'b1;
-                        FIFO_gradient.wdata <= mult_regs.result;
-                        position_by_index <= position_by_index + 1;
-                    end
-
-                    if (sub_regs.done)
-                    begin
-                        MEM_labels.we <= 1'b1;
-                        MEM_labels.waddr <= MEM_labels_load_offset + (offset_by_index_write[15:4]);
-                        offset_by_index_write <= offset_by_index_write + 1;
-
-                        for (int i = 0; i < 16; i++)
-                        begin
-                            MEM_labels.wdata[i*32+31 -: 32] <= (i == write_position_by_index) ? sub_regs.result : lineFromLabelsMem[i*32+31 -: 32];
-                        end
-                        write_position_by_index <= write_position_by_index + 1;
-
-                        write_num_performed_iterations <= write_num_performed_iterations + 1;
-                        if (write_num_performed_iterations == num_iterations-1)
-                        begin
-                            op_done <= 1'b1;
-                            modify_state <= STATE_IDLE;
-                        end
-                    end
-                end
-
-            endcase
         end
     end
 

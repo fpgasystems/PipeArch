@@ -109,98 +109,95 @@ module glm_writeback
         af2cp_sTx_c1.valid <= 1'b0;
         op_done <= 1'b0;
 
+        // =================================
+        //
+        //   Send State Machine
+        //
+        // =================================
+        case(send_state)
+            STATE_IDLE:
+            begin
+                if (op_start)
+                begin
+                    // *************************************************************************
+                    offset_by_index[0] <= regs[0];
+                    offset_by_index[1] <= regs[1];
+                    offset_by_index[2] <= regs[2];
+                    DRAM_store_offset <= (regs[3][31] == 1'b0) ? out_addr + regs[3][30:0] : in_addr + regs[3][30:0];
+                    DRAM_store_length <= regs[4];
+                    select_channel <= regs[5][3:0];
+                    write_fence <= regs[5][4];
+                    gen_syn_data <= regs[5][5];
+                    // *************************************************************************
+                    offset_accumulate <= 2'b0;
+                    num_sent_lines <= 32'b0;
+                    num_ack_lines <= 32'b0;
+                    if (regs[4] == 0)
+                    begin
+                        send_state <= STATE_DONE;
+                    end
+                    else
+                    begin
+                        send_state <= STATE_PREPROCESS;
+                    end
+                end
+            end
+
+            STATE_PREPROCESS:
+            begin
+                DRAM_store_offset <= DRAM_store_offset + offset_by_index[offset_accumulate];
+                offset_accumulate <= offset_accumulate + 1;
+                if (offset_accumulate == 2)
+                begin
+                    send_state <= STATE_WRITE;
+                end
+            end
+
+            STATE_WRITE:
+            begin
+                if (to_writeback.rvalid)
+                begin
+                    af2cp_sTx_c1.valid <= 1'b1;
+                    if (gen_syn_data == 1'b1)
+                    begin
+                        for (int i=0; i < 16; i=i+1)
+                        begin
+                            af2cp_sTx_c1.data[ (i*32)+31 -: 32 ] <= num_sent_lines;
+                        end
+                    end
+                    else
+                    begin
+                        af2cp_sTx_c1.data <= to_writeback.rdata;
+                    end
+                    af2cp_sTx_c1.hdr.address <= DRAM_store_offset + num_sent_lines;
+                    num_sent_lines <= num_sent_lines + 1;
+                    if (num_sent_lines == DRAM_store_length-1 && write_fence == 1'b0)
+                    begin
+                        send_state <= STATE_DONE;
+                    end
+                end
+
+                if (cp2af_sRx_c1.rspValid)
+                begin
+                    num_ack_lines <= num_ack_lines + 1;
+                    if (num_ack_lines == DRAM_store_length-1 && write_fence == 1'b1)
+                    begin
+                        send_state <= STATE_DONE;
+                    end
+                end
+            end
+
+            STATE_DONE:
+            begin
+                op_done <= 1'b1;
+                send_state <= STATE_IDLE;
+            end
+        endcase
+
         if (reset)
         begin
             send_state <= STATE_IDLE;
         end
-        else
-        begin
-            // =================================
-            //
-            //   Send State Machine
-            //
-            // =================================
-            case(send_state)
-                STATE_IDLE:
-                begin
-                    if (op_start)
-                    begin
-                        // *************************************************************************
-                        offset_by_index[0] <= regs[0];
-                        offset_by_index[1] <= regs[1];
-                        offset_by_index[2] <= regs[2];
-                        DRAM_store_offset <= (regs[3][31] == 1'b0) ? out_addr + regs[3][30:0] : in_addr + regs[3][30:0];
-                        DRAM_store_length <= regs[4];
-                        select_channel <= regs[5][3:0];
-                        write_fence <= regs[5][4];
-                        gen_syn_data <= regs[5][5];
-                        // *************************************************************************
-                        offset_accumulate <= 2'b0;
-                        num_sent_lines <= 32'b0;
-                        num_ack_lines <= 32'b0;
-                        if (regs[4] == 0)
-                        begin
-                            send_state <= STATE_DONE;
-                        end
-                        else
-                        begin
-                            send_state <= STATE_PREPROCESS;
-                        end
-                    end
-                end
-
-                STATE_PREPROCESS:
-                begin
-                    DRAM_store_offset <= DRAM_store_offset + offset_by_index[offset_accumulate];
-                    offset_accumulate <= offset_accumulate + 1;
-                    if (offset_accumulate == 2)
-                    begin
-                        send_state <= STATE_WRITE;
-                    end
-                end
-
-                STATE_WRITE:
-                begin
-                    if (to_writeback.rvalid)
-                    begin
-                        af2cp_sTx_c1.valid <= 1'b1;
-                        if (gen_syn_data == 1'b1)
-                        begin
-                            for (int i=0; i < 16; i=i+1)
-                            begin
-                                af2cp_sTx_c1.data[ (i*32)+31 -: 32 ] <= num_sent_lines;
-                            end
-                        end
-                        else
-                        begin
-                            af2cp_sTx_c1.data <= to_writeback.rdata;
-                        end
-                        af2cp_sTx_c1.hdr.address <= DRAM_store_offset + num_sent_lines;
-                        num_sent_lines <= num_sent_lines + 1;
-                        if (num_sent_lines == DRAM_store_length-1 && write_fence == 1'b0)
-                        begin
-                            send_state <= STATE_DONE;
-                        end
-                    end
-
-                    if (cp2af_sRx_c1.rspValid)
-                    begin
-                        num_ack_lines <= num_ack_lines + 1;
-                        if (num_ack_lines == DRAM_store_length-1 && write_fence == 1'b1)
-                        begin
-                            send_state <= STATE_DONE;
-                        end
-                    end
-                end
-
-                STATE_DONE:
-                begin
-                    op_done <= 1'b1;
-                    send_state <= STATE_IDLE;
-                end
-            endcase
-        end
     end
-
 
 endmodule // glm_writeback
