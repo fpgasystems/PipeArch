@@ -24,9 +24,11 @@ private:
 
 public:
 	iFPGA(const char* accel_uuid) {
-		m_fpga = new OPAE_SVC_WRAPPER(accel_uuid);
-		assert(m_fpga->isOk());
-		m_csrs = new CSR_MGR(*m_fpga);
+		if ( !(strcmp(accel_uuid,"") == 0) ) {
+			m_fpga = new OPAE_SVC_WRAPPER(accel_uuid);
+			assert(m_fpga->isOk());
+			m_csrs = new CSR_MGR(*m_fpga);
+		}
 	}
 
 	~iFPGA() {

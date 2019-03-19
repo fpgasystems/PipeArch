@@ -7,8 +7,12 @@
 enum MemoryFormat {RowStore, ColumnStore};
 
 class FPGA_ColumnML : public ColumnML {
-public:
+private:
+	iFPGA* m_ifpga;
+
 	shared_buffer::ptr_t m_handle;
+	shared_buffer::ptr_t m_outputHandle;
+	shared_buffer::ptr_t m_programMemoryHandle;
 
 	volatile float* m_memory = nullptr;
 	volatile float* m_model = nullptr;
@@ -17,17 +21,6 @@ public:
 	volatile float* m_residual = nullptr;
 	volatile uint32_t* m_accessprops = nullptr;
 	volatile float** m_columns = nullptr;
-
-	uint32_t m_numSamplesInCL;
-	uint32_t m_numFeaturesInCL;
-	uint32_t m_alignedNumSamples;
-	uint32_t m_alignedNumFeatures;
-	uint32_t m_partitionSize;
-	uint32_t m_partitionSizeInCL;
-	uint32_t m_alignedPartitionSize;
-	uint32_t m_numPartitions;
-	uint32_t m_rest;
-	uint32_t m_restInCL;
 
 	access_t m_modelChunk;
 	access_t m_labelsChunk;
@@ -38,19 +31,113 @@ public:
 
 	MemoryFormat m_currentMemoryFormat;
 
-	FPGA_ColumnML() {
+	void realloc(shared_buffer::ptr_t& handle, size_t size) {
+		if (handle != NULL) {
+			handle->release();
+			handle = NULL;
+		}
+		handle = m_ifpga->malloc(size);
+	}
+
+	void free(shared_buffer::ptr_t& handle) {
+		if (handle != NULL) {
+			handle->release();
+			handle = NULL;
+		}
+	}
+
+	void WriteProgramMemory() {
+		cout << "WriteProgramMemory..." << endl;
+		cout << "m_numInstructions: " <<  m_numInstructions << endl;
+		realloc(m_programMemoryHandle, m_numInstructions*Instruction::NUM_BYTES);
+		auto programMemory = reinterpret_cast<volatile uint32_t*>(m_programMemoryHandle->c_type());
+		assert(NULL != programMemory);
+		for (uint32_t i = 0; i < m_numInstructions; i++) {
+			m_inst[i].LoadInstruction(programMemory + i*Instruction::NUM_WORDS);
+		}
+	}
+
+public:
+	uint32_t m_numSamplesInCL;
+	uint32_t m_numFeaturesInCL;
+	uint32_t m_alignedNumSamples;
+	uint32_t m_alignedNumFeatures;
+	uint32_t m_partitionSize;
+	uint32_t m_partitionSizeInCL;
+	uint32_t m_alignedPartitionSize;
+	uint32_t m_numPartitions;
+	uint32_t m_rest;
+	uint32_t m_restInCL;
+	uint32_t m_outputSizeInCL;
+
+	Instruction m_inst[Instruction::MAX_NUM_INSTRUCTIONS];
+	uint32_t m_numInstructions;
+
+	FPGA_ColumnML(iFPGA* ifpga) {
 		m_handle = NULL;
+		m_outputHandle = NULL;
+		m_programMemoryHandle = NULL;
+		m_ifpga = ifpga;
 	}
 
 	~FPGA_ColumnML() {
 		cout << "m_handle->release()" << endl;
-		if (m_handle != NULL) {
-			m_handle->release();
-			m_handle = NULL;
-		}
+		free(m_handle);
+		cout << "m_outputHandle->release()" << endl;
+		free(m_outputHandle);
+		cout << "m_programMemoryHandle->release()" << endl;
+		free(m_programMemoryHandle);
 	}
 
-	uint32_t CreateMemoryLayout(iFPGA& ifpga, MemoryFormat format, uint32_t partitionSize) {
+	volatile uint32_t* CastToInt(char which) {
+		volatile uint32_t* temp = NULL;
+		if (which == 'i' && m_handle != NULL) {
+			temp = reinterpret_cast<volatile uint32_t*>(m_handle->c_type());
+		}
+		else if (which == 'o' && m_outputHandle != NULL) {
+			temp = reinterpret_cast<volatile uint32_t*>(m_outputHandle->c_type());
+		}
+		else if (which == 'p' && m_programMemoryHandle != NULL) {
+			temp = reinterpret_cast<volatile uint32_t*>(m_programMemoryHandle->c_type());
+		}
+		assert(NULL != temp);
+		return temp;
+	}
+
+	volatile float* CastToFloat(char which) {
+		volatile float* temp = NULL;
+		if (which == 'i' && m_handle != NULL) {
+			temp = reinterpret_cast<volatile float*>(m_handle->c_type());
+		}
+		else if (which == 'o' && m_outputHandle != NULL) {
+			temp = reinterpret_cast<volatile float*>(m_outputHandle->c_type());
+		}
+		else if (which == 'p' && m_programMemoryHandle != NULL) {
+			temp = reinterpret_cast<volatile float*>(m_programMemoryHandle->c_type());
+		}
+		assert(NULL != temp);
+		return temp;
+	}
+
+	void WaitUntilCompletion() {
+		auto output = CastToFloat('o');
+
+		struct timespec pause;
+		cout << "iFPGA::hwIsSimulated(): " << m_ifpga->hwIsSimulated() << endl;
+		pause.tv_sec = (m_ifpga->hwIsSimulated() ? 1 : 0);
+		pause.tv_nsec = 100;
+
+		double start = get_time();
+		while (0 == output[0]) {
+			nanosleep(&pause, NULL);
+		};
+		double end = get_time();
+
+		cout << "Time: " << end-start << endl;
+		m_ifpga->printMPF();
+	}
+
+	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
 		m_currentMemoryFormat = format;
 
 		m_numSamplesInCL = (m_cstore->m_numSamples >> 4) + ((m_cstore->m_numSamples&0xF) > 0);
@@ -93,11 +180,7 @@ public:
 			countCL += m_cstore->m_numSamples*m_numFeaturesInCL;
 			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
 
-			if (m_handle != NULL) {
-				m_handle->release();
-				m_handle = NULL;
-			}
-			m_handle = ifpga.malloc(countCL*64);
+			realloc(m_handle, countCL*64);
 			m_memory = reinterpret_cast<volatile float*>(m_handle->c_type());
 			assert(NULL != m_memory);
 			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
@@ -164,11 +247,7 @@ public:
 				}
 			}
 
-			if (m_handle != NULL) {
-				m_handle->release();
-				m_handle = NULL;
-			}
-			m_handle = ifpga.malloc(countCL*64);
+			realloc(m_handle, countCL*64);
 			m_memory = reinterpret_cast<volatile float*>(m_handle->c_type());
 			assert(NULL != m_memory);
 			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
@@ -204,4 +283,29 @@ public:
 
 		return countCL;
 	}
+
+	bool fSGD(
+		ModelType type,
+		uint32_t numEpochs,
+		float stepSize,
+		float lambda);
+
+	bool fSGD_minibatch(
+		ModelType type,
+		uint32_t numEpochs,
+		uint32_t minibatchSize, 
+		float stepSize,
+		float lambda);
+
+	bool fSCD(
+		ModelType type, 
+		uint32_t numEpochs,
+		float stepSize, 
+		float lambda);
+
+	bool fSGD_blocking(
+		ModelType type,
+		uint32_t numEpochs,
+		float stepSize,
+		float lambda);
 };

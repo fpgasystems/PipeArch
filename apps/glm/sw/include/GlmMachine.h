@@ -122,7 +122,7 @@ public:
 		m_numJobsRunning[handle.m_instanceId]++;
 		m_mutex.unlock();
 	}
-
+/*
 	ResultHandle fSGD(
 		FPGA_ColumnML& cML,
 		ModelType type,
@@ -683,7 +683,7 @@ public:
 
 		return CreateProgram(inst, pc, (numEpochs*cML.m_numFeaturesInCL+1)*64);
 	}
-
+*/
 	void ReadBandwidth(uint32_t numIterations) {
 
 		Instruction inst[Instruction::MAX_NUM_INSTRUCTIONS];
