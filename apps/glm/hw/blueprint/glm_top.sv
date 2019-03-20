@@ -60,51 +60,57 @@ module glm_top
     typedef struct packed
     {
         t_thread_status status;
-        logic [15:0] program_length;
+        logic [LOG2_PROGRAM_SIZE-1:0] program_length;
         t_ccip_clAddr program_addr;
         t_ccip_clAddr in_addr;
         t_ccip_clAddr out_addr;
+    } t_thread_information;
+
+    typedef logic [31:0] t_reg;
+
+    typedef struct packed
+    {
+        logic [LOG2_PROGRAM_SIZE-1:0] pc_context_load;
+        logic [LOG2_PROGRAM_SIZE-1:0] pc_context_store;
+        logic [LOG2_PROGRAM_SIZE-1:0] program_counter;
+        t_reg [NUM_REGS-1:0] regs;
     } t_thread_context;
 
-    t_thread_context thread_context [MAX_NUM_THREADS];
-    logic [LOG2_MAX_NUM_THREADS-1:0] thread_status_select;
+    t_thread_information thread_information;
     t_ccip_vc vc_select;
+    logic context_switch;
+    t_thread_context thread_context;
 
     always_ff @(posedge clk)
     begin
+
+        if (wr_csrs[0].en)
+        begin
+            thread_information.program_length <= wr_csrs[0].data[LOG2_PROGRAM_SIZE-1:0];
+            vc_select <= t_ccip_vc'(wr_csrs[0].data[31:30]);
+            context_switch <= wr_csrs[0].data[16];
+        end
+
+        if (wr_csrs[1].en)
+        begin
+            thread_information.program_addr <= byteAddrToClAddr(wr_csrs[1].data);
+        end
+
+        if (wr_csrs[2].en)
+        begin
+            thread_information.in_addr <= byteAddrToClAddr(wr_csrs[2].data);
+        end
+
+        thread_information.status <= THREAD_IDLE;
+        if (wr_csrs[3].en)
+        begin
+            thread_information.status <= THREAD_LOAD_PROGRAM;
+            thread_information.out_addr <= byteAddrToClAddr(wr_csrs[3].data);
+        end
+
         if (reset)
         begin
-            for (int i = 0; i < MAX_NUM_THREADS; i++)
-            begin
-                thread_context[i] <= t_thread_context'(0);
-            end
-            thread_status_select <= 0;
-        end
-        else
-        begin
-            if (wr_csrs[0].en)
-            begin
-                thread_context[wr_csrs[0].data[16+LOG2_MAX_NUM_THREADS-1:16]].program_length <= wr_csrs[0].data[15:0];
-                thread_status_select <= wr_csrs[0].data[16+LOG2_MAX_NUM_THREADS-1:16];
-                vc_select <= t_ccip_vc'(wr_csrs[0].data[31:30]);
-            end
-
-            if (wr_csrs[1].en)
-            begin
-                thread_context[thread_status_select].program_addr <= byteAddrToClAddr(wr_csrs[1].data);
-            end
-
-            if (wr_csrs[2].en)
-            begin
-                thread_context[thread_status_select].in_addr <= byteAddrToClAddr(wr_csrs[2].data);
-            end
-
-            thread_context[thread_status_select].status <= THREAD_IDLE;
-            if (wr_csrs[3].en)
-            begin
-                thread_context[thread_status_select].status <= THREAD_LOAD_PROGRAM;
-                thread_context[thread_status_select].out_addr <= byteAddrToClAddr(wr_csrs[3].data);
-            end
+            thread_information <= t_thread_information'(0);
         end
     end
 
@@ -131,7 +137,6 @@ module glm_top
     t_rxtxstate request_state;
     t_rxtxstate receive_state;
     t_machinestate machine_state;
-    logic [LOG2_MAX_NUM_THREADS-1:0] current_thread;
 
     // =========================================================================
     //
@@ -139,121 +144,142 @@ module glm_top
     //
     // =========================================================================
     
-    logic [15:0] program_length_request;
-    logic [15:0] program_length_receive;
+    logic [LOG2_PROGRAM_SIZE-1:0] program_length_request;
+    logic [LOG2_PROGRAM_SIZE-1:0] program_length_receive;
 
     always_ff @(posedge clk)
     begin
         af2cp_sTx.c0.hdr <= t_cci_c0_ReqMemHdr'(0);
         af2cp_sTx.c0.valid <= 1'b0;
 
+        // =================================
+        //
+        //   Request State Machine
+        //
+        // =================================
+        case (request_state)
+            RXTX_STATE_IDLE:
+            begin
+                if (thread_information.status == THREAD_LOAD_PROGRAM)
+                begin
+                    request_state <= RXTX_STATE_PROGRAM_READ;
+                    program_length_request <= 15'b0;
+                end
+            end
+
+            RXTX_STATE_PROGRAM_READ:
+            begin
+                if (program_length_request < thread_information.program_length && !cp2af_sRx.c0TxAlmFull)
+                begin
+                    af2cp_sTx.c0.valid <= 1'b1;
+                    af2cp_sTx.c0.hdr.vc_sel <= vc_select;
+                    af2cp_sTx.c0.hdr.address <= thread_information.program_addr + program_length_request;
+                    program_length_request <= program_length_request + 1;
+                    if (program_length_request == thread_information.program_length - 1)
+                    begin
+                        request_state <= RXTX_STATE_CONTEXT_READ;
+                    end
+                end
+            end
+
+            RXTX_STATE_CONTEXT_READ:
+            begin
+                if (!cp2af_sRx.c0TxAlmFull)
+                begin
+                    af2cp_sTx.c0.valid <= 1'b1;
+                    af2cp_sTx.c0.hdr.vc_sel <= vc_select;
+                    af2cp_sTx.c0.hdr.address <= thread_information.out_addr;
+                    request_state <= RXTX_STATE_PROGRAM_EXECUTE;
+                end
+            end
+
+            RXTX_STATE_PROGRAM_EXECUTE:
+            begin
+                if (machine_state == MACHINE_STATE_DONE)
+                begin
+                    request_state <= RXTX_STATE_DONE;
+                end
+                else
+                begin
+                    af2cp_sTx.c0 <= execute_load_af2cp_sTx_c0;
+                    af2cp_sTx.c0.hdr.vc_sel <= vc_select;
+                end
+            end
+
+            RXTX_STATE_DONE:
+            begin
+                request_state <= RXTX_STATE_IDLE;
+            end
+        endcase
+
+        // =================================
+        //
+        //   Receive State Machine
+        //
+        // =================================
+        program_access.we <= 1'b0;
+        case (receive_state)
+            RXTX_STATE_IDLE:
+            begin
+                if (thread_information.status == THREAD_LOAD_PROGRAM)
+                begin
+                    receive_state <= RXTX_STATE_PROGRAM_READ;
+                    program_length_receive <= 0;
+                end
+            end
+
+            RXTX_STATE_PROGRAM_READ:
+            begin
+                if (cci_c0Rx_isReadRsp(cp2af_sRx.c0))
+                begin
+                    program_access.we <= 1'b1;
+                    program_access.waddr <= program_length_receive;
+                    program_access.wdata <= cp2af_sRx.c0.data;
+                    program_length_receive <= program_length_receive + 1;
+                    if (program_length_receive == thread_information.program_length-1)
+                    begin
+                        receive_state <= RXTX_STATE_CONTEXT_READ;
+                    end 
+                end
+            end
+
+            RXTX_STATE_CONTEXT_READ:
+            begin
+                if (cci_c0Rx_isReadRsp(cp2af_sRx.c0))
+                begin
+                    thread_context.regs[0] <= cp2af_sRx.c0.data[63:32];
+                    thread_context.regs[1] <= cp2af_sRx.c0.data[95:64];
+                    thread_context.regs[2] <= cp2af_sRx.c0.data[127:96];
+                    thread_context.program_counter <= cp2af_sRx.c0.data[135:128];
+                    thread_context.pc_context_store <= cp2af_sRx.c0.data[143:136];
+                    thread_context.pc_context_load <= cp2af_sRx.c0.data[151:144];
+                    receive_state <= RXTX_STATE_PROGRAM_EXECUTE;
+                end
+            end
+
+            RXTX_STATE_PROGRAM_EXECUTE:
+            begin
+                if (machine_state == MACHINE_STATE_DONE && !cp2af_sRx.c1TxAlmFull)
+                begin
+                    receive_state <= RXTX_STATE_DONE;
+                end
+                else
+                begin
+                    execute_load_cp2af_sRx_c0 <= cp2af_sRx.c0;
+                    execute_load_c0TxAlmFull <= cp2af_sRx.c0TxAlmFull;
+                end
+            end
+
+            RXTX_STATE_DONE:
+            begin
+                receive_state <= RXTX_STATE_IDLE;
+            end
+        endcase
+
         if (reset)
         begin
             request_state <= RXTX_STATE_IDLE;
             receive_state <= RXTX_STATE_IDLE;
-            program_access.we <= 1'b0;
-            current_thread <= 0;
-        end
-        else
-        begin
-            // =================================
-            //
-            //   Request State Machine
-            //
-            // =================================
-            case (request_state)
-                RXTX_STATE_IDLE:
-                begin
-                    if (thread_context[current_thread].status == THREAD_LOAD_PROGRAM)
-                    begin
-                        request_state <= RXTX_STATE_PROGRAM_READ;
-                        program_length_request <= 15'b0;
-                    end
-                end
-
-                RXTX_STATE_PROGRAM_READ:
-                begin
-                    if (program_length_request < thread_context[current_thread].program_length && !cp2af_sRx.c0TxAlmFull)
-                    begin
-                        af2cp_sTx.c0.valid <= 1'b1;
-                        af2cp_sTx.c0.hdr.vc_sel <= vc_select;
-                        af2cp_sTx.c0.hdr.address <= thread_context[current_thread].program_addr + program_length_request;
-                        program_length_request <= program_length_request + 1;
-                        if (program_length_request == thread_context[current_thread].program_length - 1)
-                        begin
-                            request_state <= RXTX_STATE_PROGRAM_EXECUTE;
-                        end
-                    end
-                end
-
-                RXTX_STATE_PROGRAM_EXECUTE:
-                begin
-                    if (machine_state == MACHINE_STATE_DONE)
-                    begin
-                        request_state <= RXTX_STATE_DONE;
-                    end
-                    else
-                    begin
-                        af2cp_sTx.c0 <= execute_load_af2cp_sTx_c0;
-                        af2cp_sTx.c0.hdr.vc_sel <= vc_select;
-                    end
-                end
-
-                RXTX_STATE_DONE:
-                begin
-                    request_state <= RXTX_STATE_IDLE;
-                end
-            endcase
-
-            // =================================
-            //
-            //   Receive State Machine
-            //
-            // =================================
-            program_access.we <= 1'b0;
-            case (receive_state)
-                RXTX_STATE_IDLE:
-                begin
-                    if (thread_context[current_thread].status == THREAD_LOAD_PROGRAM)
-                    begin
-                        receive_state <= RXTX_STATE_PROGRAM_READ;
-                        program_length_receive <= 15'b0;
-                    end
-                end
-
-                RXTX_STATE_PROGRAM_READ:
-                begin
-                    if (cci_c0Rx_isReadRsp(cp2af_sRx.c0))
-                    begin
-                        program_access.we <= 1'b1;
-                        program_access.waddr <= program_length_receive;
-                        program_access.wdata <= cp2af_sRx.c0.data;
-                        program_length_receive <= program_length_receive + 1;
-                        if (program_length_receive == thread_context[current_thread].program_length-1)
-                        begin
-                            receive_state <= RXTX_STATE_PROGRAM_EXECUTE;
-                        end 
-                    end
-                end
-
-                RXTX_STATE_PROGRAM_EXECUTE:
-                begin
-                    if (machine_state == MACHINE_STATE_DONE && !cp2af_sRx.c1TxAlmFull)
-                    begin
-                        receive_state <= RXTX_STATE_DONE;
-                    end
-                    else
-                    begin
-                        execute_load_cp2af_sRx_c0 <= cp2af_sRx.c0;
-                        execute_load_c0TxAlmFull <= cp2af_sRx.c0TxAlmFull;
-                    end
-                end
-
-                RXTX_STATE_DONE:
-                begin
-                    receive_state <= RXTX_STATE_IDLE;
-                end
-            endcase
         end
     end
 
@@ -278,8 +304,8 @@ module glm_top
         else if (receive_state == RXTX_STATE_DONE)
         begin
             af2cp_sTx.c1.valid <= 1'b1;
-            af2cp_sTx.c1.data <= t_ccip_clData'(64'h1);
-            af2cp_sTx.c1.hdr.address <= thread_context[current_thread].out_addr;
+            af2cp_sTx.c1.data <= t_ccip_clData'({thread_context, 32'b1});
+            af2cp_sTx.c1.hdr.address <= thread_information.out_addr;
             af2cp_sTx.c1.hdr.vc_sel <= vc_select;
         end
     end
@@ -334,7 +360,7 @@ module glm_top
         return result;
     endfunction
 
-    function automatic logic[31:0] conditional(logic[31:0] regs, logic[31:0] predicate, logic[15:0] false, logic[15:0] true);
+    function automatic logic[15:0] conditional(logic[31:0] regs, logic[31:0] predicate, logic[15:0] false, logic[15:0] true);
         logic[15:0] result;
         if (predicate[31:30] == 2'b01) // if even
         begin
@@ -364,6 +390,7 @@ module glm_top
     // ----  ISA
     // opcode = instruction[15][7:0]
     // nonblocking = instruction[15][8]
+    // enableswitch = instruction[15][9]
 
     // if opcode == 0xN0 ---- Increment PC
     //  programCounter++
@@ -439,12 +466,13 @@ module glm_top
 
     // if opcode == 0x8N ---- synchronize
 
-    logic [15:0] program_counter;
     logic [31:0] instruction [16];
-    logic [31:0] regs [NUM_REGS];
-    logic [31:0] temp_regs [NUM_REGS];
+    logic [LOG2_PROGRAM_SIZE-1:0] program_counter;
+    t_reg [NUM_REGS-1:0] regs;
+    t_reg [NUM_REGS-1:0] temp_regs ;
     logic [7:0] opcode;
     logic nonblocking;
+    logic enableswitch;
 
     logic [NUM_OPS-1:0] op_start;
     logic [NUM_OPS-1:0] op_done ;
@@ -486,197 +514,241 @@ module glm_top
     always_ff @(posedge clk)
     begin
         op_start <= 0;
+        program_access.re <= 1'b0;
+
+        case(machine_state)
+            MACHINE_STATE_IDLE:
+            begin
+                // {<<{regs}} <= REGS_WIDTH'(0);
+                if (receive_state == RXTX_STATE_PROGRAM_EXECUTE)
+                begin
+                    program_access.re <= 1'b1;
+                    if (thread_context.program_counter > 0) // Context has been stored before
+                    begin
+                        program_counter <= thread_context.pc_context_load;
+                        program_access.raddr <= thread_context.pc_context_load;
+                    end
+                    else
+                    begin
+                        program_counter <= thread_context.program_counter;
+                        program_access.raddr <= thread_context.program_counter;
+                    end
+                    regs <= thread_context.regs;
+                    machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
+                end
+            end
+
+            MACHINE_STATE_INSTRUCTION_RECEIVE:
+            begin
+                temp_regs <= regs;
+                for (int i=0; i < 16; i=i+1)
+                begin
+                    instruction[i] <= program_access.rdata[ (i*32)+31 -: 32 ];
+                end
+                if (program_access.rvalid)
+                begin
+                    machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
+                end
+            end
+
+            MACHINE_STATE_INSTRUCTION_DECODE:
+            begin
+                if (op_active[instruction[15][7:4]-1] == 1'b0 || instruction[15][7:4] == 0)
+                begin
+                    opcode <= instruction[15][7:0];
+                    nonblocking <= instruction[15][8];
+                    enableswitch <= instruction[15][9];
+                    case(instruction[15][7:4])
+
+                        4'h1: // prefetch
+                        begin
+                            op_start[0] <= 1'b1;
+                            prefetch_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
+                            prefetch_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
+                            prefetch_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
+                            prefetch_regs[3] <= instruction[3]; // read offset
+                            prefetch_regs[4] <= instruction[4]; // read length in cachelines
+                        end
+
+                        4'h2: // load
+                        begin
+                            op_start[1] <= 1'b1;
+                            load_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
+                            load_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
+                            load_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
+                            load_regs[3] <= instruction[3]; // read offset
+                            load_regs[4] <= instruction[4]; // read length in cachelines
+                            for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
+                            begin
+                                load_regs[5+i] <= instruction[5+i]; 
+                            end
+                        end
+
+                        4'h3: // writeback
+                        begin
+                            op_start[2] <= 1'b1;
+                            writeback_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
+                            writeback_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
+                            writeback_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
+                            writeback_regs[3] <= instruction[3]; // store offset
+                            writeback_regs[4] <= instruction[4]; // store length in cachelines
+                            writeback_regs[5] <= instruction[5]; // channel select
+                            for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
+                            begin
+                                writeback_regs[6+i] <= instruction[6+i]; 
+                            end
+                        end
+
+                        // *************************************************************************
+                        //
+                        //   Additional opcodes
+                        //
+                        // *************************************************************************
+                        4'h4: // dot
+                        begin
+                            op_start[3] <= 1'b1;
+                            dot_regs[0] <= temp_regs[0];
+                            dot_regs[1] <= temp_regs[1];
+                            dot_regs[2] <= temp_regs[2];
+                            dot_regs[3] <= instruction[3];
+                            dot_regs[4] <= instruction[4];
+                            dot_regs[5] <= instruction[5];
+                        end
+
+                        4'h5: // modify
+                        begin
+                            op_start[4] <= 1'b1;
+                            modify_regs[0] <= temp_regs[0];
+                            modify_regs[1] <= temp_regs[1];
+                            modify_regs[2] <= temp_regs[2];
+                            modify_regs[3] <= instruction[3];
+                            modify_regs[4] <= instruction[4];
+                            modify_regs[5] <= instruction[5];
+                            modify_regs[6] <= instruction[6];
+                        end
+
+                        4'h6: // update
+                        begin
+                            op_start[5] <= 1'b1;
+                            update_regs[0] <= temp_regs[0];
+                            update_regs[1] <= temp_regs[1];
+                            update_regs[2] <= temp_regs[2];
+                            update_regs[3] <= instruction[3];
+                            update_regs[4] <= instruction[4];
+                            update_regs[5] <= instruction[5];
+                        end
+
+                        4'h7: // copy
+                        begin
+                            op_start[6] <= 1'b1;
+                            copy_regs[0] <= temp_regs[0];
+                            copy_regs[1] <= temp_regs[1];
+                            copy_regs[2] <= temp_regs[2];
+                            copy_regs[3] <= instruction[3];
+                            copy_regs[4] <= instruction[4];
+                        end
+
+                        4'h8: // synchronize
+                        begin
+                            op_start[7] <= 1'b1;
+                        end
+
+                    endcase
+
+                    case(instruction[15][3:0])
+                        4'h0:
+                        begin
+                            program_counter <= program_counter + 1;
+                        end
+
+                        4'h1:
+                        begin
+                            program_counter <= conditional(temp_regs[0], instruction[13], instruction[14][31:16], instruction[14][15:0]);
+                        end
+
+                        4'h2:
+                        begin
+                            program_counter <= conditional(temp_regs[1], instruction[13], instruction[14][31:16], instruction[14][15:0]);
+                        end
+
+                        4'h3:
+                        begin
+                            program_counter <= conditional(temp_regs[2], instruction[13], instruction[14][31:16], instruction[14][15:0]);
+                        end
+                    endcase
+
+                    machine_state <= MACHINE_STATE_EXECUTE;
+                end
+            end
+
+            MACHINE_STATE_CONTEXT_LOAD_DONE:
+            begin
+                program_counter <= thread_context.program_counter;
+                program_access.re <= 1'b1;
+                program_access.raddr <= thread_context.program_counter;
+                machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
+            end
+
+            MACHINE_STATE_CONTEXT_STORE:
+            begin
+                enableswitch <= 1'b0;
+                thread_context.program_counter <= program_counter;
+                thread_context.regs <= regs;
+
+                program_counter <= thread_context.pc_context_store;
+                program_access.re <= 1'b1;
+                program_access.raddr <= thread_context.pc_context_store;
+                machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
+            end
+
+            MACHINE_STATE_EXECUTE:
+            begin
+                if (program_counter == 8'hFF ) // Done
+                begin
+                    thread_context.program_counter <= 0;
+                    machine_state <= MACHINE_STATE_DONE;
+                end
+                else if (program_counter == 8'hF0) // Context Store Done
+                begin
+                    machine_state <= MACHINE_STATE_DONE;
+                end
+                else if (program_counter == 8'hF1) // Context Load Done
+                begin
+                    machine_state <= MACHINE_STATE_CONTEXT_LOAD_DONE;
+                end
+                else if (op_done[opcode[7:4]-1] || opcode[7:4] == 4'b0 || nonblocking)
+                begin
+                    regs[0] <= updateIndex(instruction[0], regs[0]);
+                    regs[1] <= updateIndex(instruction[1], regs[1]);
+                    regs[2] <= updateIndex(instruction[2], regs[2]);
+
+                    if (enableswitch && context_switch)
+                    begin
+                        machine_state <= MACHINE_STATE_CONTEXT_STORE;
+                    end
+                    else
+                    begin
+                        program_access.re <= 1'b1;
+                        program_access.raddr <= program_counter;
+                        machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
+                    end
+                end
+            end
+
+            MACHINE_STATE_DONE:
+            begin
+                program_counter <= 0;
+                machine_state <= MACHINE_STATE_IDLE;
+            end
+        endcase
 
         if (reset)
         begin
-            program_counter <= 32'h0;
+            program_counter <= 0;
             machine_state <= MACHINE_STATE_IDLE;
             opcode <= 8'b0;
             nonblocking <= 1'b0;
-            program_access.re <= 1'b0;
-        end
-        else
-        begin
-            program_access.re <= 1'b0;
-
-            case(machine_state)
-                MACHINE_STATE_IDLE:
-                begin
-                    {<<{regs}} <= REGS_WIDTH'(0);
-                    if (receive_state == RXTX_STATE_PROGRAM_EXECUTE)
-                    begin
-                        program_access.re <= 1'b1;
-                        program_access.raddr <= program_counter;
-                        machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
-                    end
-                end
-
-                MACHINE_STATE_INSTRUCTION_RECEIVE:
-                begin
-                    temp_regs <= regs;
-                    for (int i=0; i < 16; i=i+1)
-                    begin
-                        instruction[i] <= program_access.rdata[ (i*32)+31 -: 32 ];
-                    end
-                    if (program_access.rvalid)
-                    begin
-                        machine_state <= MACHINE_STATE_INSTRUCTION_DECODE;
-                    end
-                end
-
-                MACHINE_STATE_INSTRUCTION_DECODE:
-                begin
-                    if (op_active[instruction[15][7:4]-1] == 1'b0 || instruction[15][7:4] == 0)
-                    begin
-                        opcode <= instruction[15][7:0];
-                        nonblocking <= instruction[15][8];
-                        case(instruction[15][7:4])
-
-                            4'h1: // prefetch
-                            begin
-                                op_start[0] <= 1'b1;
-                                prefetch_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
-                                prefetch_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
-                                prefetch_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
-                                prefetch_regs[3] <= instruction[3]; // read offset
-                                prefetch_regs[4] <= instruction[4]; // read length in cachelines
-                            end
-
-                            4'h2: // load
-                            begin
-                                op_start[1] <= 1'b1;
-                                load_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
-                                load_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
-                                load_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
-                                load_regs[3] <= instruction[3]; // read offset
-                                load_regs[4] <= instruction[4]; // read length in cachelines
-                                for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
-                                begin
-                                    load_regs[5+i] <= instruction[5+i]; 
-                                end
-                            end
-
-                            4'h3: // writeback
-                            begin
-                                op_start[2] <= 1'b1;
-                                writeback_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
-                                writeback_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
-                                writeback_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
-                                writeback_regs[3] <= instruction[3]; // store offset
-                                writeback_regs[4] <= instruction[4]; // store length in cachelines
-                                writeback_regs[5] <= instruction[5]; // channel select
-                                for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
-                                begin
-                                    writeback_regs[6+i] <= instruction[6+i]; 
-                                end
-                            end
-
-                            // *************************************************************************
-                            //
-                            //   Additional opcodes
-                            //
-                            // *************************************************************************
-                            4'h4: // dot
-                            begin
-                                op_start[3] <= 1'b1;
-                                dot_regs[0] <= temp_regs[0];
-                                dot_regs[1] <= temp_regs[1];
-                                dot_regs[2] <= temp_regs[2];
-                                dot_regs[3] <= instruction[3];
-                                dot_regs[4] <= instruction[4];
-                                dot_regs[5] <= instruction[5];
-                            end
-
-                            4'h5: // modify
-                            begin
-                                op_start[4] <= 1'b1;
-                                modify_regs[0] <= temp_regs[0];
-                                modify_regs[1] <= temp_regs[1];
-                                modify_regs[2] <= temp_regs[2];
-                                modify_regs[3] <= instruction[3];
-                                modify_regs[4] <= instruction[4];
-                                modify_regs[5] <= instruction[5];
-                                modify_regs[6] <= instruction[6];
-                            end
-
-                            4'h6: // update
-                            begin
-                                op_start[5] <= 1'b1;
-                                update_regs[0] <= temp_regs[0];
-                                update_regs[1] <= temp_regs[1];
-                                update_regs[2] <= temp_regs[2];
-                                update_regs[3] <= instruction[3];
-                                update_regs[4] <= instruction[4];
-                                update_regs[5] <= instruction[5];
-                            end
-
-                            4'h7: // copy
-                            begin
-                                op_start[6] <= 1'b1;
-                                copy_regs[0] <= temp_regs[0];
-                                copy_regs[1] <= temp_regs[1];
-                                copy_regs[2] <= temp_regs[2];
-                                copy_regs[3] <= instruction[3];
-                                copy_regs[4] <= instruction[4];
-                            end
-
-                            4'h8: // synchronize
-                            begin
-                                op_start[7] <= 1'b1;
-                            end
-
-                        endcase
-
-                        case(instruction[15][3:0])
-                            4'h0:
-                            begin
-                                program_counter <= program_counter + 1;
-                            end
-
-                            4'h1:
-                            begin
-                                program_counter <= conditional(temp_regs[0], instruction[13], instruction[14][31:16], instruction[14][15:0]);
-                            end
-
-                            4'h2:
-                            begin
-                                program_counter <= conditional(temp_regs[1], instruction[13], instruction[14][31:16], instruction[14][15:0]);
-                            end
-
-                            4'h3:
-                            begin
-                                program_counter <= conditional(temp_regs[2], instruction[13], instruction[14][31:16], instruction[14][15:0]);
-                            end
-                        endcase
-
-                        machine_state <= MACHINE_STATE_EXECUTE;
-                    end
-                end
-
-                MACHINE_STATE_EXECUTE:
-                begin
-                    if (program_counter == 16'hFFFF)
-                    begin
-                        machine_state <= MACHINE_STATE_DONE;
-                    end
-                    else if (op_done[opcode[7:4]-1] || opcode[7:4] == 4'b0 || nonblocking)
-                    begin
-                        program_access.re <= 1'b1;
-                        program_access.raddr <= program_counter;
-                        machine_state <= MACHINE_STATE_INSTRUCTION_RECEIVE;
-                        regs[0] <= updateIndex(instruction[0], regs[0]);
-                        regs[1] <= updateIndex(instruction[1], regs[1]);
-                        regs[2] <= updateIndex(instruction[2], regs[2]);
-                    end
-                end
-
-                MACHINE_STATE_DONE:
-                begin
-                    program_counter <= 0;
-                    machine_state <= MACHINE_STATE_IDLE;
-                end
-            endcase
-
+            enableswitch <= 1'b0;
         end
     end
 
@@ -798,75 +870,6 @@ module glm_top
 
     always_ff @(posedge clk)
     begin
-/*
-        // MEM_model request arbitration
-        if (dot_MEM_model_interface.re)
-        begin
-            MEM_model_interface1.re <= 1'b1;
-            MEM_model_interface1.raddr <= dot_MEM_model_interface.raddr;
-        end
-        else
-        begin
-            MEM_model_interface1.re <= 1'b0;
-            MEM_model_interface1.raddr <= 0;
-        end
-
-        if (update_MEM_model_interface.re)
-        begin
-            MEM_model_interface2.re <= 1'b1;
-            MEM_model_interface2.raddr <= update_MEM_model_interface.raddr;
-        end
-        else if (copy_MEM_model_interface.re)
-        begin
-            MEM_model_interface2.re <= 1'b1;
-            MEM_model_interface2.raddr <= copy_MEM_model_interface.raddr;
-        end
-        else if (writeback_MEM_model_interface.re)
-        begin
-            MEM_model_interface2.re <= 1'b1;
-            MEM_model_interface2.raddr <= writeback_MEM_model_interface.raddr;
-        end
-        else
-        begin
-            MEM_model_interface2.re <= 1'b0;
-            MEM_model_interface2.raddr <= 0;
-        end
-
-        // MEM_labels request arbitration
-        if (modify_MEM_labels_interface.re)
-        begin
-            MEM_labels_interface.re <= 1'b1;
-            MEM_labels_interface.raddr <= modify_MEM_labels_interface.raddr;
-        end
-        else if (dot_MEM_labels_interface.re)
-        begin
-            MEM_labels_interface.re <= 1'b1;
-            MEM_labels_interface.raddr <= dot_MEM_labels_interface.raddr;
-        end
-        else if (writeback_MEM_labels_interface.re)
-        begin
-            MEM_labels_interface.re <= 1'b1;
-            MEM_labels_interface.raddr <= writeback_MEM_labels_interface.raddr;
-        end
-        else
-        begin
-            MEM_labels_interface.re <= 1'b0;
-            MEM_labels_interface.raddr <= 0;
-        end
-
-        // MEM_accessprops request arbitration
-        if (load_MEM_accessprops_interface.re)
-        begin
-            MEM_accessprops_interface.re <= 1'b1;
-            MEM_accessprops_interface.raddr <= load_MEM_accessprops_interface.raddr;
-        end
-        else
-        begin
-            MEM_accessprops_interface.re <= 1'b0;
-            MEM_accessprops_interface.raddr <= 0;
-        end
-*/
-
         // MEM_model write arbitration
         MEM_model_interface1.we <= 1'b0;
         if (load_MEM_model_interface.we)
@@ -989,82 +992,7 @@ module glm_top
             MEM_accessprops_interface.re = 1'b0;
             MEM_accessprops_interface.raddr = 0;
         end
-/*
-        // MEM_model write arbitration
-        if (load_MEM_model_interface.we)
-        begin
-            MEM_model_interface1.we = 1'b1;
-            MEM_model_interface1.waddr = load_MEM_model_interface.waddr;
-            MEM_model_interface1.wdata = load_MEM_model_interface.wdata;
-        end
-        else if (copy_MEM_model_interface.we)
-        begin
-            MEM_model_interface1.we = 1'b1;
-            MEM_model_interface1.waddr = copy_MEM_model_interface.waddr;
-            MEM_model_interface1.wdata = copy_MEM_model_interface.wdata;
-        end
-        else
-        begin
-            MEM_model_interface1.we = 1'b0;
-            MEM_model_interface1.waddr = 0;
-            MEM_model_interface1.wdata = 0;
-        end
-
-        if (load_MEM_model_interface.we)
-        begin
-            MEM_model_interface2.we = 1'b1;
-            MEM_model_interface2.waddr = load_MEM_model_interface.waddr;
-            MEM_model_interface2.wdata = load_MEM_model_interface.wdata;
-        end
-        else if (update_MEM_model_interface.we)
-        begin
-            MEM_model_interface2.we = 1'b1;
-            MEM_model_interface2.waddr = update_MEM_model_interface.waddr;
-            MEM_model_interface2.wdata = update_MEM_model_interface.wdata;
-        end
-        else
-        begin
-            MEM_model_interface2.we = 1'b0;
-            MEM_model_interface2.waddr = 0;
-            MEM_model_interface2.wdata = 0;
-        end
-
-        // MEM_labels write arbitration
-        if (load_MEM_labels_interface.we)
-        begin
-            MEM_labels_interface.we = 1'b1;
-            MEM_labels_interface.waddr = load_MEM_labels_interface.waddr;
-            MEM_labels_interface.wdata = load_MEM_labels_interface.wdata;
-        end
-        else if (modify_MEM_labels_interface.we)
-        begin
-            MEM_labels_interface.we = 1'b1;
-            MEM_labels_interface.waddr = modify_MEM_labels_interface.waddr;
-            MEM_labels_interface.wdata = modify_MEM_labels_interface.wdata;
-        end
-        else
-        begin
-            MEM_labels_interface.we = 1'b0;
-            MEM_labels_interface.waddr = 0;
-            MEM_labels_interface.wdata = 0;
-        end
-
-        // MEM_accessprops write arbitration
-        if (load_MEM_accessprops_interface.we)
-        begin
-            MEM_accessprops_interface.we = 1'b1;
-            MEM_accessprops_interface.waddr = load_MEM_accessprops_interface.waddr;
-            MEM_accessprops_interface.wdata = load_MEM_accessprops_interface.wdata;
-        end
-        else
-        begin
-            MEM_accessprops_interface.we = 1'b0;
-            MEM_accessprops_interface.waddr = 0;
-            MEM_accessprops_interface.wdata = 0;
-        end
-*/
     end
-
 
     // =========================================================================
     //
@@ -1084,7 +1012,7 @@ module glm_top
         .op_start(op_start[0]),
         .op_done(op_done[0]),
         .regs(prefetch_regs),
-        .in_addr(thread_context[current_thread].in_addr),
+        .in_addr(thread_information.in_addr),
         .c0TxAlmFull(execute_load_c0TxAlmFull),
         .cp2af_sRx_c0(execute_load_cp2af_sRx_c0),
         .af2cp_sTx_c0(execute_load_af2cp_sTx_c0),
@@ -1101,7 +1029,7 @@ module glm_top
         .op_start(op_start[1]),
         .op_done(op_done[1]),
         .regs(load_regs),
-        .in_addr(thread_context[current_thread].in_addr),
+        .in_addr(thread_information.in_addr),
         .c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
         .cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
         .af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0),
@@ -1121,8 +1049,8 @@ module glm_top
         .op_start(op_start[2]),
         .op_done(op_done[2]),
         .regs(writeback_regs),
-        .in_addr(thread_context[current_thread].in_addr),
-        .out_addr(thread_context[current_thread].out_addr),
+        .in_addr(thread_information.in_addr),
+        .out_addr(thread_information.out_addr),
         .MEM_model(writeback_MEM_model_interface.bram_read),
         .MEM_labels(writeback_MEM_labels_interface.bram_read),
         .c1TxAlmFull(execute_writeback_c1TxAlmFull),

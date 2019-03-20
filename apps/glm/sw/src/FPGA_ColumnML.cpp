@@ -90,6 +90,7 @@ bool FPGA_ColumnML::fSGD(
 	m_inst[pc].Jump(1, m_numPartitions-1, beginEpoch, pc+1);
 	m_inst[pc].ResetIndex(0);
 	m_inst[pc].IncrementIndex(1);
+	m_inst[pc].EnableContextSwitch();
 	pc++;
 
 	if ( m_rest > 1 ) {
@@ -153,16 +154,34 @@ bool FPGA_ColumnML::fSGD(
 	m_inst[pc].IncrementIndex(2);
 	pc++;
 
+	// Context Store Instructions
+	uint32_t pcContextStore = pc;
+	m_inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
+		0, 0, 0,
+		0, true, writebackModel);
+	pc++;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF0, 0xFFFFFFF0);
+	pc++;
+
+	// Context Load Instructions
+	uint32_t pcContextLoad = pc;
+	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, accessModel);
+	pc++;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF1, 0xFFFFFFF1);
+	pc++;
+
 	// *************************************************************************
 	//
 	//   END Program
 	//
 	// *************************************************************************
-	m_numInstructions = pc;
-	WriteProgramMemory();
-
 	m_outputSizeInCL = (numEpochs*m_numFeaturesInCL+1);
 	realloc(m_outputHandle, m_outputSizeInCL*64);
+
+	m_numInstructions = pc;
+	WriteProgramMemory(pcContextStore, pcContextLoad);
 
 	return true;
 }
@@ -252,6 +271,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	// End---Innermost loop
 
 	m_inst[pc].Jump(1, m_numPartitions-1, pcLabels, pc+1);
+	m_inst[pc].EnableContextSwitch();
 	m_inst[pc].ResetIndex(0);
 	m_inst[pc].IncrementIndex(1);
 	pc++;
@@ -298,16 +318,33 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	m_inst[pc].IncrementIndex(2);
 	pc++;
 
+	// Context Store Instructions
+	uint32_t pcContextStore = pc;
+	m_inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
+		0, 0, 0,
+		0, true, writebackModel);
+	pc++;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF0, 0xFFFFFFF0);
+	pc++;
+
+	// Context Load Instructions
+	uint32_t pcContextLoad = pc;
+	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, accessModel);
+	pc++;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF1, 0xFFFFFFF1);
+	pc++;
 	// *************************************************************************
 	//
 	//   END Program
 	//
 	// *************************************************************************
-	m_numInstructions = pc;
-	WriteProgramMemory();
-
 	m_outputSizeInCL = (numEpochs*m_numFeaturesInCL+1);
 	realloc(m_outputHandle, m_outputSizeInCL*64);
+
+	m_numInstructions = pc;
+	WriteProgramMemory(pcContextStore, pcContextLoad);
 
 	return true;
 }
@@ -434,11 +471,11 @@ bool FPGA_ColumnML::fSCD(
 	//   END Program
 	//
 	// *************************************************************************
-	m_numInstructions = pc;
-	WriteProgramMemory();
-
 	m_outputSizeInCL = 1;
 	realloc(m_outputHandle, m_outputSizeInCL*64);
+
+	m_numInstructions = pc;
+	WriteProgramMemory(0, 0);
 
 	return true;
 }
@@ -551,16 +588,34 @@ bool FPGA_ColumnML::fSGD_blocking(
 	m_inst[pc].IncrementIndex(2);
 	pc++;
 
+	// Context Store Instructions
+	uint32_t pcContextStore = pc;
+	m_inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
+		0, 0, 0,
+		0, true, writebackModel);
+	pc++;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF0, 0xFFFFFFF0);
+	pc++;
+
+	// Context Load Instructions
+	uint32_t pcContextLoad = pc;
+	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, accessModel);
+	pc++;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF1, 0xFFFFFFF1);
+	pc++;
 	// *************************************************************************
 	//
 	//   END Program
 	//
 	// *************************************************************************
-	m_numInstructions = pc;
-	WriteProgramMemory();
 
 	m_outputSizeInCL = (numEpochs*m_numFeaturesInCL+1);
 	realloc(m_outputHandle, m_outputSizeInCL*64);
+
+	m_numInstructions = pc;
+	WriteProgramMemory(pcContextStore, pcContextLoad);
 
 	return true;
 }

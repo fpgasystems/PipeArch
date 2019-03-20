@@ -53,11 +53,11 @@ int main(int argc, char* argv[]) {
 	columnML1.fSGD(type, numEpochs, stepSize, lambda);
 	columnML2.fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda);
 
-	server.Request(&columnML1);
-	server.Request(&columnML2);
+	FThread* thread1 = server.Request(&columnML1);
+	FThread* thread2 = server.Request(&columnML2);
 
-	columnML1.WaitUntilCompletion();
-	columnML2.WaitUntilCompletion();
+	thread1->WaitUntilFinished();
+	thread2->WaitUntilFinished();
 
 	auto output1 = columnML1.CastToFloat('o');
 	float* xHistory1 = (float*)(output1 + 16);

@@ -36,7 +36,7 @@ public:
 
 class Instruction {
 public:
-	static const uint32_t MAX_NUM_INSTRUCTIONS = 32;
+	static const uint32_t MAX_NUM_INSTRUCTIONS = 64;
 	static const uint32_t NUM_WORDS = 16;
 	static const uint32_t NUM_BYTES = NUM_WORDS*4;
 	uint32_t m_data[NUM_WORDS];
@@ -79,6 +79,10 @@ public:
 
 	void MakeNonBlocking() {
 		m_data[15] |= (1 << 8);
+	}
+
+	void EnableContextSwitch() {
+		m_data[15] |= (1 << 9);
 	}
 
 	void Jump(

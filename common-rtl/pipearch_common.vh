@@ -129,10 +129,11 @@ endinterface
 //
 // =================================
 
-typedef enum logic [1:0]
+typedef enum logic [2:0]
 {
     RXTX_STATE_IDLE,
     RXTX_STATE_PROGRAM_READ,
+    RXTX_STATE_CONTEXT_READ,
     RXTX_STATE_PROGRAM_EXECUTE,
     RXTX_STATE_DONE
 } t_rxtxstate;
@@ -144,6 +145,8 @@ typedef enum logic [2:0]
     MACHINE_STATE_INSTRUCTION_RECEIVE,
     MACHINE_STATE_INSTRUCTION_DECODE,
     MACHINE_STATE_EXECUTE,
+    MACHINE_STATE_CONTEXT_LOAD_DONE,
+    MACHINE_STATE_CONTEXT_STORE,
     MACHINE_STATE_DONE
 } t_machinestate;
 

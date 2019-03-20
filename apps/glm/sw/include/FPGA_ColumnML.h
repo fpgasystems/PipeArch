@@ -46,9 +46,17 @@ private:
 		}
 	}
 
-	void WriteProgramMemory() {
+	void WriteProgramMemory(uint32_t pcContextStore, uint32_t pcContextLoad) {
 		cout << "WriteProgramMemory..." << endl;
-		cout << "m_numInstructions: " <<  m_numInstructions << endl;
+
+		uint32_t pcStart = 0;
+		auto output = CastToInt('o');
+		output[0] = 0; // Done
+		output[1] = 0; // reg 0;
+		output[2] = 0; // reg 1;
+		output[3] = 0; // reg 2;
+		output[4] = ((pcContextLoad&0xFF) << 16) | ((pcContextStore&0xFF) << 8) | (pcStart&0xFF);
+
 		realloc(m_programMemoryHandle, m_numInstructions*Instruction::NUM_BYTES);
 		auto programMemory = reinterpret_cast<volatile uint32_t*>(m_programMemoryHandle->c_type());
 		assert(NULL != programMemory);
@@ -119,23 +127,23 @@ public:
 		return temp;
 	}
 
-	void WaitUntilCompletion() {
-		auto output = CastToFloat('o');
+	// void WaitUntilCompletion() {
+	// 	auto output = CastToFloat('o');
 
-		struct timespec pause;
-		cout << "iFPGA::hwIsSimulated(): " << m_ifpga->hwIsSimulated() << endl;
-		pause.tv_sec = (m_ifpga->hwIsSimulated() ? 1 : 0);
-		pause.tv_nsec = 100;
+	// 	struct timespec pause;
+	// 	cout << "iFPGA::hwIsSimulated(): " << m_ifpga->hwIsSimulated() << endl;
+	// 	pause.tv_sec = (m_ifpga->hwIsSimulated() ? 1 : 0);
+	// 	pause.tv_nsec = 100;
 
-		double start = get_time();
-		while (0 == output[0]) {
-			nanosleep(&pause, NULL);
-		};
-		double end = get_time();
+	// 	double start = get_time();
+	// 	while (0 == output[0]) {
+	// 		nanosleep(&pause, NULL);
+	// 	}
+	// 	double end = get_time();
 
-		cout << "Time: " << end-start << endl;
-		m_ifpga->printMPF();
-	}
+	// 	cout << "Time: " << end-start << endl;
+	// 	m_ifpga->printMPF();
+	// }
 
 	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
 		m_currentMemoryFormat = format;
