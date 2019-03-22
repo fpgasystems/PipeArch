@@ -127,24 +127,6 @@ public:
 		return temp;
 	}
 
-	// void WaitUntilCompletion() {
-	// 	auto output = CastToFloat('o');
-
-	// 	struct timespec pause;
-	// 	cout << "iFPGA::hwIsSimulated(): " << m_ifpga->hwIsSimulated() << endl;
-	// 	pause.tv_sec = (m_ifpga->hwIsSimulated() ? 1 : 0);
-	// 	pause.tv_nsec = 100;
-
-	// 	double start = get_time();
-	// 	while (0 == output[0]) {
-	// 		nanosleep(&pause, NULL);
-	// 	}
-	// 	double end = get_time();
-
-	// 	cout << "Time: " << end-start << endl;
-	// 	m_ifpga->printMPF();
-	// }
-
 	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
 		m_currentMemoryFormat = format;
 
@@ -316,4 +298,25 @@ public:
 		uint32_t numEpochs,
 		float stepSize,
 		float lambda);
+
+	vector<float> GetModelSCD() {
+		vector<float> avgModel(m_alignedNumFeatures);
+		for (uint32_t p = 0; p < m_numPartitions; p++) {
+			for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
+				if (p == 0) {
+					avgModel[j] = m_model[p*m_alignedNumFeatures + j];
+				}
+				else {
+					avgModel[j] += m_model[p*m_alignedNumFeatures + j];
+				}
+			}
+		}
+		for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
+			avgModel[j] /= m_numPartitions;
+		}
+		return avgModel;
+	}
+
+	void ReadBandwidth(uint32_t numIterations);
+	void Correctness();
 };

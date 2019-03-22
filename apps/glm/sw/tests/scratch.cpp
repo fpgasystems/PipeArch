@@ -1,6 +1,6 @@
 #include <iostream>
 #include "FPGA_ColumnML.h"
-#include "GlmMachine.h"
+#include "Server.h"
 
 // State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script
 #include "afu_json_info.h"
@@ -26,12 +26,9 @@ int main(int argc, char* argv[]) {
 
 	uint32_t partitionSize = 16000;
 
-	GlmMachine glm(AFU_ACCEL_UUID);
+	Server server(AFU_ACCEL_UUID, true, true);
 
-	// glm.Correctness();
-
-
-	FPGA_ColumnML columnML;
+	FPGA_ColumnML columnML(&server);
 
 	float stepSize;
 	float lambda = 0;
@@ -55,64 +52,44 @@ int main(int argc, char* argv[]) {
 	args.m_constantStepSize = true;
 
 
-
 	// Set memory format / decide on SGD or SCD
 	MemoryFormat format = RowStore;
-	columnML.CreateMemoryLayout(glm, format, partitionSize);
+	columnML.CreateMemoryLayout(format, partitionSize);
 
 
-
-	ResultHandle resultHandle;
 	if (format == RowStore) {
 		stepSize = 0.01;
 		columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 
 		if (minibatchSize == 1) {
-			resultHandle = glm.fSGD(columnML, type, numEpochs, stepSize, lambda, &args);
-			// resultHandle = glm.fSGD_blocking(columnML, type, numEpochs, stepSize, lambda, &args);
+			columnML.fSGD(type, numEpochs, stepSize, lambda);
 		}
 		else {
-			resultHandle = glm.fSGD_minibatch(columnML, type, numEpochs, minibatchSize, stepSize, lambda, &args);
+			columnML.fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda);
 		}
 	}
 	else {
 		stepSize = 1;
 		columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
 
-		resultHandle = glm.fSCD(columnML, type, numEpochs, stepSize, lambda, &args);
+		columnML.fSCD(type, numEpochs, stepSize, lambda);
 	}
 
-	glm.StartProgram(columnML.m_handle, resultHandle, 0);
-
-	glm.JoinProgram(resultHandle);
+	FThread* fthread = server.Request(&columnML);
+	fthread->WaitUntilFinished();
 
 	// Verify
 	if (format == RowStore) {
-		auto output = reinterpret_cast<volatile float*>(resultHandle.m_outputHandle->c_type());
+		auto output = columnML.CastToFloat('o');
 		float* xHistory = (float*)(output + 16);
 		for (uint32_t e = 0; e < numEpochs; e++) {
 			float loss = columnML.Loss(type, xHistory + e*columnML.m_alignedNumFeatures, lambda, &args);
-			std::cout << "loss " << e << ": " << loss << std::endl;
+			cout << "loss " << e << ": " << loss << endl;
 		}
 	}
 	else {
-		std::vector<float> avgModel(columnML.m_alignedNumFeatures);
-		for (uint32_t p = 0; p < columnML.m_numPartitions; p++) {
-			for (uint32_t j = 0; j < columnML.m_alignedNumFeatures; j++) {
-				if (p == 0) {
-					avgModel[j] = columnML.m_model[p*columnML.m_alignedNumFeatures + j];
-				}
-				else {
-					avgModel[j] += columnML.m_model[p*columnML.m_alignedNumFeatures + j];
-				}
-				// cout << "p: " << p << ", avgModel[" << j <<  "]: " << avgModel[j] << endl;
-			}
-		}
-		for (uint32_t j = 0; j < columnML.m_alignedNumFeatures; j++) {
-			avgModel[j] /= columnML.m_numPartitions;
-		}
-		float loss = columnML.Loss(type, avgModel.data(), lambda, &args);
-		std::cout << "loss: " << loss << std::endl;
+		float loss = columnML.Loss(type, columnML.GetModelSCD().data(), lambda, &args);
+		cout << "loss: " << loss << endl;
 	}
 
 	return 0;

@@ -25,52 +25,67 @@ int main(int argc, char* argv[]) {
 
 	uint32_t partitionSize = 16000;
 
-	Server server(AFU_ACCEL_UUID);
+	const uint32_t NUM_JOBS = 4;
+	Server server(AFU_ACCEL_UUID, true, true);
 
-	FPGA_ColumnML columnML1(&server);
-	FPGA_ColumnML columnML2(&server);
+	FPGA_ColumnML* columnML[NUM_JOBS];
+	for (uint32_t i = 0; i < NUM_JOBS; i++) {
+		columnML[i] = new FPGA_ColumnML(&server);
+	}
 
 	float stepSize = 0.01;
 	float lambda = 0;
 
 	ModelType type = linreg;
 
-	columnML1.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
-	columnML2.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
+	for (uint32_t i = 0; i < NUM_JOBS; i++) {
+		columnML[i]->m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
+	}
 
 	AdditionalArguments args;
 	args.m_firstSample = 0;
-	args.m_numSamples = columnML1.m_cstore->m_numSamples;
+	args.m_numSamples = columnML[0]->m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
 
 	MemoryFormat format = RowStore;
-	columnML1.CreateMemoryLayout(format, partitionSize);
-	columnML2.CreateMemoryLayout(format, partitionSize);
-
-	columnML1.SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
-	columnML2.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
-
-	columnML1.fSGD(type, numEpochs, stepSize, lambda);
-	columnML2.fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda);
-
-	FThread* thread1 = server.Request(&columnML1);
-	FThread* thread2 = server.Request(&columnML2);
-
-	thread1->WaitUntilFinished();
-	thread2->WaitUntilFinished();
-
-	auto output1 = columnML1.CastToFloat('o');
-	float* xHistory1 = (float*)(output1 + 16);
-	for (uint32_t e = 0; e < numEpochs; e++) {
-		float loss = columnML1.Loss(type, xHistory1 + e*columnML1.m_alignedNumFeatures, lambda, &args);
-		std::cout << "loss " << e << ": " << loss << std::endl;
+	for (uint32_t i = 0; i < NUM_JOBS; i++) {
+		columnML[i]->CreateMemoryLayout(format, partitionSize);
 	}
 
-	auto output2 = columnML2.CastToFloat('o');
-	float* xHistory2 = (float*)(output2 + 16);
-	for (uint32_t e = 0; e < numEpochs; e++) {
-		float loss = columnML2.Loss(type, xHistory2 + e*columnML2.m_alignedNumFeatures, lambda, &args);
-		std::cout << "loss " << e << ": " << loss << std::endl;
+	for (uint32_t i = 0; i < NUM_JOBS; i++) {
+		if (i%2 == 0) {
+			if (i == 0) {
+				columnML[i]->SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
+			}
+			columnML[i]->fSGD(type, numEpochs, stepSize, lambda);
+		}
+		else {
+			if (i == 1) {
+				columnML[i]->SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+			}
+			columnML[i]->fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda);
+		}
+	}
+
+	FThread* thread[NUM_JOBS];
+	for (uint32_t i = 0; i < NUM_JOBS; i++) {
+		thread[i] = server.Request(columnML[i]);
+	}
+
+	for (uint32_t i = 0; i < NUM_JOBS; i++) {
+		thread[i]->WaitUntilFinished();
+	}
+
+	for (uint32_t i = 0; i < NUM_JOBS; i++) {
+
+		auto output1 = columnML[i]->CastToFloat('o');
+		float* xHistory1 = (float*)(output1 + 16);
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = columnML[i]->Loss(type, xHistory1 + e*columnML[i]->m_alignedNumFeatures, lambda, &args);
+			cout << "loss " << e << ": " << loss << endl;
+		}
+
+		cout << "Response time for thread " << thread[i]->GetId() << ": " << thread[i]->GetResponseTime() << endl;
 	}
 
 	return 0;

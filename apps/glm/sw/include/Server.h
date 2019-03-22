@@ -13,44 +13,80 @@ using namespace std;
 
 static const struct timespec PAUSE {.tv_sec = 0, .tv_nsec = 1000};
 
-enum FThreadState {idle, running, paused, finished};
+enum FThreadState {idle, running, to_be_paused, paused, finished};
 
 class FThread {
 private:
 	uint32_t m_id;
+	FThreadState m_state;
+	uint32_t m_numTimesResumed;
+	double m_startTime;
+	double m_stopTime;
 
 public:
 	FPGA_ColumnML* m_cML;
-	FThreadState m_state;
 
 	FThread(FPGA_ColumnML* cML, uint32_t id) {
 		m_state = idle;
 		m_cML = cML;
 		m_id = id;
+		m_numTimesResumed = 0;
+		m_startTime = get_time();
+		m_stopTime = 0;
 	}
 
 	uint32_t GetId() {
 		return m_id;
 	}
 
+	double GetResponseTime() {
+		return m_stopTime - m_startTime;
+	}
+
+	int GetNumTimesResumed() {
+		return m_numTimesResumed;
+	}
+
 	void Resume() {
+		m_numTimesResumed++;
 		m_state = running;
 	}
 
 	void Pause() {
-		m_state = paused;
+		m_state = to_be_paused;
 	}
 
-	void Finish() {
-		m_state = finished;
+	FThreadState GetState() {
+		return m_state;
 	}
 
-	string GetState() {
+	bool IsFinished() {
+		auto output = m_cML->CastToInt('o');
+		if (1 == output[0] && (output[4] & 0xFF) == 0) {
+			m_state = finished;
+			m_stopTime = get_time();
+			return true;
+		}
+		return false;
+	}
+
+	bool IsPaused() {
+		auto output = m_cML->CastToInt('o');
+		if (1 == output[0] && (output[4] & 0xFF) > 0) {
+			m_state = paused;
+			return true;
+		}
+		return false;
+	}
+
+	string GetStateString() {
 		switch(m_state) {
 			case idle:
 				return "idle";
 			case running:
 				return "running";
+			case to_be_paused:
+				return "to_be_paused";
 			case paused:
 				return "paused";
 			case finished:
@@ -65,10 +101,128 @@ public:
 	}
 };
 
+class Instance {
+private:
+	uint32_t m_id;
+	vector<FThread*> m_runningThreads;
+
+public:
+
+	Instance(uint32_t id) {
+		m_id = id;
+	}
+
+	uint32_t GetId() {
+		return m_id;
+	}
+
+	bool operator< (Instance &other) {
+		return GetNumThreads() < other.GetNumThreads();
+	}
+
+	void AddThread(FThread* fthread) {
+		m_runningThreads.push_back(fthread);
+	}
+
+	uint32_t GetNumThreads() {
+		return m_runningThreads.size();
+	}
+
+	uint32_t GetNumWaitingThreads() {
+		uint32_t result = 0;
+		for (FThread* t: m_runningThreads) {
+			result += (t->GetState() == idle || t->GetState() == paused) ? 1 : 0;
+		}
+		return result;
+	}
+
+	uint32_t GetNumRunningThreads() {
+		uint32_t result = 0;
+		for (FThread* t: m_runningThreads) {
+			result += (t->GetState() == running || t->GetState() == to_be_paused) ? 1 : 0;
+		}
+		return result;
+	}
+
+	void UpdateStates() {
+		vector<uint32_t> toErase;
+		uint32_t pos = 0;
+		for (FThread* t: m_runningThreads) {
+			if (t->IsFinished()) {
+				cout << "------ FThread with id: " << t->GetId() << " is finished" << endl;
+				toErase.push_back(pos);
+			}
+			t->IsPaused();
+			pos++;
+		}
+		for (uint32_t p: toErase) {
+			m_runningThreads.erase(m_runningThreads.begin() + p);
+		}
+	}
+
+	void PrintStatus() {
+		for (FThread* t: m_runningThreads) {
+			cout << "------ FThread with id: " << t->GetId();
+			cout << ", state: " << t->GetStateString() << endl;
+		}
+	}
+
+	FThread* GetThreadToPause() {
+		FThread* threadToPause = NULL;
+
+		if (GetNumWaitingThreads() > 0) {
+			for (FThread* t: m_runningThreads) {
+				if (t->GetState() == running) {
+					threadToPause = t;
+				}
+			}
+		}
+
+		return threadToPause;
+	}
+
+	FThread* GetThreadToResume() {
+		FThread* threadToResume = NULL;
+
+		uint32_t minimum = numeric_limits<uint32_t>::max();
+		for (FThread* t: m_runningThreads) {
+			if ((t->GetState() == idle || t->GetState() == paused) && t->GetNumTimesResumed() < minimum) {
+				minimum = t->GetNumTimesResumed();
+				threadToResume = t;
+			}
+		}
+
+		return threadToResume;
+	}
+
+	FThread* GetThreadToMigrate() {
+		FThread* threadToMigrate = NULL;
+
+		uint32_t i = 0;
+		uint32_t pos = -1;
+		for (FThread* t: m_runningThreads) {
+			uint32_t minimum = numeric_limits<uint32_t>::max();
+			if ((t->GetState() == idle || t->GetState() == paused) && t->GetNumTimesResumed() < minimum) {
+				minimum = t->GetNumTimesResumed();
+				threadToMigrate = t;
+				pos = i;
+			}
+			i++;
+		}
+
+		if (pos != -1) {
+			m_runningThreads.erase(m_runningThreads.begin()+pos);
+		}
+
+		return threadToMigrate;
+	}
+
+};
+
 class Server : public iFPGA {
 private:
 	static const uint32_t MAX_MEMORY_SIZE = (1 << 10)*16;
-	static const uint32_t NUM_INSTANCES = 1;
+	static const uint32_t NUM_INSTANCES = 2;
 	static const uint32_t vc_select = 0;
 
 	bool m_run;
@@ -77,98 +231,101 @@ private:
 
 	thread m_serverThread;
 	queue<FThread*> m_requestQueue;
-	vector<FThread*> m_runningThreads[NUM_INSTANCES];
+	Instance* m_instance[NUM_INSTANCES];
 	uint32_t m_numThreads;
+	bool m_enableContextSwitch;
+	bool m_enableThreadMigration;
 
-	void ResumeThread(FThread* thread, uint32_t whichInstance) {
-		if (thread == NULL) {
+	void ResumeThread(FThread* fthread, uint32_t whichInstance) {
+		if (fthread == NULL) {
 			return;
 		}
 
-		cout << "ResumeThread with id: " << thread->GetId() << endl;
-		thread->Resume();
+		cout << "ResumeThread with id: " << fthread->GetId() << endl;
+		fthread->Resume();
 
-		auto programMemory = thread->m_cML->CastToInt('p');
-		auto inputMemory = thread->m_cML->CastToInt('i');
-		auto outputMemory = thread->m_cML->CastToInt('o');
+		auto programMemory = fthread->m_cML->CastToInt('p');
+		auto inputMemory = fthread->m_cML->CastToInt('i');
+		auto outputMemory = fthread->m_cML->CastToInt('o');
 
 		outputMemory[0] = 0;
-		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (thread->m_cML->m_numInstructions & 0xFF) );
+		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (fthread->m_cML->m_numInstructions & 0xFF) );
 		iFPGA::writeCSR(whichInstance*4 + 1, intptr_t(programMemory));
 		iFPGA::writeCSR(whichInstance*4 + 2, intptr_t(inputMemory));
 		iFPGA::writeCSR(whichInstance*4 + 3, intptr_t(outputMemory));
 	}
 
-	void PauseThread(FThread* thread, uint32_t whichInstance) {
-		if (thread == NULL) {
+	void PauseThread(FThread* fthread, uint32_t whichInstance) {
+		if (fthread == NULL) {
 			return;
 		}
 
-		cout << "PauseThread with id: " << thread->GetId() << endl;
-		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (1 << 16) | (thread->m_cML->m_numInstructions & 0xFF) );
-
-		auto output = thread->m_cML->CastToInt('o');
-		while (0 == output[0]) {
-			nanosleep(&PAUSE, NULL);
-		}
-		if ((output[4] & 0xFF) == 0) { // Check if pc is 0
-			thread->Finish();
-		}
-		else {
-			thread->Pause();
-		}
+		cout << "PauseThread with id: " << fthread->GetId() << endl;
+		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (1 << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
+		fthread->Pause();
 	}
 
 	void ScheduleThreads() {
-
-		FThread* threadToPause = NULL;
-		FThread* threadToResume = NULL;
-
 		for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
-			for (FThread* t: m_runningThreads[k]) {
-				if (t->m_state == idle || t->m_state == paused) {
-					threadToResume = t;
-					break;
-				}
-			}
-			for (FThread* t: m_runningThreads[k]) {
-				if (t->m_state == running) {
-					threadToPause = t;
-				}
-			}
+			FThread* threadToPause = m_instance[k]->GetThreadToPause();
+			FThread* threadToResume = m_instance[k]->GetThreadToResume();
 
-			PauseThread(threadToPause, k);
-			ResumeThread(threadToResume, k);
+			if (m_instance[k]->GetNumRunningThreads() == 0) {
+				ResumeThread(threadToResume, k);
+			}
+			if (m_enableContextSwitch) {
+				PauseThread(threadToPause, k);
+			}
+		}
+	}
+
+	void RedistributeThreads() {
+		vector<Instance*> temp;
+		for (uint32_t i = 0; i < NUM_INSTANCES; i++) {
+			temp.push_back(m_instance[i]);
+		}
+		sort(temp.begin(), temp.end());
+
+		if (temp.front()->GetNumThreads() < temp.back()->GetNumThreads()-1) {
+			FThread* fthread = temp.back()->GetThreadToMigrate();
+			if (fthread != NULL) {
+				cout << "Migrate thread with id: " << fthread->GetId() << endl;
+				cout << "temp.front()->GetNumThreads(): " << temp.front()->GetNumThreads() << endl;
+				cout << "temp.back()->GetNumThreads(): " << temp.back()->GetNumThreads() << endl;
+				temp.front()->AddThread(fthread);
+			}
 		}
 	}
 
 	void ProcessRequests() {
-		unique_lock<mutex> lck(m_mtx, defer_lock);
+		unique_lock<mutex> lck(m_mtx);
 
 		m_run = true;
 		cout << "Start server thread..." << endl;
 		bool thereAreRunningThreads = true;
 		m_cv.notify_one();
+		lck.unlock();
 
 		uint32_t i = 0;
 		while(m_run || !m_requestQueue.empty() || thereAreRunningThreads) {
 
 			lck.lock();
 			if (!m_requestQueue.empty()) {
-				FThread* thread = m_requestQueue.front();
+				FThread* fthread = m_requestQueue.front();
 
-				if ( thread != nullptr ) {
+				if ( fthread != nullptr ) {
 					uint32_t whichInstance = -1;
 					uint32_t minimumLoad = numeric_limits<uint32_t>::max();
 					for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
-						if (m_runningThreads[k].size() < minimumLoad) {
-							minimumLoad = m_runningThreads[k].size();
+						if (m_instance[k]->GetNumThreads() < minimumLoad) {
+							minimumLoad = m_instance[k]->GetNumThreads();
 							whichInstance = k;
 						}
 					}
 
 					if (whichInstance != -1) {
-						m_runningThreads[whichInstance].push_back(thread);
+						cout << "Putting fthread " << fthread->GetId() << " to instance " << whichInstance << endl;
+						m_instance[whichInstance]->AddThread(fthread);
 						m_requestQueue.pop();
 					}
 				}
@@ -177,6 +334,9 @@ private:
 					m_requestQueue.pop();
 				}
 			}
+			if (NUM_INSTANCES > 1 && m_enableThreadMigration) {
+				RedistributeThreads();
+			}
 			ScheduleThreads();
 			lck.unlock();
 
@@ -184,20 +344,9 @@ private:
 
 			thereAreRunningThreads = false;
 			for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
-				vector<uint32_t> toErase;
-				uint32_t pos = 0;
-				for (FThread* t: m_runningThreads[k]) {
-					if (t->m_state == finished) {
-						cout << "------ FThread with id: " << t->GetId() << " is finished" << endl;
-						toErase.push_back(pos);
-					}
-					else {
-						thereAreRunningThreads = true;
-					}
-					pos++;
-				}
-				for (uint32_t p: toErase) {
-					m_runningThreads[k].erase(m_runningThreads[k].begin() + p);
+				m_instance[k]->UpdateStates();
+				if (m_instance[k]->GetNumThreads() > 0) {
+					thereAreRunningThreads = true;
 				}
 			}
 
@@ -206,10 +355,7 @@ private:
 				cout << "------------------------ Running threads: " << endl;
 				for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
 					cout << "---- On instance: " << k << endl;
-					for (FThread* t: m_runningThreads[k]) {
-						cout << "------ FThread with id: " << t->GetId();
-						cout << ", state: " << t->GetState() << endl;
-					}
+					m_instance[k]->PrintStatus();
 				}
 				i = 0;
 			}
@@ -219,9 +365,16 @@ private:
 	}
 
 public:
-	Server(const char* accel_uuid) : iFPGA(accel_uuid) {
+	Server(const char* accel_uuid, bool enableContextSwitch, bool enableThreadMigration) : iFPGA(accel_uuid) {
 		unique_lock<mutex> lck(m_mtx);
+
+		m_enableContextSwitch = enableContextSwitch;
+		m_enableThreadMigration = enableThreadMigration;
+
 		m_numThreads = 0;
+		for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+			m_instance[k] = new Instance(k);
+		}
 		m_serverThread = thread(&Server::ProcessRequests, this);
 		cout << "Waiting..." << endl;
 		m_cv.wait(lck);
@@ -229,6 +382,9 @@ public:
 
 	~Server() {
 		cout << "Deleting..." << endl;
+		for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+			delete m_instance[k];
+		}
 		m_run = false;
 		m_serverThread.join();
 	}
@@ -236,9 +392,9 @@ public:
 	FThread* Request(FPGA_ColumnML* cML) {
 		unique_lock<mutex> lck(m_mtx);
 		cout << "Push" << endl;
-		FThread* thread = new FThread(cML, m_numThreads++);
-		m_requestQueue.push(thread);
-		return thread;
+		FThread* fthread = new FThread(cML, m_numThreads++);
+		m_requestQueue.push(fthread);
+		return fthread;
 	}
 };
  
