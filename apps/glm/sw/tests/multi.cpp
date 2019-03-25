@@ -1,6 +1,5 @@
 #include <iostream>
 #include "FPGA_ColumnML.h"
-#include "GlmMachine.h"
 #include "Server.h"
 
 // State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script

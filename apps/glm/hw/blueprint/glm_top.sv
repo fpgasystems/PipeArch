@@ -80,6 +80,7 @@ module glm_top
     t_ccip_vc vc_select;
     logic context_switch;
     t_thread_context thread_context;
+    t_thread_context thread_context_to_store;
 
     always_ff @(posedge clk)
     begin
@@ -304,7 +305,7 @@ module glm_top
         else if (receive_state == RXTX_STATE_DONE)
         begin
             af2cp_sTx.c1.valid <= 1'b1;
-            af2cp_sTx.c1.data <= t_ccip_clData'({thread_context, 32'b1});
+            af2cp_sTx.c1.data <= t_ccip_clData'({thread_context_to_store, 32'b1});
             af2cp_sTx.c1.hdr.address <= thread_information.out_addr;
             af2cp_sTx.c1.hdr.vc_sel <= vc_select;
         end
@@ -692,8 +693,10 @@ module glm_top
             MACHINE_STATE_CONTEXT_STORE:
             begin
                 enableswitch <= 1'b0;
-                thread_context.program_counter <= program_counter;
-                thread_context.regs <= regs;
+                thread_context_to_store.program_counter <= program_counter;
+                thread_context_to_store.regs <= regs;
+                thread_context_to_store.pc_context_store <= thread_context.pc_context_store;
+                thread_context_to_store.pc_context_load <= thread_context.pc_context_load;
 
                 program_counter <= thread_context.pc_context_store;
                 program_access.re <= 1'b1;
@@ -705,7 +708,10 @@ module glm_top
             begin
                 if (program_counter == 8'hFF ) // Done
                 begin
-                    thread_context.program_counter <= 0;
+                    thread_context_to_store.program_counter <= 0;
+                    thread_context_to_store.regs <= 0;
+                    thread_context_to_store.pc_context_store <= thread_context.pc_context_store;
+                    thread_context_to_store.pc_context_load <= thread_context.pc_context_load;
                     machine_state <= MACHINE_STATE_DONE;
                 end
                 else if (program_counter == 8'hF0) // Context Store Done
