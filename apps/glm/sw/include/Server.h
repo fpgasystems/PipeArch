@@ -11,6 +11,8 @@
 
 using namespace std;
 
+// #define PRINT_STATUS
+
 static const struct timespec PAUSE {.tv_sec = 0, .tv_nsec = 1000};
 
 enum FThreadState {idle, running, to_be_paused, paused, finished};
@@ -22,17 +24,20 @@ private:
 	uint32_t m_numTimesResumed;
 	double m_startTime;
 	double m_stopTime;
+	uint32_t m_priority;
 
 public:
 	FPGA_ColumnML* m_cML;
 
-	FThread(FPGA_ColumnML* cML, uint32_t id) {
+	FThread(FPGA_ColumnML* cML, uint32_t id, uint32_t priority) {
 		m_state = idle;
 		m_cML = cML;
 		m_id = id;
 		m_numTimesResumed = 0;
 		m_startTime = get_time();
 		m_stopTime = 0;
+		m_priority = 0;
+		m_cML-> ResetContext();
 	}
 
 	uint32_t GetId() {
@@ -43,8 +48,12 @@ public:
 		return m_stopTime - m_startTime;
 	}
 
-	int GetNumTimesResumed() {
+	uint32_t GetNumTimesResumed() {
 		return m_numTimesResumed;
+	}
+
+	uint32_t GetPriority() {
+		return m_priority;
 	}
 
 	void Resume() {
@@ -186,9 +195,18 @@ public:
 
 		uint32_t minimum = numeric_limits<uint32_t>::max();
 		for (FThread* t: m_runningThreads) {
-			if ((t->GetState() == idle || t->GetState() == paused) && t->GetNumTimesResumed() < minimum) {
-				minimum = t->GetNumTimesResumed();
-				threadToResume = t;
+			if (t->GetState() == idle || t->GetState() == paused) {
+
+				if (t->GetPriority() > 0) {
+					threadToResume = t;
+					return threadToResume;
+				}
+
+				if (t->GetNumTimesResumed() < minimum) {
+					minimum = t->GetNumTimesResumed();
+					threadToResume = t;
+				}
+
 			}
 		}
 
@@ -241,7 +259,9 @@ private:
 			return;
 		}
 
+#ifdef PRINT_STATUS
 		cout << "ResumeThread with id: " << fthread->GetId() << endl;
+#endif
 		fthread->Resume();
 
 		auto programMemory = fthread->m_cML->CastToInt('p');
@@ -260,7 +280,9 @@ private:
 			return;
 		}
 
+#ifdef PRINT_STATUS
 		cout << "PauseThread with id: " << fthread->GetId() << endl;
+#endif
 		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (1 << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
 		fthread->Pause();
 	}
@@ -389,10 +411,22 @@ public:
 		m_serverThread.join();
 	}
 
+	void ResetNumThreads() {
+		m_numThreads = 0;
+	}
+
 	FThread* Request(FPGA_ColumnML* cML) {
 		unique_lock<mutex> lck(m_mtx);
 		cout << "Push" << endl;
-		FThread* fthread = new FThread(cML, m_numThreads++);
+		FThread* fthread = new FThread(cML, m_numThreads++, 0);
+		m_requestQueue.push(fthread);
+		return fthread;
+	}
+
+	FThread* Request(FPGA_ColumnML* cML, uint32_t priority) {
+		unique_lock<mutex> lck(m_mtx);
+		cout << "Push" << endl;
+		FThread* fthread = new FThread(cML, m_numThreads++, priority);
 		m_requestQueue.push(fthread);
 		return fthread;
 	}

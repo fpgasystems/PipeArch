@@ -30,6 +30,7 @@ private:
 	access_t** m_columnsChunks;
 
 	MemoryFormat m_currentMemoryFormat;
+	bool m_useContextSwitch;
 
 	void realloc(shared_buffer::ptr_t& handle, size_t size) {
 		if (handle != NULL) {
@@ -86,6 +87,15 @@ public:
 		m_outputHandle = NULL;
 		m_programMemoryHandle = NULL;
 		m_ifpga = ifpga;
+		m_useContextSwitch = true;
+	}
+
+	FPGA_ColumnML(iFPGA* ifpga, bool useContextSwitch) {
+		m_handle = NULL;
+		m_outputHandle = NULL;
+		m_programMemoryHandle = NULL;
+		m_ifpga = ifpga;
+		m_useContextSwitch = useContextSwitch;
 	}
 
 	~FPGA_ColumnML() {
@@ -95,6 +105,14 @@ public:
 		free(m_outputHandle);
 		cout << "m_programMemoryHandle->release()" << endl;
 		free(m_programMemoryHandle);
+	}
+
+	void ResetContext() {
+		auto output = CastToInt('o');
+		output[0] = 0; // Done
+		output[1] = 0; // reg 0;
+		output[2] = 0; // reg 1;
+		output[3] = 0; // reg 2;
 	}
 
 	volatile uint32_t* CastToInt(char which) {

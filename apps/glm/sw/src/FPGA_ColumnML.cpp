@@ -90,7 +90,9 @@ bool FPGA_ColumnML::fSGD(
 	m_inst[pc].Jump(1, m_numPartitions-1, beginEpoch, pc+1);
 	m_inst[pc].ResetIndex(0);
 	m_inst[pc].IncrementIndex(1);
-	m_inst[pc].EnableContextSwitch();
+	if (m_useContextSwitch) {
+		m_inst[pc].EnableContextSwitch();
+	}
 	pc++;
 
 	if ( m_rest > 1 ) {
@@ -271,7 +273,9 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	// End---Innermost loop
 
 	m_inst[pc].Jump(1, m_numPartitions-1, pcLabels, pc+1);
-	m_inst[pc].EnableContextSwitch();
+	if (m_useContextSwitch) {
+		m_inst[pc].EnableContextSwitch();
+	}
 	m_inst[pc].ResetIndex(0);
 	m_inst[pc].IncrementIndex(1);
 	pc++;
