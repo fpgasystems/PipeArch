@@ -36,7 +36,7 @@ public:
 		m_numTimesResumed = 0;
 		m_startTime = get_time();
 		m_stopTime = 0;
-		m_priority = 0;
+		m_priority = priority;
 		m_cML-> ResetContext();
 	}
 
@@ -181,7 +181,7 @@ public:
 
 		if (GetNumWaitingThreads() > 0) {
 			for (FThread* t: m_runningThreads) {
-				if (t->GetState() == running) {
+				if (t->GetState() == running && t->GetPriority() == 0) {
 					threadToPause = t;
 				}
 			}
@@ -240,8 +240,9 @@ public:
 class Server : public iFPGA {
 private:
 	static const uint32_t MAX_MEMORY_SIZE = (1 << 10)*16;
-	static const uint32_t NUM_INSTANCES = 2;
+	static const uint32_t MAX_NUM_INSTANCES = 2;
 	static const uint32_t vc_select = 0;
+	uint32_t m_numInstances;
 
 	bool m_run;
 	mutex m_mtx;
@@ -249,7 +250,7 @@ private:
 
 	thread m_serverThread;
 	queue<FThread*> m_requestQueue;
-	Instance* m_instance[NUM_INSTANCES];
+	Instance* m_instance[MAX_NUM_INSTANCES];
 	uint32_t m_numThreads;
 	bool m_enableContextSwitch;
 	bool m_enableThreadMigration;
@@ -257,6 +258,9 @@ private:
 	void ResumeThread(FThread* fthread, uint32_t whichInstance) {
 		if (fthread == NULL) {
 			return;
+		}
+		if (fthread->GetPriority() > 0) {
+			cout << "-----------------ResumeThread with id: " << fthread->GetId() << endl;
 		}
 
 #ifdef PRINT_STATUS
@@ -280,6 +284,10 @@ private:
 			return;
 		}
 
+		if (fthread->GetPriority() > 0) {
+			cout << "-----------------PauseThread with id: " << fthread->GetId() << endl;
+		}
+
 #ifdef PRINT_STATUS
 		cout << "PauseThread with id: " << fthread->GetId() << endl;
 #endif
@@ -288,7 +296,7 @@ private:
 	}
 
 	void ScheduleThreads() {
-		for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+		for (uint32_t k = 0; k < m_numInstances; k++) {
 			FThread* threadToPause = m_instance[k]->GetThreadToPause();
 			FThread* threadToResume = m_instance[k]->GetThreadToResume();
 
@@ -303,7 +311,7 @@ private:
 
 	void RedistributeThreads() {
 		vector<Instance*> temp;
-		for (uint32_t i = 0; i < NUM_INSTANCES; i++) {
+		for (uint32_t i = 0; i < m_numInstances; i++) {
 			temp.push_back(m_instance[i]);
 		}
 		sort(temp.begin(), temp.end());
@@ -338,7 +346,7 @@ private:
 				if ( fthread != nullptr ) {
 					uint32_t whichInstance = -1;
 					uint32_t minimumLoad = numeric_limits<uint32_t>::max();
-					for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+					for (uint32_t k = 0; k < m_numInstances; k++) {
 						if (m_instance[k]->GetNumThreads() < minimumLoad) {
 							minimumLoad = m_instance[k]->GetNumThreads();
 							whichInstance = k;
@@ -356,7 +364,7 @@ private:
 					m_requestQueue.pop();
 				}
 			}
-			if (NUM_INSTANCES > 1 && m_enableThreadMigration) {
+			if (m_numInstances > 1 && m_enableThreadMigration) {
 				RedistributeThreads();
 			}
 			ScheduleThreads();
@@ -365,36 +373,33 @@ private:
 			nanosleep(&PAUSE, NULL);
 
 			thereAreRunningThreads = false;
-			for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+			for (uint32_t k = 0; k < m_numInstances; k++) {
 				m_instance[k]->UpdateStates();
 				if (m_instance[k]->GetNumThreads() > 0) {
 					thereAreRunningThreads = true;
 				}
 			}
 
+#ifdef PRINT_STATUS
 			i++;
 			if (i == 50000) {
 				cout << "------------------------ Running threads: " << endl;
-				for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+				for (uint32_t k = 0; k < m_numInstances; k++) {
 					cout << "---- On instance: " << k << endl;
 					m_instance[k]->PrintStatus();
 				}
 				i = 0;
 			}
+#endif
 		}
 
 		cout << "Finishing server thread..." << endl;
 	}
 
-public:
-	Server(const char* accel_uuid, bool enableContextSwitch, bool enableThreadMigration) : iFPGA(accel_uuid) {
+	inline void ConstructorCommon() {
 		unique_lock<mutex> lck(m_mtx);
-
-		m_enableContextSwitch = enableContextSwitch;
-		m_enableThreadMigration = enableThreadMigration;
-
 		m_numThreads = 0;
-		for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+		for (uint32_t k = 0; k < m_numInstances; k++) {
 			m_instance[k] = new Instance(k);
 		}
 		m_serverThread = thread(&Server::ProcessRequests, this);
@@ -402,9 +407,33 @@ public:
 		m_cv.wait(lck);
 	}
 
+public:
+	Server(const char* accel_uuid,
+		bool enableContextSwitch,
+		bool enableThreadMigration) : iFPGA(accel_uuid)
+	{
+		m_enableContextSwitch = enableContextSwitch;
+		m_enableThreadMigration = enableThreadMigration;
+		m_numInstances = MAX_NUM_INSTANCES;
+
+		ConstructorCommon();
+	}
+
+	Server(const char* accel_uuid,
+		bool enableContextSwitch,
+		bool enableThreadMigration,
+		uint32_t numInstances) : iFPGA(accel_uuid)
+	{
+		m_enableContextSwitch = enableContextSwitch;
+		m_enableThreadMigration = enableThreadMigration;
+		m_numInstances = numInstances;
+
+		ConstructorCommon();
+	}
+
 	~Server() {
 		cout << "Deleting..." << endl;
-		for (uint32_t k = 0; k < NUM_INSTANCES; k++) {
+		for (uint32_t k = 0; k < m_numInstances; k++) {
 			delete m_instance[k];
 		}
 		m_run = false;
@@ -417,7 +446,7 @@ public:
 
 	FThread* Request(FPGA_ColumnML* cML) {
 		unique_lock<mutex> lck(m_mtx);
-		cout << "Push" << endl;
+		// cout << "Push" << endl;
 		FThread* fthread = new FThread(cML, m_numThreads++, 0);
 		m_requestQueue.push(fthread);
 		return fthread;
@@ -425,7 +454,7 @@ public:
 
 	FThread* Request(FPGA_ColumnML* cML, uint32_t priority) {
 		unique_lock<mutex> lck(m_mtx);
-		cout << "Push" << endl;
+		// cout << "Push" << endl;
 		FThread* fthread = new FThread(cML, m_numThreads++, priority);
 		m_requestQueue.push(fthread);
 		return fthread;
