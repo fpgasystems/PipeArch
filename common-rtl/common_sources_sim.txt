@@ -1,9 +1,9 @@
 C:../opae/base/hw/rtl/base_sources.txt
 
 +incdir+.
-top.sv
-pipearch_prefetch.sv
 pipearch_copy.sv
+pipearch_dma_read.sv
+pipearch_dma_write.sv
 
 memory/bram.sv
 memory/fifo.sv

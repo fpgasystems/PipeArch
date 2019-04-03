@@ -4,7 +4,7 @@
 `include "pipearch_common.vh"
 `include "glm_common.vh"
 
-module pipearch_top
+module intel_arbiter
 (
     input logic clk,
     input logic userclk,
@@ -75,7 +75,7 @@ module pipearch_top
     end
 
     t_cpu_wr_csrs intermediate_csrs[0:NUM_APP_CSRS-1];
-    t_cpu_wr_csrs inst_csrs[0:NUM_APP_CSRS-1];
+    config_registers inst_csrs[0:NUM_APP_CSRS-1];
     t_async_access csrs_access[0:NUM_APP_CSRS-1];
     genvar index;
     generate
@@ -371,16 +371,51 @@ module pipearch_top
     generate
         for (index = 0; index < NUM_INSTANCES; index = index + 1)
         begin: gen_glm_top
+
+            dma_control inst_dma_read_control();
+            dma_interface #(.DATA_WIDTH(CLDATA_WIDTH),.ADDRESS_WIDTH(CLADDR_WIDTH)) inst_dma_read();
+
+            dma_control inst_dma_write_control();
+            dma_interface #(.DATA_WIDTH(CLDATA_WIDTH),.ADDRESS_WIDTH(CLADDR_WIDTH)) inst_dma_write();
+
+            pipearch_dma_read
+            pipearch_dma_read_inst
+            (
+                .clk(userclk),
+                .reset(inst_reset),
+                .c0TxAlmFull(inst_cp2af_sRx[index].c0TxAlmFull),
+                .cp2af_sRx_c0(inst_cp2af_sRx[index].c0),
+                .af2cp_sTx_c0(inst_af2cp_sTx[index].c0),
+                .vc_select(t_ccip_vc'(inst_csrs[index*4][31:30])),
+                .get_control(inst_dma_read_control.at_dma),
+                .get_requests(inst_dma_read.from_dma_read)
+            );
+
             glm_top
             glm_top_inst
             (
                 .clk(userclk),
                 .reset(inst_reset),
-                .cp2af_sRx(inst_cp2af_sRx[index]),
-                .af2cp_sTx(inst_af2cp_sTx[index]),
-                .wr_csrs(inst_csrs[index*4 +: 4]),
+                .dma_read_control(inst_dma_read_control.to_dma),
+                .dma_read(inst_dma_read.to_dma_read),
+                .dma_write_control(inst_dma_write_control.to_dma),
+                .dma_write(inst_dma_write.to_dma_write),
+                .config_regs(inst_csrs[index*4 +: 4]),
                 .synchronize(synchronize[index]),
                 .synchronize_done(synchronize_done[index])
+            );
+
+            pipearch_dma_write
+            pipearch_dma_write_inst
+            (
+                .clk(userclk),
+                .reset(inst_reset),
+                .c1TxAlmFull(inst_cp2af_sRx[index].c1TxAlmFull),
+                .cp2af_sRx_c1(inst_cp2af_sRx[index].c1),
+                .af2cp_sTx_c1(inst_af2cp_sTx[index].c1),
+                .vc_select(t_ccip_vc'(inst_csrs[index*4][31:30])),
+                .get_control(inst_dma_write_control.at_dma),
+                .get_requests(inst_dma_write.from_dma_write)
             );
         end
     endgenerate
@@ -402,4 +437,4 @@ module pipearch_top
         end
     end
 
-endmodule // pipearch_top
+endmodule // intel_arbiter

@@ -1,7 +1,9 @@
+sw_path = ../sw/
+hw_path = ../hw/
 include ../../../opae/base/sw/base_include.mk
 
 # Primary test name
-TEST = multi
+TEST = scratch
 
 # Build directory
 OBJDIR = obj
@@ -10,14 +12,14 @@ CFLAGS += -I./$(OBJDIR)
 CPPFLAGS += -I./$(OBJDIR) -march=native
 
 # Files and folders
-LOCAL_SRCS = $(wildcard ./src/*.cpp)
-_LOCAL_SRCS = $(patsubst ./src/%,%,$(LOCAL_SRCS))
+LOCAL_SRCS = $(wildcard $(sw_path)/src/*.cpp)
+_LOCAL_SRCS = $(patsubst $(sw_path)/src/%,%,$(LOCAL_SRCS))
 
 $(info $$LOCAL_SRCS is [$(LOCAL_SRCS)])
 $(info $$_LOCAL_SRCS is [$(_LOCAL_SRCS)])
 
-LOCAL_TESTS = ./tests/$(TEST).cpp
-_LOCAL_TESTS = $(patsubst ./tests/%,%,$(LOCAL_TESTS))
+LOCAL_TESTS = $(sw_path)/tests/$(TEST).cpp
+_LOCAL_TESTS = $(patsubst $(sw_path)/tests/%,%,$(LOCAL_TESTS))
 
 $(info $$LOCAL_TESTS is [$(LOCAL_TESTS)])
 $(info $$_LOCAL_TESTS is [$(_LOCAL_TESTS)])
@@ -31,14 +33,14 @@ $(info $$OBJS is [$(OBJS)])
 $(info $$DEPS is [$(DEPS)])
 
 # Targets
-all: $(TEST) $(TEST)_ase
+all: $(TEST) $(TEST)_ase ex
 
 ex:
-	export ASE_WORKDIR=../build_sim/work/
+	export ASE_WORKDIR=$(PWD)/build_sim/work/
 
 # AFU info from JSON file, including AFU UUID
 AFU_JSON_INFO = $(OBJDIR)/afu_json_info.h
-$(AFU_JSON_INFO): ../hw/blueprint/pipearch_cci.json | objdir
+$(AFU_JSON_INFO): $(hw_path)/blueprint/pipearch_cci.json | objdir
 	afu_json_mgr json-info --afu-json=$^ --c-hdr=$@
 $(OBJS): $(AFU_JSON_INFO)
 
@@ -49,13 +51,13 @@ $(TEST)_ase: $(OBJS)
 	$(CXX) -o $@ $^ $(LDFLAGS) $(ASE_LIBS)
 
 $(OBJDIR)/%.o: %.cpp $(DEPS) | objdir
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE)
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE) -I./$(sw_path)/include
 
-$(OBJDIR)/%.o: ./src/%.cpp $(DEPS) | objdir
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE)
+$(OBJDIR)/%.o: $(sw_path)/src/%.cpp $(DEPS) | objdir
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE) -I./$(sw_path)/include
 
-$(OBJDIR)/%.o: ./tests/%.cpp $(DEPS) | objdir
-	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE)
+$(OBJDIR)/%.o: $(sw_path)/tests/%.cpp $(DEPS) | objdir
+	$(CXX) $(CPPFLAGS) $(CFLAGS) -c $< -o $@ -I./$(INCLUDE) -I./$(sw_path)/include
 
 clean:
 	rm -rf $(TEST) $(TEST)_ase $(OBJDIR)

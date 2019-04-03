@@ -1,4 +1,3 @@
-`include "cci_mpf_if.vh"
 `include "pipearch_common.vh"
 `include "glm_common.vh"
 
@@ -11,12 +10,11 @@ module glm_load
     output logic op_done,
 
     input logic [31:0] regs [5+NUM_LOAD_CHANNELS],
-    input t_ccip_clAddr in_addr,
+    input t_claddr in_addr,
 
-    // CCI-P request/response
-    input  c0TxAlmFull,
-    input  t_if_ccip_c0_Rx cp2af_sRx_c0,
-    output t_if_ccip_c0_Tx af2cp_sTx_c0,
+    // request/response
+    dma_control.to_dma dma_read_control,
+    dma_interface.to_dma_read dma_read,
 
     fifobram_interface.fifo_write FIFO_input,
     fifobram_interface.fifo_write FIFO_samplesforward,
@@ -24,7 +22,6 @@ module glm_load
     fifobram_interface.bram_write MEM_labels,
     fifobram_interface.bram_readwrite MEM_accessprops
 );
-    
     logic internal_reset;
     always_ff @(posedge clk)
     begin
@@ -130,13 +127,12 @@ module glm_load
     //
     // *************************************************************************
     logic[31:0] offset_by_index[3];
-    logic [$bits(t_ccip_clAddr)-32-1:0] upper_part_address;
+    logic [$bits(t_claddr)-32-1:0] upper_part_address;
     logic [31:0] running_DRAM_load_offset;
     logic [31:0] DRAM_load_length;
     logic enable_multiline;
     logic use_accessprops;
     logic [LOG2_MEMORY_SIZE-1:0] accessprops_raddr;
-    logic gen_syn_data;
 
     // *************************************************************************
     //
@@ -179,21 +175,11 @@ module glm_load
         begin
             num_received_lines <= 32'b0;
         end
-        if (cci_c0Rx_isReadRsp(cp2af_sRx_c0) && receive_state == STATE_READ)
+        if (dma_read.rx_rvalid && receive_state == STATE_READ)
         begin
             num_received_lines <= num_received_lines + 1;
             prefetch_fifo_access.we <= 1'b1;
-            if (gen_syn_data)
-            begin
-                for (int i=0; i < 16; i=i+1)
-                begin
-                    prefetch_fifo_access.wdata[ (i*32)+31 -: 32 ] <= 32'(i);
-                end
-            end
-            else
-            begin
-                prefetch_fifo_access.wdata <= cp2af_sRx_c0.data;
-            end
+            prefetch_fifo_access.wdata <= dma_read.rx_rdata;
         end
         prefetch_fifo_access.re <= !(prefetch_fifo_access.empty) && !(from_load.almostfull);
     end
@@ -209,8 +195,9 @@ module glm_load
         prefetch_fifo_free_count <= PREFETCH_SIZE - prefetch_fifo_access.count[LOG2_PREFETCH_SIZE-1:0];
         num_allowed_lines_to_request <= prefetch_fifo_free_count - $signed(num_lines_in_flight);
 
-        af2cp_sTx_c0.hdr <= t_cci_c0_ReqMemHdr'(0);
-        af2cp_sTx_c0.valid <= 1'b0;
+        dma_read_control.start <= 1'b0;
+        dma_read.tx_re <= 1'b0;
+
         from_load.we <= 1'b0;
         MEM_accessprops.re <= 1'b0;
         op_done <= 1'b0;
@@ -229,13 +216,12 @@ module glm_load
                     offset_by_index[0] <= regs[0];
                     offset_by_index[1] <= regs[1];
                     offset_by_index[2] <= regs[2];
-                    upper_part_address <= in_addr[$bits(t_ccip_clAddr)-1:32];
+                    upper_part_address <= in_addr[$bits(t_claddr)-1:32];
                     running_DRAM_load_offset <= (regs[3][31] == 1'b1) ? in_addr[31:0] : in_addr[31:0] + regs[3][29:0];
                     DRAM_load_length <= regs[4][30:0];
                     enable_multiline <= regs[4][31];
                     use_accessprops <= regs[3][31];
                     accessprops_raddr <= regs[3][29:0];
-                    gen_syn_data <= regs[3][30];
                     // *************************************************************************
                     accessprops_position <= 0;
                     offset_accumulate <= 2'b0;
@@ -301,44 +287,42 @@ module glm_load
 
             STATE_READ:
             begin
-                if (!c0TxAlmFull && (num_allowed_lines_to_request > 0) )
+                if (!dma_read_control.active)
                 begin
-                    if (enable_multiline && 
-                        (num_requested_lines_plus4 < DRAM_load_length) && 
-                        (running_DRAM_load_offset[1:0] == 2'b0))
+                    dma_read_control.start <= 1'b1;
+                    dma_read_control.regs[0] <= 0;
+                    dma_read_control.regs[1] <= 0;
+                    dma_read_control.regs[2] <= 0;
+                    dma_read_control.regs[3] <= 0;
+                    dma_read_control.regs[4] <= {enable_multiline, DRAM_load_length};
+                    dma_read_control.addr <= running_DRAM_load_offset;
+                end
+                else if (num_allowed_lines_to_request > 0)
+                begin
+                    if (enable_multiline && (num_requested_lines_plus4 < DRAM_load_length))
                     begin
-                        af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'({upper_part_address, running_DRAM_load_offset});
-                        af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
-                        af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_4;
+                        dma_read.tx_re <= 1'b1;
+                        dma_read.tx_rlength <= 2'b11;
                         num_requested_lines <= num_requested_lines_plus4;
                         num_requested_lines_plus2 <= num_requested_lines_plus4 + 2;
                         num_requested_lines_plus4 <= num_requested_lines_plus4 + 4;
-                        running_DRAM_load_offset <= running_DRAM_load_offset + 4;
                     end
                     else if (enable_multiline && 
-                        (num_requested_lines_plus2 < DRAM_load_length) &&
-                        (running_DRAM_load_offset[0] == 1'b0))
+                        (num_requested_lines_plus2 < DRAM_load_length))
                     begin
-                        af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'({upper_part_address, running_DRAM_load_offset});
-                        af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
-                        af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_2;
+                        dma_read.tx_re <= 1'b1;
+                        dma_read.tx_rlength <= 2'b01;
                         num_requested_lines <= num_requested_lines_plus2;
                         num_requested_lines_plus2 <= num_requested_lines_plus2 + 2;
                         num_requested_lines_plus4 <= num_requested_lines_plus2 + 4;
-                        running_DRAM_load_offset <= running_DRAM_load_offset + 2;
                     end
                     else if (num_requested_lines < DRAM_load_length)
                     begin
-                        af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'({upper_part_address, running_DRAM_load_offset});
-                        af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
-                        af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_1;
+                        dma_read.tx_re <= 1'b1;
+                        dma_read.tx_rlength <= 2'b00;
                         num_requested_lines <= num_requested_lines + 1;
                         num_requested_lines_plus2 <= num_requested_lines + 3;
                         num_requested_lines_plus4 <= num_requested_lines + 5;
-                        running_DRAM_load_offset <= running_DRAM_load_offset + 1;
                     end
                 end
 

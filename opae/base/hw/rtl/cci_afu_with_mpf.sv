@@ -297,9 +297,9 @@ module ccip_std_afu
     //
     // ====================================================================
 
-    app_afu
-      app
-       (
+    intel_top
+    app
+    (
         .clk(afu_clk),
         .userclk(uClk_usr),
         // .userclk(pClkDiv2),
@@ -307,6 +307,6 @@ module ccip_std_afu
         .csrs,
         .c0NotEmpty,
         .c1NotEmpty
-        );
+    );
 
 endmodule

@@ -52,11 +52,11 @@ signal fixed_mult_result : std_logic_vector(48*VALUES_PER_LINE-1 downto 0);
 signal adder_tree_result_valid : std_logic;
 signal adder_tree_result : std_logic_vector(47 downto 0);
 
-signal internal_accumulation_count : integer;
-signal accumulation : signed(47 downto 0);
+signal internal_accumulation_count : integer := 0;
+signal accumulation : signed(47 downto 0) := (others => '0');
 
 signal internal_result_valid : std_logic_vector(CONVERSION_LATENCY downto 0);
-signal internal_result : signed(47 downto 0);
+signal internal_result : signed(47 downto 0) := (others => '0');
 
 type float_vector_type is array(15 downto 0) of std_logic_vector(31 downto 0);
 signal vector1_monitor : float_vector_type;

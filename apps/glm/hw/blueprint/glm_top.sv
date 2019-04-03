@@ -1,6 +1,3 @@
-`include "cci_mpf_if.vh"
-`include "csr_mgr.vh"
-`include "afu_json_info.vh"
 `include "pipearch_common.vh"
 `include "glm_common.vh"
 
@@ -9,12 +6,15 @@ module glm_top
     input  logic clk,
     input  logic reset,
 
-    // CCI-P request/response
-    input  t_if_ccip_Rx cp2af_sRx,
-    output t_if_ccip_Tx af2cp_sTx,
+    // request/response
+    dma_control.to_dma dma_read_control,
+    dma_interface.to_dma_read dma_read,
+
+    dma_control.to_dma dma_write_control,
+    dma_interface.to_dma_write dma_write,
 
     // CSR connections
-    input t_cpu_wr_csrs wr_csrs [4],
+    input config_registers config_regs [4],
 
     output logic synchronize,
     input logic synchronize_done
@@ -34,19 +34,10 @@ module glm_top
     //   COMMON FUNCTIONS
     //
     // =================================
-    //
-    // Convert between byte addresses and line addresses.  The conversion
-    // is simple: adding or removing low zero bits.
-    //
     localparam CL_BYTE_IDX_BITS = 6;
-    typedef logic [$bits(t_cci_clAddr) + CL_BYTE_IDX_BITS - 1 : 0] t_byteAddr;
-
-    function automatic t_cci_clAddr byteAddrToClAddr(t_byteAddr addr);
-        return addr[CL_BYTE_IDX_BITS +: $bits(t_cci_clAddr)];
-    endfunction
-
-    function automatic t_byteAddr clAddrToByteAddr(t_cci_clAddr addr);
-        return {addr, CL_BYTE_IDX_BITS'(0)};
+    typedef logic [$bits(t_claddr) + CL_BYTE_IDX_BITS - 1 : 0] t_byteAddr;
+    function automatic t_claddr byteAddrToClAddr(t_byteAddr addr);
+        return addr[CL_BYTE_IDX_BITS +: $bits(t_claddr)];
     endfunction
 
     typedef enum logic [1:0]
@@ -61,9 +52,9 @@ module glm_top
     {
         t_thread_status status;
         logic [LOG2_PROGRAM_SIZE-1:0] program_length;
-        t_ccip_clAddr program_addr;
-        t_ccip_clAddr in_addr;
-        t_ccip_clAddr out_addr;
+        t_claddr program_addr;
+        t_claddr in_addr;
+        t_claddr out_addr;
     } t_thread_information;
 
     typedef logic [31:0] t_reg;
@@ -77,7 +68,6 @@ module glm_top
     } t_thread_context;
 
     t_thread_information thread_information;
-    t_ccip_vc vc_select;
     logic context_switch;
     t_thread_context thread_context;
     t_thread_context thread_context_to_store;
@@ -85,28 +75,27 @@ module glm_top
     always_ff @(posedge clk)
     begin
 
-        if (wr_csrs[0].en)
+        if (config_regs[0].en)
         begin
-            thread_information.program_length <= wr_csrs[0].data[LOG2_PROGRAM_SIZE-1:0];
-            vc_select <= t_ccip_vc'(wr_csrs[0].data[31:30]);
-            context_switch <= wr_csrs[0].data[16];
+            thread_information.program_length <= config_regs[0].data[LOG2_PROGRAM_SIZE-1:0];
+            context_switch <= config_regs[0].data[16];
         end
 
-        if (wr_csrs[1].en)
+        if (config_regs[1].en)
         begin
-            thread_information.program_addr <= byteAddrToClAddr(wr_csrs[1].data);
+            thread_information.program_addr <= byteAddrToClAddr(config_regs[1].data);
         end
 
-        if (wr_csrs[2].en)
+        if (config_regs[2].en)
         begin
-            thread_information.in_addr <= byteAddrToClAddr(wr_csrs[2].data);
+            thread_information.in_addr <= byteAddrToClAddr(config_regs[2].data);
         end
 
         thread_information.status <= THREAD_IDLE;
-        if (wr_csrs[3].en)
+        if (config_regs[3].en)
         begin
             thread_information.status <= THREAD_LOAD_PROGRAM;
-            thread_information.out_addr <= byteAddrToClAddr(wr_csrs[3].data);
+            thread_information.out_addr <= byteAddrToClAddr(config_regs[3].data);
         end
 
         if (reset)
@@ -120,21 +109,17 @@ module glm_top
     //   Execute Module Signal Definitions
     //
     // =========================================================================
+    dma_control RM_dma_read_control();
+    dma_interface #(.DATA_WIDTH(CLDATA_WIDTH),.ADDRESS_WIDTH(CLADDR_WIDTH)) RM_dma_read();
 
-    logic execute_load_c0TxAlmFull;
-    t_if_ccip_c0_Rx execute_load_cp2af_sRx_c0;
-    t_if_ccip_c0_Tx execute_load_af2cp_sTx_c0;
-
-    logic execute_writeback_c1TxAlmFull;
-    t_if_ccip_c1_Rx execute_writeback_cp2af_sRx_c1;
-    t_if_ccip_c1_Tx execute_writeback_af2cp_sTx_c1;
+    dma_control RM_dma_write_control();
+    dma_interface #(.DATA_WIDTH(CLDATA_WIDTH),.ADDRESS_WIDTH(CLADDR_WIDTH)) RM_dma_write();
 
     // =========================================================================
     //
     //   State Definitions
     //
     // =========================================================================
-
     t_rxtxstate request_state;
     t_rxtxstate receive_state;
     t_machinestate machine_state;
@@ -150,8 +135,13 @@ module glm_top
 
     always_ff @(posedge clk)
     begin
-        af2cp_sTx.c0.hdr <= t_cci_c0_ReqMemHdr'(0);
-        af2cp_sTx.c0.valid <= 1'b0;
+        dma_read_control.start <= 1'b0;
+        dma_read.tx_re <= 1'b0;
+        dma_read.tx_raddr <= 0;
+        dma_read.tx_rlength <= 2'b00;
+
+        dma_write_control.start <= 1'b0;
+        dma_write.tx_we <= 1'b0;
 
         // =================================
         //
@@ -170,28 +160,64 @@ module glm_top
 
             RXTX_STATE_PROGRAM_READ:
             begin
-                if (program_length_request < thread_information.program_length && !cp2af_sRx.c0TxAlmFull)
-                begin
-                    af2cp_sTx.c0.valid <= 1'b1;
-                    af2cp_sTx.c0.hdr.vc_sel <= vc_select;
-                    af2cp_sTx.c0.hdr.address <= thread_information.program_addr + program_length_request;
-                    program_length_request <= program_length_request + 1;
-                    if (program_length_request == thread_information.program_length - 1)
-                    begin
-                        request_state <= RXTX_STATE_CONTEXT_READ;
-                    end
-                end
+                dma_read_control.start <= 1'b1;
+                dma_read_control.regs[0] <= 0;
+                dma_read_control.regs[1] <= 0;
+                dma_read_control.regs[2] <= 0;
+                dma_read_control.regs[3] <= 0;
+                dma_read_control.regs[4] <= thread_information.program_length;
+                dma_read_control.addr <= thread_information.program_addr;
+                dma_read_control.async <= 1'b1;
+                request_state <= RXTX_STATE_CONTEXT_READ;
+
+                // if (dma_read_control.idle)
+                // begin
+                    // dma_read_control.start <= 1'b1;
+                    // dma_read_control.regs[0] <= 0;
+                    // dma_read_control.regs[1] <= 0;
+                    // dma_read_control.regs[2] <= 0;
+                    // dma_read_control.regs[3] <= 0;
+                    // dma_read_control.regs[4] <= thread_information.program_length;
+                    // dma_read_control.addr <= thread_information.program_addr;
+                // end
+                // if (dma_read_control.active && program_length_request < thread_information.program_length)
+                // begin
+                //     dma_read.tx_re <= 1'b1;
+                //     program_length_request <= program_length_request + 1;
+                //     if (program_length_request == thread_information.program_length - 1)
+                //     begin
+                //         request_state <= RXTX_STATE_CONTEXT_READ;
+                //     end
+                // end
             end
 
             RXTX_STATE_CONTEXT_READ:
             begin
-                if (!cp2af_sRx.c0TxAlmFull)
-                begin
-                    af2cp_sTx.c0.valid <= 1'b1;
-                    af2cp_sTx.c0.hdr.vc_sel <= vc_select;
-                    af2cp_sTx.c0.hdr.address <= thread_information.out_addr;
-                    request_state <= RXTX_STATE_PROGRAM_EXECUTE;
-                end
+                dma_read_control.start <= 1'b1;
+                dma_read_control.regs[0] <= 0;
+                dma_read_control.regs[1] <= 0;
+                dma_read_control.regs[2] <= 0;
+                dma_read_control.regs[3] <= 0;
+                dma_read_control.regs[4] <= 1;
+                dma_read_control.addr <= thread_information.out_addr;
+                dma_read_control.async <= 1'b1;
+                request_state <= RXTX_STATE_PROGRAM_EXECUTE;
+
+                // if (dma_read_control.idle)
+                // begin
+                    // dma_read_control.start <= 1'b1;
+                    // dma_read_control.regs[0] <= 0;
+                    // dma_read_control.regs[1] <= 0;
+                    // dma_read_control.regs[2] <= 0;
+                    // dma_read_control.regs[3] <= 0;
+                    // dma_read_control.regs[4] <= 1;
+                    // dma_read_control.addr <= thread_information.out_addr;
+                // end
+                // if (dma_read_control.active)
+                // begin
+                //     dma_read.tx_re <= 1'b1;
+                //     request_state <= RXTX_STATE_PROGRAM_EXECUTE;
+                // end
             end
 
             RXTX_STATE_PROGRAM_EXECUTE:
@@ -202,14 +228,36 @@ module glm_top
                 end
                 else
                 begin
-                    af2cp_sTx.c0 <= execute_load_af2cp_sTx_c0;
-                    af2cp_sTx.c0.hdr.vc_sel <= vc_select;
+                    dma_read_control.start <= RM_dma_read_control.start;
+                    dma_read_control.regs <= RM_dma_read_control.regs;
+                    dma_read_control.addr <= RM_dma_read_control.addr;
+                    dma_read_control.async <= RM_dma_read_control.async;
+                    dma_read.tx_re <= RM_dma_read.tx_re;
+                    dma_read.tx_rlength <= RM_dma_read.tx_rlength;
                 end
             end
 
             RXTX_STATE_DONE:
             begin
-                request_state <= RXTX_STATE_IDLE;
+                if (!dma_write_control.active)
+                begin
+                    dma_write_control.start <= 1'b1;
+                    dma_write_control.regs[0] <= 0;
+                    dma_write_control.regs[1] <= 0;
+                    dma_write_control.regs[2] <= 0;
+                    dma_write_control.regs[3] <= 0;
+                    dma_write_control.regs[4] <= 1;
+                    dma_write_control.addr <= thread_information.out_addr;
+                end
+                else
+                begin
+                    if (!dma_write.tx_walmostfull)
+                    begin
+                        dma_write.tx_we <= 1'b1;
+                        dma_write.tx_wdata <= t_cldata'({thread_context_to_store, 32'b1});
+                        request_state <= RXTX_STATE_IDLE;
+                    end
+                end
             end
         endcase
 
@@ -231,11 +279,11 @@ module glm_top
 
             RXTX_STATE_PROGRAM_READ:
             begin
-                if (cci_c0Rx_isReadRsp(cp2af_sRx.c0))
+                if (dma_read.rx_rvalid)
                 begin
                     program_access.we <= 1'b1;
                     program_access.waddr <= program_length_receive;
-                    program_access.wdata <= cp2af_sRx.c0.data;
+                    program_access.wdata <= dma_read.rx_rdata;
                     program_length_receive <= program_length_receive + 1;
                     if (program_length_receive == thread_information.program_length-1)
                     begin
@@ -246,34 +294,48 @@ module glm_top
 
             RXTX_STATE_CONTEXT_READ:
             begin
-                if (cci_c0Rx_isReadRsp(cp2af_sRx.c0))
+                if (dma_read.rx_rvalid)
                 begin
-                    thread_context.regs[0] <= cp2af_sRx.c0.data[63:32];
-                    thread_context.regs[1] <= cp2af_sRx.c0.data[95:64];
-                    thread_context.regs[2] <= cp2af_sRx.c0.data[127:96];
-                    thread_context.program_counter <= cp2af_sRx.c0.data[135:128];
-                    thread_context.pc_context_store <= cp2af_sRx.c0.data[143:136];
-                    thread_context.pc_context_load <= cp2af_sRx.c0.data[151:144];
+                    thread_context.regs[0] <= dma_read.rx_rdata[63:32];
+                    thread_context.regs[1] <= dma_read.rx_rdata[95:64];
+                    thread_context.regs[2] <= dma_read.rx_rdata[127:96];
+                    thread_context.program_counter <= dma_read.rx_rdata[135:128];
+                    thread_context.pc_context_store <= dma_read.rx_rdata[143:136];
+                    thread_context.pc_context_load <= dma_read.rx_rdata[151:144];
                     receive_state <= RXTX_STATE_PROGRAM_EXECUTE;
                 end
             end
 
             RXTX_STATE_PROGRAM_EXECUTE:
             begin
-                if (machine_state == MACHINE_STATE_DONE && !cp2af_sRx.c1TxAlmFull)
+                if (machine_state == MACHINE_STATE_DONE)
                 begin
                     receive_state <= RXTX_STATE_DONE;
                 end
                 else
                 begin
-                    execute_load_cp2af_sRx_c0 <= cp2af_sRx.c0;
-                    execute_load_c0TxAlmFull <= cp2af_sRx.c0TxAlmFull;
+                    RM_dma_read_control.active <= dma_read_control.active;
+                    RM_dma_read_control.done <= dma_read_control.done;
+                    RM_dma_read.rx_rvalid <= dma_read.rx_rvalid;
+                    RM_dma_read.rx_rdata <= dma_read.rx_rdata;
+
+                    dma_write_control.start <= RM_dma_write_control.start;
+                    dma_write_control.regs <= RM_dma_write_control.regs;
+                    dma_write_control.addr <= RM_dma_write_control.addr;
+                    RM_dma_write_control.active <= dma_write_control.active;
+                    RM_dma_write_control.done <= dma_write_control.done;
+                    dma_write.tx_we <= RM_dma_write.tx_we;
+                    dma_write.tx_wdata <= RM_dma_write.tx_wdata;
+                    RM_dma_write.rx_wvalid <= dma_write.rx_wvalid;
                 end
             end
 
             RXTX_STATE_DONE:
             begin
-                receive_state <= RXTX_STATE_IDLE;
+                if (dma_write.rx_wvalid)
+                begin
+                    receive_state <= RXTX_STATE_IDLE;
+                end
             end
         endcase
 
@@ -286,42 +348,9 @@ module glm_top
 
     // =========================================================================
     //
-    //   Write Back
-    //
-    // =========================================================================
-    always_ff @(posedge clk)
-    begin
-        af2cp_sTx.c1.hdr <= t_cci_c1_ReqMemHdr'(0);
-        af2cp_sTx.c1.hdr.sop <= 1'b1;
-        af2cp_sTx.c1.valid <= 1'b0;
-
-        if (receive_state == RXTX_STATE_PROGRAM_EXECUTE)
-        begin
-            execute_writeback_cp2af_sRx_c1 <= cp2af_sRx.c1;
-            execute_writeback_c1TxAlmFull <= cp2af_sRx.c1TxAlmFull;
-            af2cp_sTx.c1 <= execute_writeback_af2cp_sTx_c1;
-            af2cp_sTx.c1.hdr.vc_sel <= vc_select;
-        end
-        else if (receive_state == RXTX_STATE_DONE)
-        begin
-            af2cp_sTx.c1.valid <= 1'b1;
-            af2cp_sTx.c1.data <= t_ccip_clData'({thread_context_to_store, 32'b1});
-            af2cp_sTx.c1.hdr.address <= thread_information.out_addr;
-            af2cp_sTx.c1.hdr.vc_sel <= vc_select;
-        end
-    end
-
-    //
-    // This AFU never handles MMIO reads.  MMIO is managed in the CSR module.
-    //
-    assign af2cp_sTx.c2.mmioRdValid = 1'b0;
-
-    // =========================================================================
-    //
     //   Register Machine
     //
     // =========================================================================
-
     function automatic logic[31:0] DSP27Mult(logic[31:0] left, logic[31:0] right);
         logic[31:0] result;
         result = left[26:0]*right[26:0];
@@ -487,6 +516,8 @@ module glm_top
     logic [31:0] update_regs [6];
     logic [31:0] copy_regs [5];
 
+    dma_control LOAD_dma_read_control();
+
     always_ff @(posedge clk)
     begin
         if(machine_state == MACHINE_STATE_IDLE)
@@ -512,6 +543,14 @@ module glm_top
     assign synchronize = op_start[7];
     assign op_done[7] = synchronize_done;
 
+    // Arbitrate access to dma_read
+    assign RM_dma_read_control.start = op_start[0] | LOAD_dma_read_control.start;
+    assign RM_dma_read_control.regs = (op_start[0]) ? prefetch_regs : LOAD_dma_read_control.regs;
+    assign RM_dma_read_control.addr = (op_start[0]) ? thread_information.in_addr : LOAD_dma_read_control.addr;
+    assign RM_dma_read_control.async = 1'b0;
+    assign op_done[0] = RM_dma_read_control.done;
+    assign LOAD_dma_read_control.done = RM_dma_read_control.done;
+
     always_ff @(posedge clk)
     begin
         op_start <= 0;
@@ -520,7 +559,6 @@ module glm_top
         case(machine_state)
             MACHINE_STATE_IDLE:
             begin
-                // {<<{regs}} <= REGS_WIDTH'(0);
                 if (receive_state == RXTX_STATE_PROGRAM_EXECUTE)
                 begin
                     program_access.re <= 1'b1;
@@ -1006,27 +1044,6 @@ module glm_top
     //
     // =========================================================================
 
-    logic execute_afterprefetch_c0TxAlmFull;
-    t_if_ccip_c0_Rx execute_afterprefetch_cp2af_sRx_c0;
-    t_if_ccip_c0_Tx execute_afterprefetch_af2cp_sTx_c0;
-
-    pipearch_prefetch
-    execute_prefetch
-    (
-        .clk,
-        .reset,
-        .op_start(op_start[0]),
-        .op_done(op_done[0]),
-        .regs(prefetch_regs),
-        .in_addr(thread_information.in_addr),
-        .c0TxAlmFull(execute_load_c0TxAlmFull),
-        .cp2af_sRx_c0(execute_load_cp2af_sRx_c0),
-        .af2cp_sTx_c0(execute_load_af2cp_sTx_c0),
-        .get_c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
-        .get_cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
-        .get_af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0)
-    );
-
     glm_load
     execute_load
     (
@@ -1036,9 +1053,8 @@ module glm_top
         .op_done(op_done[1]),
         .regs(load_regs),
         .in_addr(thread_information.in_addr),
-        .c0TxAlmFull(execute_afterprefetch_c0TxAlmFull),
-        .cp2af_sRx_c0(execute_afterprefetch_cp2af_sRx_c0),
-        .af2cp_sTx_c0(execute_afterprefetch_af2cp_sTx_c0),
+        .dma_read_control(LOAD_dma_read_control),
+        .dma_read(RM_dma_read),
         .FIFO_input(FIFO_input_interface.fifo_write),
         .FIFO_samplesforward(FIFO_samplesforward_interface.fifo_write),
         .MEM_model(load_MEM_model_interface.bram_write),
@@ -1046,7 +1062,6 @@ module glm_top
         .MEM_accessprops(load_MEM_accessprops_interface.bram_readwrite)
     );
 
-    
     glm_writeback
     execute_writeback
     (
@@ -1059,9 +1074,8 @@ module glm_top
         .out_addr(thread_information.out_addr),
         .MEM_model(writeback_MEM_model_interface.bram_read),
         .MEM_labels(writeback_MEM_labels_interface.bram_read),
-        .c1TxAlmFull(execute_writeback_c1TxAlmFull),
-        .cp2af_sRx_c1(execute_writeback_cp2af_sRx_c1),
-        .af2cp_sTx_c1(execute_writeback_af2cp_sTx_c1)
+        .dma_write_control(RM_dma_write_control),
+        .dma_write(RM_dma_write)
     );
 
     // *************************************************************************
@@ -1069,7 +1083,6 @@ module glm_top
     //   Local Computation
     //
     // *************************************************************************
-    
     glm_dot
     execute_dot
     (

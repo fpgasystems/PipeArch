@@ -1,11 +1,11 @@
 C:../../../../common-rtl/common_sources_sim.txt
 
-pipearch_cci.json
-
-pipearch_top.sv
-glm_top.sv
-glm_load.sv
-glm_writeback.sv
 glm_dot.sv
+glm_load.sv
 glm_modify.sv
+glm_top.sv
 glm_update.sv
+glm_writeback.sv
+intel_arbiter.sv
+intel_top.sv
+pipearch_cci.json

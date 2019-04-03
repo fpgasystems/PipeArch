@@ -1,25 +1,19 @@
 `include "cci_mpf_if.vh"
 `include "pipearch_common.vh"
 
-module pipearch_prefetch
+module pipearch_dma_read
 (
     input  logic clk,
     input  logic reset,
-
-    input  logic op_start,
-    output logic op_done,
-
-    input logic [31:0] regs [5],
-    input t_ccip_clAddr in_addr,
 
     // CCI-P request/response
     input  c0TxAlmFull,
     input  t_if_ccip_c0_Rx cp2af_sRx_c0,
     output t_if_ccip_c0_Tx af2cp_sTx_c0,
+    input t_ccip_vc vc_select,
 
-    output logic get_c0TxAlmFull,
-    output t_if_ccip_c0_Rx get_cp2af_sRx_c0,
-    input  t_if_ccip_c0_Tx get_af2cp_sTx_c0
+    dma_control.at_dma get_control,
+    dma_interface.from_dma_read get_requests
 );
     // *************************************************************************
     //
@@ -42,9 +36,10 @@ module pipearch_prefetch
     //
     // *************************************************************************
     logic[31:0] offset_by_index[3];
-    t_ccip_clAddr DRAM_load_offset;
-    t_ccip_clAddr running_DRAM_load_offset;
+    t_claddr DRAM_load_offset;
+    t_claddr running_DRAM_load_offset;
     logic [31:0] DRAM_load_length;
+    logic [31:0] DRAM_receive_length;
     logic enable_multiline;
 
     // *************************************************************************
@@ -54,6 +49,7 @@ module pipearch_prefetch
     // *************************************************************************
     logic [1:0] offset_accumulate;
     logic [31:0] num_wait_fifo_lines;
+    logic [31:0] RX_num_wait_fifo_lines;
     logic [31:0] num_requested_lines;
     logic [31:0] num_requested_lines_plus2;
     logic [31:0] num_requested_lines_plus4;
@@ -63,6 +59,65 @@ module pipearch_prefetch
     logic [31:0] num_lines_in_flight;
     logic signed [31:0] prefetch_fifo_free_count;
     logic signed [31:0] num_allowed_lines_to_request;
+
+    // *************************************************************************
+    //
+    //  Transaction FIFO
+    //
+    // *************************************************************************
+    logic request_async;
+    logic receive_async;
+    logic [31:0] temp_reg [5];
+    t_claddr temp_addr;
+
+    parameter TX_FIFO_WIDTH = 1+32*5+$bits(t_claddr);
+    fifobram_interface #(.WIDTH(TX_FIFO_WIDTH), .LOG2_DEPTH(6)) tx_fifo_access();
+    fifo
+    #(.WIDTH(TX_FIFO_WIDTH), .LOG2_DEPTH(6))
+    tx_fifo
+    (
+        .clk,
+        .reset,
+        .access(tx_fifo_access.fifo_source)
+    );
+    always_ff @(posedge clk)
+    begin
+        tx_fifo_access.we <= get_control.start;
+        tx_fifo_access.wdata <= {   get_control.async,
+                                    get_control.regs[4],
+                                    get_control.regs[3],
+                                    get_control.regs[2],
+                                    get_control.regs[1],
+                                    get_control.regs[0],
+                                    get_control.addr};
+        tx_fifo_access.re <= 1'b0;
+        if (!tx_fifo_access.empty && request_state == STATE_IDLE)
+        begin
+            tx_fifo_access.re <= 1'b1;
+        end
+    end
+
+    parameter RX_FIFO_WIDTH = 1+32;
+    fifobram_interface #(.WIDTH(RX_FIFO_WIDTH), .LOG2_DEPTH(6)) rx_fifo_access();
+    fifo
+    #(.WIDTH(RX_FIFO_WIDTH), .LOG2_DEPTH(6))
+    rx_fifo
+    (
+        .clk,
+        .reset,
+        .access(rx_fifo_access.fifo_source)
+    );
+    always_ff @(posedge clk)
+    begin
+        rx_fifo_access.we <= get_control.start;
+        rx_fifo_access.wdata <= {   get_control.async,
+                                    get_control.regs[4]};
+        rx_fifo_access.re <= 1'b0;
+        if (!rx_fifo_access.empty && receive_state == STATE_IDLE)
+        begin
+            rx_fifo_access.re <= 1'b1;
+        end
+    end
 
     // *************************************************************************
     //
@@ -83,7 +138,7 @@ module pipearch_prefetch
     begin
         prefetch_fifo_access.wdata <= {cp2af_sRx_c0.hdr, cp2af_sRx_c0.data};
         prefetch_fifo_access.we <= 1'b0;
-        if (op_start)
+        if (rx_fifo_access.rvalid)
         begin
             num_received_lines <= 32'b0;
         end
@@ -93,6 +148,9 @@ module pipearch_prefetch
             num_received_lines <= num_received_lines + 1;
         end
     end
+
+    assign get_control.idle = (request_state == STATE_IDLE && receive_state == STATE_IDLE);
+    assign get_control.active = (request_state == STATE_READ);
 
     always_ff @(posedge clk)
     begin
@@ -106,10 +164,10 @@ module pipearch_prefetch
         num_allowed_lines_to_request <= prefetch_fifo_free_count - $signed(num_lines_in_flight);
 
         af2cp_sTx_c0.hdr <= t_cci_c0_ReqMemHdr'(0);
+        af2cp_sTx_c0.hdr.vc_sel <= vc_select;
         af2cp_sTx_c0.valid <= 1'b0;
         prefetch_fifo_access.re <= 1'b0;
-        get_cp2af_sRx_c0.rspValid <= 1'b0;
-        op_done <= 1'b0;
+        get_requests.rx_rvalid <= 1'b0;
 
         // =================================
         //
@@ -119,22 +177,32 @@ module pipearch_prefetch
         case (request_state)
             STATE_IDLE:
             begin
-                get_c0TxAlmFull <= c0TxAlmFull;
-                af2cp_sTx_c0 <= get_af2cp_sTx_c0;
+                get_requests.tx_ralmostfull <= c0TxAlmFull;
+                af2cp_sTx_c0.valid <= get_requests.tx_re;
+                af2cp_sTx_c0.hdr.address <= get_requests.tx_raddr;
+                af2cp_sTx_c0.hdr.cl_len <= t_ccip_clLen'(get_requests.tx_rlength);
 
-                if (op_start)
+                if (tx_fifo_access.rvalid)
                 begin
                     // *************************************************************************
-                    offset_by_index[0] <= regs[0];
-                    offset_by_index[1] <= regs[1];
-                    offset_by_index[2] <= regs[2];
-                    DRAM_load_offset <= in_addr + regs[3];
-                    running_DRAM_load_offset <= in_addr + regs[3];
-                    DRAM_load_length <= 32'(regs[4][30:0]);
-                    enable_multiline <= regs[4][31];
+                    request_async <= tx_fifo_access.rdata[$bits(t_claddr)+5*32];
+                    temp_reg[4] = tx_fifo_access.rdata[$bits(t_claddr)+128 +: 32];
+                    temp_reg[3] = tx_fifo_access.rdata[$bits(t_claddr)+96 +: 32];
+                    temp_reg[2] = tx_fifo_access.rdata[$bits(t_claddr)+64 +: 32];
+                    temp_reg[1] = tx_fifo_access.rdata[$bits(t_claddr)+32 +: 32];
+                    temp_reg[0] = tx_fifo_access.rdata[$bits(t_claddr) +: 32];
+                    temp_addr = tx_fifo_access.rdata[0 +: $bits(t_claddr)];
+
+                    offset_by_index[0] <= temp_reg[0];
+                    offset_by_index[1] <= temp_reg[1];
+                    offset_by_index[2] <= temp_reg[2];
+                    DRAM_load_offset <= temp_addr + temp_reg[3];
+                    running_DRAM_load_offset <= temp_addr + temp_reg[3];
+                    DRAM_load_length <= temp_reg[4][30:0];
+                    enable_multiline <= temp_reg[4][31];
+                    num_wait_fifo_lines <= tx_fifo_access.rdata[$bits(t_claddr)+5*32] ? temp_reg[4][30:0] : 32'b0;
                     // *************************************************************************
                     offset_accumulate <= 2'b0;
-                    num_wait_fifo_lines <= 32'b0;
                     num_requested_lines <= 32'b0;
                     num_requested_lines_plus4 <= 32'd4;
                     num_requested_lines_plus2 <= 32'd2;
@@ -163,7 +231,7 @@ module pipearch_prefetch
                         (running_DRAM_load_offset[1:0] == 2'b0))
                     begin
                         af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                        af2cp_sTx_c0.hdr.address <= t_claddr'(running_DRAM_load_offset);
                         af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
                         af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_4;
                         num_requested_lines <= num_requested_lines_plus4;
@@ -176,7 +244,7 @@ module pipearch_prefetch
                         (running_DRAM_load_offset[0] == 1'b0))
                     begin
                         af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                        af2cp_sTx_c0.hdr.address <= t_claddr'(running_DRAM_load_offset);
                         af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
                         af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_2;
                         num_requested_lines <= num_requested_lines_plus2;
@@ -187,7 +255,7 @@ module pipearch_prefetch
                     else if (num_requested_lines < DRAM_load_length)
                     begin
                         af2cp_sTx_c0.valid <= 1'b1;
-                        af2cp_sTx_c0.hdr.address <= t_ccip_clAddr'(running_DRAM_load_offset);
+                        af2cp_sTx_c0.hdr.address <= t_claddr'(running_DRAM_load_offset);
                         af2cp_sTx_c0.hdr.mdata <= num_requested_lines[15:0];
                         af2cp_sTx_c0.hdr.cl_len <= eCL_LEN_1;
                         num_requested_lines <= num_requested_lines + 1;
@@ -198,16 +266,16 @@ module pipearch_prefetch
 
                 end
 
-                get_c0TxAlmFull <= 1'b0;
-                if (get_af2cp_sTx_c0.valid)
+                get_requests.tx_ralmostfull <= 1'b0;
+                if (get_requests.tx_re && !request_async)
                 begin
-                    if (get_af2cp_sTx_c0.hdr.cl_len == eCL_LEN_4) begin
+                    if (get_requests.tx_rlength == 2'b11) begin
                         num_wait_fifo_lines <= num_wait_fifo_lines + 4;
                     end
-                    else if (get_af2cp_sTx_c0.hdr.cl_len == eCL_LEN_2) begin
+                    else if (get_requests.tx_rlength == 2'b01) begin
                         num_wait_fifo_lines <= num_wait_fifo_lines + 2;
                     end
-                    else if (get_af2cp_sTx_c0.hdr.cl_len == eCL_LEN_1) begin
+                    else if (get_requests.tx_rlength == 2'b00) begin
                         num_wait_fifo_lines <= num_wait_fifo_lines + 1;
                     end
                 end
@@ -229,14 +297,19 @@ module pipearch_prefetch
         //   Receive State Machine
         //
         // =================================
-        get_cp2af_sRx_c0.rspValid <= 1'b0;
-        op_done <= 1'b0;
+        get_requests.rx_rvalid <= 1'b0;
+        get_control.done <= 1'b0;
         case (receive_state)
             STATE_IDLE:
             begin
-                get_cp2af_sRx_c0 <= cp2af_sRx_c0;
-                if (op_start)
+                get_requests.rx_rvalid <= cp2af_sRx_c0.rspValid;
+                get_requests.rx_rdata <= cp2af_sRx_c0.data;
+                if (rx_fifo_access.rvalid)
                 begin
+                    // *************************************************************************
+                    receive_async <= rx_fifo_access.rdata[32];
+                    DRAM_receive_length <= rx_fifo_access.rdata[30:0];
+                    // *************************************************************************
                     num_forward_request_lines <= 32'b0;
                     num_forwarded_lines <= 32'b0;
                     receive_state <= STATE_READ;
@@ -245,7 +318,7 @@ module pipearch_prefetch
 
             STATE_READ:
             begin
-                if (!prefetch_fifo_access.empty && num_forward_request_lines < num_wait_fifo_lines)
+                if (!prefetch_fifo_access.empty && (receive_async || num_forward_request_lines < num_wait_fifo_lines))
                 begin
                     prefetch_fifo_access.re <= 1'b1;
                     num_forward_request_lines <= num_forward_request_lines + 1;
@@ -253,13 +326,12 @@ module pipearch_prefetch
 
                 if (prefetch_fifo_access.rvalid)
                 begin
-                    get_cp2af_sRx_c0.rspValid <= 1'b1;
-                    get_cp2af_sRx_c0.hdr <= t_cci_c0_RspMemHdr'(prefetch_fifo_access.rdata[512+$bits(t_cci_c0_RspMemHdr)-1:512]);
-                    get_cp2af_sRx_c0.data <= prefetch_fifo_access.rdata[511:0];
+                    get_requests.rx_rvalid <= 1'b1;
+                    get_requests.rx_rdata <= prefetch_fifo_access.rdata[511:0];
                     num_forwarded_lines <= num_forwarded_lines + 1;
                 end
 
-                if (num_forwarded_lines == DRAM_load_length)
+                if (num_forwarded_lines == DRAM_receive_length)
                 begin
                     receive_state <= STATE_DONE;
                 end
@@ -267,7 +339,7 @@ module pipearch_prefetch
 
             STATE_DONE:
             begin
-                op_done <= 1'b1;
+                get_control.done <= 1'b1;
                 receive_state <= STATE_IDLE;
             end
         endcase
@@ -279,5 +351,4 @@ module pipearch_prefetch
         end
     end
 
-
-endmodule // pipearch_prefetch
+endmodule // pipearch_dma_read
