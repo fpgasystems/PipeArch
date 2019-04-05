@@ -7,7 +7,7 @@ TEST = scratch
 
 # Build directory
 OBJDIR = obj
-INCLUDE = include
+INCLUDE = $(sw_path)/include
 CFLAGS += -I./$(OBJDIR)
 CPPFLAGS += -I./$(OBJDIR) -march=native
 

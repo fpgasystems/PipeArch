@@ -12,8 +12,7 @@ module pipearch_dma_read
     output t_if_ccip_c0_Tx af2cp_sTx_c0,
     input t_ccip_vc vc_select,
 
-    dma_control.at_dma get_control,
-    dma_interface.from_dma_read get_requests
+    dma_read_interface.at_dma DMA_read
 );
     // *************************************************************************
     //
@@ -66,7 +65,6 @@ module pipearch_dma_read
     //
     // *************************************************************************
     logic request_async;
-    logic receive_async;
     logic [31:0] temp_reg [5];
     t_claddr temp_addr;
 
@@ -80,42 +78,26 @@ module pipearch_dma_read
         .reset,
         .access(tx_fifo_access.fifo_source)
     );
+    logic started_request;
     always_ff @(posedge clk)
     begin
-        tx_fifo_access.we <= get_control.start;
-        tx_fifo_access.wdata <= {   get_control.async,
-                                    get_control.regs[4],
-                                    get_control.regs[3],
-                                    get_control.regs[2],
-                                    get_control.regs[1],
-                                    get_control.regs[0],
-                                    get_control.addr};
+        tx_fifo_access.we <= DMA_read.control.start;
+        tx_fifo_access.wdata <= {   DMA_read.control.async,
+                                    DMA_read.control.regs.reg4,
+                                    DMA_read.control.regs.reg3,
+                                    DMA_read.control.regs.reg2,
+                                    DMA_read.control.regs.reg1,
+                                    DMA_read.control.regs.reg0,
+                                    DMA_read.control.addr};
         tx_fifo_access.re <= 1'b0;
-        if (!tx_fifo_access.empty && request_state == STATE_IDLE)
+        if (!tx_fifo_access.empty && started_request == 1'b0)
         begin
             tx_fifo_access.re <= 1'b1;
+            started_request <= 1'b1;
         end
-    end
-
-    parameter RX_FIFO_WIDTH = 1+32;
-    fifobram_interface #(.WIDTH(RX_FIFO_WIDTH), .LOG2_DEPTH(6)) rx_fifo_access();
-    fifo
-    #(.WIDTH(RX_FIFO_WIDTH), .LOG2_DEPTH(6))
-    rx_fifo
-    (
-        .clk,
-        .reset,
-        .access(rx_fifo_access.fifo_source)
-    );
-    always_ff @(posedge clk)
-    begin
-        rx_fifo_access.we <= get_control.start;
-        rx_fifo_access.wdata <= {   get_control.async,
-                                    get_control.regs[4]};
-        rx_fifo_access.re <= 1'b0;
-        if (!rx_fifo_access.empty && receive_state == STATE_IDLE)
+        if (reset || request_state == STATE_DONE)
         begin
-            rx_fifo_access.re <= 1'b1;
+            started_request <= 1'b0;
         end
     end
 
@@ -138,19 +120,19 @@ module pipearch_dma_read
     begin
         prefetch_fifo_access.wdata <= {cp2af_sRx_c0.hdr, cp2af_sRx_c0.data};
         prefetch_fifo_access.we <= 1'b0;
-        if (rx_fifo_access.rvalid)
+        if (tx_fifo_access.rvalid)
         begin
             num_received_lines <= 32'b0;
         end
-        if (cci_c0Rx_isReadRsp(cp2af_sRx_c0) && (receive_state == STATE_READ))
+        if (cp2af_sRx_c0.rspValid && receive_state == STATE_READ)
         begin
             prefetch_fifo_access.we <= 1'b1;
             num_received_lines <= num_received_lines + 1;
         end
     end
 
-    assign get_control.idle = (request_state == STATE_IDLE && receive_state == STATE_IDLE);
-    assign get_control.active = (request_state == STATE_READ);
+    assign DMA_read.status.idle = (request_state == STATE_IDLE && receive_state == STATE_IDLE);
+    assign DMA_read.status.active = (request_state == STATE_READ);
 
     always_ff @(posedge clk)
     begin
@@ -167,7 +149,7 @@ module pipearch_dma_read
         af2cp_sTx_c0.hdr.vc_sel <= vc_select;
         af2cp_sTx_c0.valid <= 1'b0;
         prefetch_fifo_access.re <= 1'b0;
-        get_requests.rx_rvalid <= 1'b0;
+        DMA_read.rx_read.rvalid <= 1'b0;
 
         // =================================
         //
@@ -177,10 +159,10 @@ module pipearch_dma_read
         case (request_state)
             STATE_IDLE:
             begin
-                get_requests.tx_ralmostfull <= c0TxAlmFull;
-                af2cp_sTx_c0.valid <= get_requests.tx_re;
-                af2cp_sTx_c0.hdr.address <= get_requests.tx_raddr;
-                af2cp_sTx_c0.hdr.cl_len <= t_ccip_clLen'(get_requests.tx_rlength);
+                DMA_read.rx_read.ralmostfull <= c0TxAlmFull;
+                af2cp_sTx_c0.valid <= DMA_read.tx_read.re;
+                af2cp_sTx_c0.hdr.address <= DMA_read.tx_read.raddr;
+                af2cp_sTx_c0.hdr.cl_len <= t_ccip_clLen'(DMA_read.tx_read.rlength);
 
                 if (tx_fifo_access.rvalid)
                 begin
@@ -266,16 +248,16 @@ module pipearch_dma_read
 
                 end
 
-                get_requests.tx_ralmostfull <= 1'b0;
-                if (get_requests.tx_re && !request_async)
+                DMA_read.rx_read.ralmostfull <= 1'b0;
+                if (DMA_read.tx_read.re && !request_async)
                 begin
-                    if (get_requests.tx_rlength == 2'b11) begin
+                    if (DMA_read.tx_read.rlength == 2'b11) begin
                         num_wait_fifo_lines <= num_wait_fifo_lines + 4;
                     end
-                    else if (get_requests.tx_rlength == 2'b01) begin
+                    else if (DMA_read.tx_read.rlength == 2'b01) begin
                         num_wait_fifo_lines <= num_wait_fifo_lines + 2;
                     end
-                    else if (get_requests.tx_rlength == 2'b00) begin
+                    else if (DMA_read.tx_read.rlength == 2'b00) begin
                         num_wait_fifo_lines <= num_wait_fifo_lines + 1;
                     end
                 end
@@ -297,18 +279,17 @@ module pipearch_dma_read
         //   Receive State Machine
         //
         // =================================
-        get_requests.rx_rvalid <= 1'b0;
-        get_control.done <= 1'b0;
+        DMA_read.rx_read.rvalid <= 1'b0;
+        DMA_read.status.done <= 1'b0;
         case (receive_state)
             STATE_IDLE:
             begin
-                get_requests.rx_rvalid <= cp2af_sRx_c0.rspValid;
-                get_requests.rx_rdata <= cp2af_sRx_c0.data;
-                if (rx_fifo_access.rvalid)
+                DMA_read.rx_read.rvalid <= cp2af_sRx_c0.rspValid;
+                DMA_read.rx_read.rdata <= cp2af_sRx_c0.data;
+                if (tx_fifo_access.rvalid && !tx_fifo_access.rdata[$bits(t_claddr)+5*32])
                 begin
                     // *************************************************************************
-                    receive_async <= rx_fifo_access.rdata[32];
-                    DRAM_receive_length <= rx_fifo_access.rdata[30:0];
+                    DRAM_receive_length <= tx_fifo_access.rdata[$bits(t_claddr)+128 +: 31];
                     // *************************************************************************
                     num_forward_request_lines <= 32'b0;
                     num_forwarded_lines <= 32'b0;
@@ -318,7 +299,7 @@ module pipearch_dma_read
 
             STATE_READ:
             begin
-                if (!prefetch_fifo_access.empty && (receive_async || num_forward_request_lines < num_wait_fifo_lines))
+                if (!prefetch_fifo_access.empty && num_forward_request_lines < num_wait_fifo_lines)
                 begin
                     prefetch_fifo_access.re <= 1'b1;
                     num_forward_request_lines <= num_forward_request_lines + 1;
@@ -326,8 +307,8 @@ module pipearch_dma_read
 
                 if (prefetch_fifo_access.rvalid)
                 begin
-                    get_requests.rx_rvalid <= 1'b1;
-                    get_requests.rx_rdata <= prefetch_fifo_access.rdata[511:0];
+                    DMA_read.rx_read.rvalid <= 1'b1;
+                    DMA_read.rx_read.rdata <= prefetch_fifo_access.rdata[511:0];
                     num_forwarded_lines <= num_forwarded_lines + 1;
                 end
 
@@ -339,7 +320,7 @@ module pipearch_dma_read
 
             STATE_DONE:
             begin
-                get_control.done <= 1'b1;
+                DMA_read.status.done <= 1'b1;
                 receive_state <= STATE_IDLE;
             end
         endcase

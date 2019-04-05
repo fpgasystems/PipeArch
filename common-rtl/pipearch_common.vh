@@ -1,6 +1,8 @@
 `ifndef PIPEARCH_COMMON
 `define PIPEARCH_COMMON
 
+`define XILINX
+
 parameter LOG2_PREFETCH_SIZE = 9;
 parameter PREFETCH_SIZE = 2**LOG2_PREFETCH_SIZE - 16;
 
@@ -20,90 +22,89 @@ typedef struct packed {
     logic en;
 } config_registers;
 
-interface dma_control ();
+typedef struct packed {
+    logic [31:0] reg0;
+    logic [31:0] reg1;
+    logic [31:0] reg2;
+    logic [31:0] reg3;
+    logic [31:0] reg4;
+} t_dma_reg;
+
+typedef struct packed {
+    logic start;
+    logic async;
+    t_dma_reg regs;
+    t_claddr addr;
+} t_dma_control;
+
+typedef struct packed {
     logic idle;
     logic active;
-    logic start;
     logic done;
-    logic async;
-    logic [31:0] regs [5];
-    t_claddr addr;
+} t_dma_status;
+
+typedef struct packed {
+    // Read Request
+    logic                       re;
+    logic [CLADDR_WIDTH-1:0]    raddr;
+    logic [1:0]                 rlength; // 00 -> 1, 01 -> 2, 11 -> 4
+} t_dma_tx_read;
+
+typedef struct packed {
+    // Read Response
+    logic                       rvalid;
+    logic [CLDATA_WIDTH-1:0]    rdata;
+    logic                       ralmostfull;
+} t_dma_rx_read;
+
+typedef struct packed {
+    // Write Request
+    logic                       we;
+    logic [CLDATA_WIDTH-1:0]    wdata;
+} t_dma_tx_write;
+
+typedef struct packed {
+    // Write Response
+    logic                       wvalid;
+    logic                       walmostfull;
+} t_dma_rx_write;
+
+interface dma_read_interface();
+    t_dma_control control;
+    t_dma_status status;
+    t_dma_tx_read tx_read;
+    t_dma_rx_read rx_read;
 
     modport to_dma (
-        input idle,
-        input active,
-        output start,
-        input done,
-        output async,
-        output regs,
-        output addr);
+        output control,
+        input status,
+        output tx_read,
+        input rx_read);
 
     modport at_dma (
-        output idle,
-        output active,
-        input start,
-        output done,
-        input async,
-        input regs,
-        input addr);
+        input control,
+        output status,
+        input tx_read,
+        output rx_read);
 endinterface
 
-interface dma_interface
-#(
-    parameter DATA_WIDTH = 512,
-    parameter ADDRESS_WIDTH = 42
-)
-();
-    
-    // Read Request
-    logic                       tx_re;
-    logic [ADDRESS_WIDTH-1:0]   tx_raddr;
-    logic [1:0]                 tx_rlength; // 00 -> 1, 01 -> 2, 11 -> 4
-    logic                       tx_ralmostfull;
+interface dma_write_interface();
+    t_dma_control control;
+    t_dma_status status;
+    t_dma_tx_write tx_write;
+    t_dma_rx_write rx_write;
 
-    // Read Response
-    logic                       rx_rvalid;
-    logic [DATA_WIDTH-1:0]      rx_rdata;
+    modport to_dma (
+        output control,
+        input status,
+        output tx_write,
+        input rx_write);
 
-    // Write Request
-    logic                       tx_we;
-    logic [DATA_WIDTH-1:0]      tx_wdata;
-    logic                       tx_walmostfull;
-
-    // Write Response
-    logic                       rx_wvalid;
-
-    modport to_dma_read (
-        output tx_re,
-        output tx_raddr,
-        output tx_rlength,
-        input tx_ralmostfull,
-
-        input rx_rvalid,
-        input rx_rdata);
-
-    modport from_dma_read (
-        input tx_re,
-        input tx_raddr,
-        input tx_rlength,
-        output tx_ralmostfull,
-
-        output rx_rvalid,
-        output rx_rdata);
-
-    modport to_dma_write (
-        output tx_we,
-        output tx_wdata,
-        input tx_walmostfull,
-
-        input rx_wvalid);
-
-    modport from_dma_write (
-        input tx_we,
-        input tx_wdata,
-        output tx_walmostfull,
-
-        output rx_wvalid);
+    modport at_dma (
+        input control,
+        output status,
+        input tx_write,
+        output rx_write);
 endinterface
 
 interface internal_interface
@@ -230,6 +231,7 @@ typedef enum logic [2:0]
     RXTX_STATE_IDLE,
     RXTX_STATE_PROGRAM_READ,
     RXTX_STATE_CONTEXT_READ,
+    RXTX_STATE_CONTEXT_WRITE,
     RXTX_STATE_PROGRAM_EXECUTE,
     RXTX_STATE_DONE
 } t_rxtxstate;

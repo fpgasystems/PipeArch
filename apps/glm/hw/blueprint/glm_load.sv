@@ -9,12 +9,12 @@ module glm_load
     input  logic op_start,
     output logic op_done,
 
+    input logic in_trigger_dma,
     input logic [31:0] regs [5+NUM_LOAD_CHANNELS],
     input t_claddr in_addr,
 
     // request/response
-    dma_control.to_dma dma_read_control,
-    dma_interface.to_dma_read dma_read,
+    dma_read_interface DMA_read,
 
     fifobram_interface.fifo_write FIFO_input,
     fifobram_interface.fifo_write FIFO_samplesforward,
@@ -115,6 +115,7 @@ module glm_load
         STATE_FETCH_ACCESSPROPS,
         STATE_RECEIVE_ACCESSPROPS,
         STATE_ADD_ACCESSPROPS,
+        STATE_TRIGGER,
         STATE_READ,
         STATE_DONE
     } t_readstate;
@@ -126,6 +127,7 @@ module glm_load
     //   Instruction Information
     //
     // *************************************************************************
+    logic trigger_dma;
     logic[31:0] offset_by_index[3];
     logic [$bits(t_claddr)-32-1:0] upper_part_address;
     logic [31:0] running_DRAM_load_offset;
@@ -175,11 +177,11 @@ module glm_load
         begin
             num_received_lines <= 32'b0;
         end
-        if (dma_read.rx_rvalid && receive_state == STATE_READ)
+        if (DMA_read.rx_read.rvalid && receive_state == STATE_READ)
         begin
             num_received_lines <= num_received_lines + 1;
             prefetch_fifo_access.we <= 1'b1;
-            prefetch_fifo_access.wdata <= dma_read.rx_rdata;
+            prefetch_fifo_access.wdata <= DMA_read.rx_read.rdata;
         end
         prefetch_fifo_access.re <= !(prefetch_fifo_access.empty) && !(from_load.almostfull);
     end
@@ -195,8 +197,8 @@ module glm_load
         prefetch_fifo_free_count <= PREFETCH_SIZE - prefetch_fifo_access.count[LOG2_PREFETCH_SIZE-1:0];
         num_allowed_lines_to_request <= prefetch_fifo_free_count - $signed(num_lines_in_flight);
 
-        dma_read_control.start <= 1'b0;
-        dma_read.tx_re <= 1'b0;
+        DMA_read.control.start <= 1'b0;
+        DMA_read.tx_read.re <= 1'b0;
 
         from_load.we <= 1'b0;
         MEM_accessprops.re <= 1'b0;
@@ -213,6 +215,7 @@ module glm_load
                 if (op_start)
                 begin
                     // *************************************************************************
+                    trigger_dma <= in_trigger_dma;
                     offset_by_index[0] <= regs[0];
                     offset_by_index[1] <= regs[1];
                     offset_by_index[2] <= regs[2];
@@ -254,7 +257,7 @@ module glm_load
                     running_DRAM_load_offset <= running_DRAM_load_offset + offset_by_index[offset_accumulate];
                     if (offset_accumulate == 2)
                     begin
-                        request_state <= STATE_READ;
+                        request_state <= trigger_dma ? STATE_TRIGGER : STATE_READ;
                     end
                 end
                 offset_accumulate <= offset_accumulate + 1;
@@ -282,27 +285,30 @@ module glm_load
             begin
                 running_DRAM_load_offset <= running_DRAM_load_offset + accessprops_DRAM_offset;
                 DRAM_load_length <= accessprops_DRAM_length;
-                request_state <= STATE_READ;
+                request_state <= trigger_dma ? STATE_TRIGGER : STATE_READ;
+            end
+
+            STATE_TRIGGER:
+            begin
+                if (DMA_read.status.idle)
+                begin
+                    DMA_read.control.start <= 1'b1;
+                    DMA_read.control.regs <= t_dma_reg'(0);
+                    DMA_read.control.regs.reg4 <= {enable_multiline, DRAM_load_length};
+                    DMA_read.control.addr <= {upper_part_address, running_DRAM_load_offset};
+                    DMA_read.control.async <= 1'b0;
+                    request_state <= STATE_READ;
+                end
             end
 
             STATE_READ:
             begin
-                if (!dma_read_control.active)
-                begin
-                    dma_read_control.start <= 1'b1;
-                    dma_read_control.regs[0] <= 0;
-                    dma_read_control.regs[1] <= 0;
-                    dma_read_control.regs[2] <= 0;
-                    dma_read_control.regs[3] <= 0;
-                    dma_read_control.regs[4] <= {enable_multiline, DRAM_load_length};
-                    dma_read_control.addr <= running_DRAM_load_offset;
-                end
-                else if (num_allowed_lines_to_request > 0)
+                if (DMA_read.status.active && num_allowed_lines_to_request > 0)
                 begin
                     if (enable_multiline && (num_requested_lines_plus4 < DRAM_load_length))
                     begin
-                        dma_read.tx_re <= 1'b1;
-                        dma_read.tx_rlength <= 2'b11;
+                        DMA_read.tx_read.re <= 1'b1;
+                        DMA_read.tx_read.rlength <= 2'b11;
                         num_requested_lines <= num_requested_lines_plus4;
                         num_requested_lines_plus2 <= num_requested_lines_plus4 + 2;
                         num_requested_lines_plus4 <= num_requested_lines_plus4 + 4;
@@ -310,16 +316,16 @@ module glm_load
                     else if (enable_multiline && 
                         (num_requested_lines_plus2 < DRAM_load_length))
                     begin
-                        dma_read.tx_re <= 1'b1;
-                        dma_read.tx_rlength <= 2'b01;
+                        DMA_read.tx_read.re <= 1'b1;
+                        DMA_read.tx_read.rlength <= 2'b01;
                         num_requested_lines <= num_requested_lines_plus2;
                         num_requested_lines_plus2 <= num_requested_lines_plus2 + 2;
                         num_requested_lines_plus4 <= num_requested_lines_plus2 + 4;
                     end
                     else if (num_requested_lines < DRAM_load_length)
                     begin
-                        dma_read.tx_re <= 1'b1;
-                        dma_read.tx_rlength <= 2'b00;
+                        DMA_read.tx_read.re <= 1'b1;
+                        DMA_read.tx_read.rlength <= 2'b00;
                         num_requested_lines <= num_requested_lines + 1;
                         num_requested_lines_plus2 <= num_requested_lines + 3;
                         num_requested_lines_plus4 <= num_requested_lines + 5;

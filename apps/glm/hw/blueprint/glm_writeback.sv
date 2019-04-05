@@ -16,8 +16,7 @@ module glm_writeback
     fifobram_interface.bram_read MEM_model,
     fifobram_interface.bram_read MEM_labels,
 
-    dma_control.to_dma dma_write_control,
-    dma_interface.to_dma_write dma_write
+    dma_write_interface.to_dma DMA_write
 );
 
     // *************************************************************************
@@ -25,10 +24,11 @@ module glm_writeback
     //   Internal State
     //
     // *************************************************************************
-    typedef enum logic [1:0]
+    typedef enum logic [2:0]
     {
         STATE_IDLE,
         STATE_PREPROCESS,
+        STATE_TRIGGER,
         STATE_WRITE,
         STATE_DONE
     } t_writestate;
@@ -55,7 +55,7 @@ module glm_writeback
     read_bram
     read_MEM_model_inst (
         .clk, .reset,
-        .op_start(dma_write_control.start),
+        .op_start(DMA_write.control.start),
         .configreg(regs[6]),
         .memory_access(MEM_model),
         .outfrom_read(to_writeback_from_MEM_model.commonread_source)
@@ -65,7 +65,7 @@ module glm_writeback
     read_bram
     read_MEM_labels_inst (
         .clk, .reset,
-        .op_start(dma_write_control.start),
+        .op_start(DMA_write.control.start),
         .configreg(regs[7]),
         .memory_access(MEM_labels),
         .outfrom_read(to_writeback_from_MEM_labels.commonread_source)
@@ -85,7 +85,7 @@ module glm_writeback
             to_writeback.rdata <= to_writeback_from_MEM_labels.rdata;
             to_writeback_from_MEM_labels.almostfull <= to_writeback.almostfull;
         end
-        to_writeback.almostfull <= dma_write.tx_walmostfull || (send_state == STATE_PREPROCESS);
+        to_writeback.almostfull <= DMA_write.rx_write.walmostfull || !DMA_write.status.active || (send_state != STATE_WRITE);
     end
 
     // *************************************************************************
@@ -100,8 +100,8 @@ module glm_writeback
     always_ff @(posedge clk)
     begin
 
-        dma_write_control.start <= 1'b0;
-        dma_write.tx_we <= 1'b0;
+        DMA_write.control.start <= 1'b0;
+        DMA_write.tx_write.we <= 1'b0;
         op_done <= 1'b0;
 
         // =================================
@@ -143,26 +143,28 @@ module glm_writeback
                 offset_accumulate <= offset_accumulate + 1;
                 if (offset_accumulate == 2)
                 begin
+                    send_state <= STATE_TRIGGER;
+                end
+            end
+
+            STATE_TRIGGER:
+            begin
+                if (DMA_write.status.idle)
+                begin
+                    DMA_write.control.start <= 1'b1;
+                    DMA_write.control.regs <= t_dma_reg'(0);
+                    DMA_write.control.regs.reg4 <= DRAM_store_length;
+                    DMA_write.control.addr <= DRAM_store_offset;
                     send_state <= STATE_WRITE;
                 end
             end
 
             STATE_WRITE:
             begin
-                if (!dma_write_control.active)
+                if (DMA_write.status.active && to_writeback.rvalid)
                 begin
-                    dma_write_control.start <= 1'b1;
-                    dma_write_control.regs[0] <= 0;
-                    dma_write_control.regs[1] <= 0;
-                    dma_write_control.regs[2] <= 0;
-                    dma_write_control.regs[3] <= 0;
-                    dma_write_control.regs[4] <= DRAM_store_length;
-                    dma_write_control.addr <= DRAM_store_offset;
-                end
-                else if (to_writeback.rvalid)
-                begin
-                    dma_write.tx_we <= 1'b1;
-                    dma_write.tx_wdata <= to_writeback.rdata;
+                    DMA_write.tx_write.we <= 1'b1;
+                    DMA_write.tx_write.wdata <= to_writeback.rdata;
 
                     num_sent_lines <= num_sent_lines + 1;
                     if (num_sent_lines == DRAM_store_length-1 && write_fence == 1'b0)
@@ -171,7 +173,7 @@ module glm_writeback
                     end
                 end
 
-                if (dma_write.rx_wvalid)
+                if (DMA_write.rx_write.wvalid)
                 begin
                     num_ack_lines <= num_ack_lines + 1;
                     if (num_ack_lines == DRAM_store_length-1 && write_fence == 1'b1)

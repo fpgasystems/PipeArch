@@ -12,8 +12,7 @@ module pipearch_dma_write
     output t_if_ccip_c1_Tx af2cp_sTx_c1,
     input t_ccip_vc vc_select,
 
-    dma_control.at_dma get_control,
-    dma_interface.from_dma_write get_requests
+    dma_write_interface DMA_write
 );
 
     // *************************************************************************
@@ -57,14 +56,15 @@ module pipearch_dma_write
         wr_hdr.sop = 1'b1;
     end
 
-    assign get_control.active = (get_control.start || send_state != STATE_IDLE || ack_state != STATE_IDLE) ? 1'b1 : 1'b0;
-    assign get_requests.tx_walmostfull = c1TxAlmFull;
+    assign DMA_write.status.idle = (send_state == STATE_IDLE && ack_state == STATE_IDLE);
+    assign DMA_write.status.active = (send_state == STATE_WRITE);
+    assign DMA_write.rx_write.walmostfull = c1TxAlmFull;
 
     always_ff @(posedge clk)
     begin
         af2cp_sTx_c1.valid <= 1'b0;
-        get_control.done <= 1'b0;
-        get_requests.rx_wvalid <= 1'b0;
+        DMA_write.status.done <= 1'b0;
+        DMA_write.rx_write.wvalid <= 1'b0;
 
         af2cp_sTx_c1.hdr <= wr_hdr;
         af2cp_sTx_c1.hdr.vc_sel <= vc_select;
@@ -72,11 +72,11 @@ module pipearch_dma_write
         case(send_state)
             STATE_IDLE:
             begin
-                if (get_control.start)
+                if (DMA_write.control.start)
                 begin
                     // *************************************************************************
-                    DRAM_store_offset <= get_control.addr;
-                    DRAM_store_length <= get_control.regs[4];
+                    DRAM_store_offset <= DMA_write.control.addr;
+                    DRAM_store_length <= DMA_write.control.regs.reg4;
                     // *************************************************************************
                     num_sent_lines <= 0;
                     num_ack_lines <= 0;
@@ -86,11 +86,11 @@ module pipearch_dma_write
 
             STATE_WRITE:
             begin
-                if (get_requests.tx_we)
+                if (DMA_write.tx_write.we)
                 begin
                     af2cp_sTx_c1.valid <= 1'b1;
-                    af2cp_sTx_c1.data <= get_requests.tx_wdata;
-                    af2cp_sTx_c1.hdr.address <= DRAM_store_length + num_sent_lines;
+                    af2cp_sTx_c1.data <= DMA_write.tx_write.wdata;
+                    af2cp_sTx_c1.hdr.address <= DRAM_store_offset + num_sent_lines;
                     num_sent_lines <= num_sent_lines + 1;
                     if (num_sent_lines == DRAM_store_length-1)
                     begin
@@ -108,10 +108,10 @@ module pipearch_dma_write
         case(ack_state)
             STATE_IDLE:
             begin
-                if (get_control.start)
+                if (DMA_write.control.start)
                 begin
                     num_ack_lines <= 16'b0;
-                    if (get_control.regs[4] == 0)
+                    if (DMA_write.control.regs.reg4 == 0)
                     begin
                         ack_state <= STATE_DONE;
                     end
@@ -126,7 +126,7 @@ module pipearch_dma_write
             begin
                 if (cp2af_sRx_c1.rspValid)
                 begin
-                    get_requests.rx_wvalid <= 1'b1;
+                    DMA_write.rx_write.wvalid <= 1'b1;
                     num_ack_lines <= num_ack_lines + 1;
                     if (num_ack_lines == DRAM_store_length-1)
                     begin
@@ -137,7 +137,7 @@ module pipearch_dma_write
 
             STATE_DONE:
             begin
-                get_control.done <= 1'b1;
+                DMA_write.status.done <= 1'b1;
                 ack_state <= STATE_IDLE;
             end
         endcase

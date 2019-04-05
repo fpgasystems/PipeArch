@@ -3,15 +3,12 @@
 
 module glm_top
 (
-    input  logic clk,
-    input  logic reset,
+    input logic clk,
+    input logic reset,
 
     // request/response
-    dma_control.to_dma dma_read_control,
-    dma_interface.to_dma_read dma_read,
-
-    dma_control.to_dma dma_write_control,
-    dma_interface.to_dma_write dma_write,
+    dma_read_interface.to_dma DMA_read,
+    dma_write_interface.to_dma DMA_write,
 
     // CSR connections
     input config_registers config_regs [4],
@@ -109,11 +106,8 @@ module glm_top
     //   Execute Module Signal Definitions
     //
     // =========================================================================
-    dma_control RM_dma_read_control();
-    dma_interface #(.DATA_WIDTH(CLDATA_WIDTH),.ADDRESS_WIDTH(CLADDR_WIDTH)) RM_dma_read();
-
-    dma_control RM_dma_write_control();
-    dma_interface #(.DATA_WIDTH(CLDATA_WIDTH),.ADDRESS_WIDTH(CLADDR_WIDTH)) RM_dma_write();
+    dma_read_interface DMA_rm_read();
+    dma_write_interface DMA_rm_write();
 
     // =========================================================================
     //
@@ -135,13 +129,9 @@ module glm_top
 
     always_ff @(posedge clk)
     begin
-        dma_read_control.start <= 1'b0;
-        dma_read.tx_re <= 1'b0;
-        dma_read.tx_raddr <= 0;
-        dma_read.tx_rlength <= 2'b00;
-
-        dma_write_control.start <= 1'b0;
-        dma_write.tx_we <= 1'b0;
+        DMA_read.control.start <= 1'b0;
+        DMA_write.control.start <= 1'b0;
+        DMA_write.tx_write.we <= 1'b0;
 
         // =================================
         //
@@ -160,103 +150,62 @@ module glm_top
 
             RXTX_STATE_PROGRAM_READ:
             begin
-                dma_read_control.start <= 1'b1;
-                dma_read_control.regs[0] <= 0;
-                dma_read_control.regs[1] <= 0;
-                dma_read_control.regs[2] <= 0;
-                dma_read_control.regs[3] <= 0;
-                dma_read_control.regs[4] <= thread_information.program_length;
-                dma_read_control.addr <= thread_information.program_addr;
-                dma_read_control.async <= 1'b1;
+                DMA_read.control.start <= 1'b1;
+                DMA_read.control.async <= 1'b1;
+                DMA_read.control.regs <= t_dma_reg'(0);
+                DMA_read.control.regs.reg4 <= thread_information.program_length;
+                DMA_read.control.addr <= thread_information.program_addr;
                 request_state <= RXTX_STATE_CONTEXT_READ;
-
-                // if (dma_read_control.idle)
-                // begin
-                    // dma_read_control.start <= 1'b1;
-                    // dma_read_control.regs[0] <= 0;
-                    // dma_read_control.regs[1] <= 0;
-                    // dma_read_control.regs[2] <= 0;
-                    // dma_read_control.regs[3] <= 0;
-                    // dma_read_control.regs[4] <= thread_information.program_length;
-                    // dma_read_control.addr <= thread_information.program_addr;
-                // end
-                // if (dma_read_control.active && program_length_request < thread_information.program_length)
-                // begin
-                //     dma_read.tx_re <= 1'b1;
-                //     program_length_request <= program_length_request + 1;
-                //     if (program_length_request == thread_information.program_length - 1)
-                //     begin
-                //         request_state <= RXTX_STATE_CONTEXT_READ;
-                //     end
-                // end
             end
 
             RXTX_STATE_CONTEXT_READ:
             begin
-                dma_read_control.start <= 1'b1;
-                dma_read_control.regs[0] <= 0;
-                dma_read_control.regs[1] <= 0;
-                dma_read_control.regs[2] <= 0;
-                dma_read_control.regs[3] <= 0;
-                dma_read_control.regs[4] <= 1;
-                dma_read_control.addr <= thread_information.out_addr;
-                dma_read_control.async <= 1'b1;
+                DMA_read.control.start <= 1'b1;
+                DMA_read.control.async <= 1'b1;
+                DMA_read.control.regs <= t_dma_reg'(0);
+                DMA_read.control.regs.reg4 <= 1;
+                DMA_read.control.addr <= thread_information.out_addr;
                 request_state <= RXTX_STATE_PROGRAM_EXECUTE;
-
-                // if (dma_read_control.idle)
-                // begin
-                    // dma_read_control.start <= 1'b1;
-                    // dma_read_control.regs[0] <= 0;
-                    // dma_read_control.regs[1] <= 0;
-                    // dma_read_control.regs[2] <= 0;
-                    // dma_read_control.regs[3] <= 0;
-                    // dma_read_control.regs[4] <= 1;
-                    // dma_read_control.addr <= thread_information.out_addr;
-                // end
-                // if (dma_read_control.active)
-                // begin
-                //     dma_read.tx_re <= 1'b1;
-                //     request_state <= RXTX_STATE_PROGRAM_EXECUTE;
-                // end
             end
 
             RXTX_STATE_PROGRAM_EXECUTE:
             begin
                 if (machine_state == MACHINE_STATE_DONE)
                 begin
-                    request_state <= RXTX_STATE_DONE;
+                    request_state <= RXTX_STATE_CONTEXT_WRITE;
                 end
                 else
                 begin
-                    dma_read_control.start <= RM_dma_read_control.start;
-                    dma_read_control.regs <= RM_dma_read_control.regs;
-                    dma_read_control.addr <= RM_dma_read_control.addr;
-                    dma_read_control.async <= RM_dma_read_control.async;
-                    dma_read.tx_re <= RM_dma_read.tx_re;
-                    dma_read.tx_rlength <= RM_dma_read.tx_rlength;
+                    DMA_read.control <= DMA_rm_read.control;
+                    DMA_read.tx_read <= DMA_rm_read.tx_read;
+                    DMA_rm_read.status <= DMA_read.status;
+                    DMA_rm_read.rx_read <= DMA_read.rx_read;
+
+                    DMA_write.control <= DMA_rm_write.control;
+                    DMA_write.tx_write <= DMA_rm_write.tx_write;
+                    DMA_rm_write.status <= DMA_write.status;
+                    DMA_rm_write.rx_write <= DMA_write.rx_write;
+                end
+            end
+
+            RXTX_STATE_CONTEXT_WRITE:
+            begin
+                if (DMA_write.status.idle)
+                begin
+                    DMA_write.control.start <= 1'b1;
+                    DMA_write.control.async <= 1'b1;
+                    DMA_write.control.regs <= t_dma_reg'(0);
+                    DMA_write.control.regs.reg4 <= 1;
+                    DMA_write.control.addr <= thread_information.out_addr;
+                    request_state <= RXTX_STATE_DONE;
                 end
             end
 
             RXTX_STATE_DONE:
             begin
-                if (!dma_write_control.active)
+                if (DMA_write.rx_write.wvalid)
                 begin
-                    dma_write_control.start <= 1'b1;
-                    dma_write_control.regs[0] <= 0;
-                    dma_write_control.regs[1] <= 0;
-                    dma_write_control.regs[2] <= 0;
-                    dma_write_control.regs[3] <= 0;
-                    dma_write_control.regs[4] <= 1;
-                    dma_write_control.addr <= thread_information.out_addr;
-                end
-                else
-                begin
-                    if (!dma_write.tx_walmostfull)
-                    begin
-                        dma_write.tx_we <= 1'b1;
-                        dma_write.tx_wdata <= t_cldata'({thread_context_to_store, 32'b1});
-                        request_state <= RXTX_STATE_IDLE;
-                    end
+                    request_state <= RXTX_STATE_IDLE;
                 end
             end
         endcase
@@ -279,11 +228,11 @@ module glm_top
 
             RXTX_STATE_PROGRAM_READ:
             begin
-                if (dma_read.rx_rvalid)
+                if (DMA_read.rx_read.rvalid)
                 begin
                     program_access.we <= 1'b1;
                     program_access.waddr <= program_length_receive;
-                    program_access.wdata <= dma_read.rx_rdata;
+                    program_access.wdata <= DMA_read.rx_read.rdata;
                     program_length_receive <= program_length_receive + 1;
                     if (program_length_receive == thread_information.program_length-1)
                     begin
@@ -294,14 +243,14 @@ module glm_top
 
             RXTX_STATE_CONTEXT_READ:
             begin
-                if (dma_read.rx_rvalid)
+                if (DMA_read.rx_read.rvalid)
                 begin
-                    thread_context.regs[0] <= dma_read.rx_rdata[63:32];
-                    thread_context.regs[1] <= dma_read.rx_rdata[95:64];
-                    thread_context.regs[2] <= dma_read.rx_rdata[127:96];
-                    thread_context.program_counter <= dma_read.rx_rdata[135:128];
-                    thread_context.pc_context_store <= dma_read.rx_rdata[143:136];
-                    thread_context.pc_context_load <= dma_read.rx_rdata[151:144];
+                    thread_context.regs[0] <= DMA_read.rx_read.rdata[63:32];
+                    thread_context.regs[1] <= DMA_read.rx_read.rdata[95:64];
+                    thread_context.regs[2] <= DMA_read.rx_read.rdata[127:96];
+                    thread_context.program_counter <= DMA_read.rx_read.rdata[135:128];
+                    thread_context.pc_context_store <= DMA_read.rx_read.rdata[143:136];
+                    thread_context.pc_context_load <= DMA_read.rx_read.rdata[151:144];
                     receive_state <= RXTX_STATE_PROGRAM_EXECUTE;
                 end
             end
@@ -310,29 +259,23 @@ module glm_top
             begin
                 if (machine_state == MACHINE_STATE_DONE)
                 begin
-                    receive_state <= RXTX_STATE_DONE;
+                    receive_state <= RXTX_STATE_CONTEXT_WRITE;
                 end
-                else
-                begin
-                    RM_dma_read_control.active <= dma_read_control.active;
-                    RM_dma_read_control.done <= dma_read_control.done;
-                    RM_dma_read.rx_rvalid <= dma_read.rx_rvalid;
-                    RM_dma_read.rx_rdata <= dma_read.rx_rdata;
+            end
 
-                    dma_write_control.start <= RM_dma_write_control.start;
-                    dma_write_control.regs <= RM_dma_write_control.regs;
-                    dma_write_control.addr <= RM_dma_write_control.addr;
-                    RM_dma_write_control.active <= dma_write_control.active;
-                    RM_dma_write_control.done <= dma_write_control.done;
-                    dma_write.tx_we <= RM_dma_write.tx_we;
-                    dma_write.tx_wdata <= RM_dma_write.tx_wdata;
-                    RM_dma_write.rx_wvalid <= dma_write.rx_wvalid;
+            RXTX_STATE_CONTEXT_WRITE:
+            begin
+                if (DMA_write.status.active && !DMA_write.rx_write.walmostfull)
+                begin
+                    DMA_write.tx_write.we <= 1'b1;
+                    DMA_write.tx_write.wdata <= t_cldata'({thread_context_to_store, 32'b1});
+                    receive_state <= RXTX_STATE_DONE;
                 end
             end
 
             RXTX_STATE_DONE:
             begin
-                if (dma_write.rx_wvalid)
+                if (DMA_write.rx_write.wvalid)
                 begin
                     receive_state <= RXTX_STATE_IDLE;
                 end
@@ -508,15 +451,13 @@ module glm_top
     logic [NUM_OPS-1:0] op_done ;
     logic [NUM_OPS-1:0] op_active;
 
-    logic [31:0] prefetch_regs [5];
+    t_dma_reg prefetch_regs;
     logic [31:0] load_regs [5+NUM_LOAD_CHANNELS];
     logic [31:0] writeback_regs [6+NUM_WRITEBACK_CHANNELS];
     logic [31:0] dot_regs [6];
     logic [31:0] modify_regs [7];
     logic [31:0] update_regs [6];
     logic [31:0] copy_regs [5];
-
-    dma_control LOAD_dma_read_control();
 
     always_ff @(posedge clk)
     begin
@@ -543,13 +484,17 @@ module glm_top
     assign synchronize = op_start[7];
     assign op_done[7] = synchronize_done;
 
+    dma_read_interface DMA_load_read();
+
     // Arbitrate access to dma_read
-    assign RM_dma_read_control.start = op_start[0] | LOAD_dma_read_control.start;
-    assign RM_dma_read_control.regs = (op_start[0]) ? prefetch_regs : LOAD_dma_read_control.regs;
-    assign RM_dma_read_control.addr = (op_start[0]) ? thread_information.in_addr : LOAD_dma_read_control.addr;
-    assign RM_dma_read_control.async = 1'b0;
-    assign op_done[0] = RM_dma_read_control.done;
-    assign LOAD_dma_read_control.done = RM_dma_read_control.done;
+    assign DMA_rm_read.control.start = op_start[0] | DMA_load_read.control.start;
+    assign DMA_rm_read.control.regs = (op_start[0]) ? prefetch_regs : DMA_load_read.control.regs;
+    assign DMA_rm_read.control.addr = (op_start[0]) ? thread_information.in_addr : DMA_load_read.control.addr;
+    assign DMA_rm_read.control.async = 1'b0;
+    assign op_done[0] = DMA_rm_read.status.done;
+    assign DMA_load_read.status = DMA_rm_read.status;
+    assign DMA_rm_read.tx_read = DMA_load_read.tx_read;
+    assign DMA_load_read.rx_read = DMA_rm_read.rx_read;
 
     always_ff @(posedge clk)
     begin
@@ -602,11 +547,11 @@ module glm_top
                         4'h1: // prefetch
                         begin
                             op_start[0] <= 1'b1;
-                            prefetch_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
-                            prefetch_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
-                            prefetch_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
-                            prefetch_regs[3] <= instruction[3]; // read offset
-                            prefetch_regs[4] <= instruction[4]; // read length in cachelines
+                            prefetch_regs.reg0 <= DSP27Mult(temp_regs[0],instruction[10]);
+                            prefetch_regs.reg1 <= DSP27Mult(temp_regs[1],instruction[11]);
+                            prefetch_regs.reg2 <= DSP27Mult(temp_regs[2],instruction[12]);
+                            prefetch_regs.reg3 <= instruction[3]; // read offset
+                            prefetch_regs.reg4 <= instruction[4]; // read length in cachelines
                         end
 
                         4'h2: // load
@@ -1051,10 +996,10 @@ module glm_top
         .reset,
         .op_start(op_start[1]),
         .op_done(op_done[1]),
+        .in_trigger_dma(!op_active[0]),
         .regs(load_regs),
         .in_addr(thread_information.in_addr),
-        .dma_read_control(LOAD_dma_read_control),
-        .dma_read(RM_dma_read),
+        .DMA_read(DMA_load_read.to_dma),
         .FIFO_input(FIFO_input_interface.fifo_write),
         .FIFO_samplesforward(FIFO_samplesforward_interface.fifo_write),
         .MEM_model(load_MEM_model_interface.bram_write),
@@ -1074,8 +1019,7 @@ module glm_top
         .out_addr(thread_information.out_addr),
         .MEM_model(writeback_MEM_model_interface.bram_read),
         .MEM_labels(writeback_MEM_labels_interface.bram_read),
-        .dma_write_control(RM_dma_write_control),
-        .dma_write(RM_dma_write)
+        .DMA_write(DMA_rm_write.to_dma)
     );
 
     // *************************************************************************

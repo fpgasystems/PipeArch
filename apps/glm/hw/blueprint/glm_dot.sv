@@ -69,7 +69,7 @@ module glm_dot
     subtract
     (
         .clk,
-        .resetn(!reset),
+        .reset(reset),
         .trigger(subtract_trigger),
         .vector1(subtract_vector1),
         .vector2(subtract_vector2),

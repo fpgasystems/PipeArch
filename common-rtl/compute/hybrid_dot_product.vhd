@@ -38,11 +38,8 @@ constant VALUES_PER_LINE : integer := 2**LOG2_VALUES_PER_LINE;
 
 signal reset : std_logic;
 
-constant CONVERSION_LATENCY : integer := 4;
-
 signal accumulation_count_unsigned : unsigned(31 downto 0);
 
-signal float_mult_result_almost_valid : std_logic;
 signal float_mult_result_valid : std_logic;
 signal float_mult_result : std_logic_vector(32*VALUES_PER_LINE-1 downto 0);
 
@@ -55,31 +52,31 @@ signal adder_tree_result : std_logic_vector(47 downto 0);
 signal internal_accumulation_count : integer := 0;
 signal accumulation : signed(47 downto 0) := (others => '0');
 
-signal internal_result_valid : std_logic_vector(CONVERSION_LATENCY downto 0);
+signal internal_result_valid : std_logic;
 signal internal_result : signed(47 downto 0) := (others => '0');
 
 type float_vector_type is array(15 downto 0) of std_logic_vector(31 downto 0);
 signal vector1_monitor : float_vector_type;
 signal vector2_monitor : float_vector_type;
 
-component fp_converter48_arria10
-    port (
-        a      : in  std_logic_vector(47 downto 0) := (others => '0'); --      a.a
-        areset : in  std_logic                     := '0';             -- areset.reset
-        clk    : in  std_logic                     := '0';             --    clk.clk
-        q      : out std_logic_vector(31 downto 0)                     --      q.q
-    );
+component dec23_to_float_convert
+port (
+	clk : in std_logic;
+	reset : in std_logic;
+	in1 : in std_logic_vector(47 downto 0);
+	in1_valid : in std_logic;
+	q : out std_logic_vector(31 downto 0);
+	q_valid : out std_logic);
 end component;
 
 component float_vector_mult
 generic (VALUES_PER_LINE : integer := 16);
 port (
 	clk : in std_logic;
-	resetn : in std_logic;
+	reset : in std_logic;
 	trigger : in std_logic;
 	vector1 : in std_logic_vector(32*VALUES_PER_LINE-1 downto 0);
 	vector2 : in std_logic_vector(32*VALUES_PER_LINE-1 downto 0);
-	result_almost_valid : out std_logic;
 	result_valid : out std_logic;
 	result : out std_logic_vector(32*VALUES_PER_LINE-1 downto 0));
 end component;
@@ -126,11 +123,10 @@ generic map (
 	VALUES_PER_LINE => VALUES_PER_LINE)
 port map (
 	clk => clk,
-	resetn => resetn,
+	reset => reset,
 	trigger => trigger,
 	vector1 => vector1,
 	vector2 => vector2,
-	result_almost_valid => float_mult_result_almost_valid,
 	result_valid => float_mult_result_valid,
 	result => float_mult_result);
 
@@ -145,14 +141,14 @@ port map (
 	result_valid => adder_tree_result_valid,
 	result => adder_tree_result);
 
-fp_converter_arria10_inst: fp_converter48_arria10
+float_convert_inst: dec23_to_float_convert
 port map(
-	a => std_logic_vector(internal_result),
-	areset => reset,
 	clk => clk,
-	q => result);
-
-result_valid <= internal_result_valid(CONVERSION_LATENCY);
+	reset => reset,
+	in1 => std_logic_vector(internal_result),
+	in1_valid => internal_result_valid,
+	q => result,
+	q_valid => result_valid);
 
 process(clk)
 begin
@@ -168,15 +164,15 @@ if clk'event and clk = '1' then
 		internal_accumulation_count <= 0;
 		accumulation <= (others => '0');
 
-		internal_result_valid <= (others => '0');
+		internal_result_valid <= '0';
 		internal_result <= (others => '0');
 	else
 
-		internal_result_valid(0) <= '0';
+		internal_result_valid <= '0';
 		if adder_tree_result_valid = '1' then
 			if internal_accumulation_count = accumulation_count_unsigned-1 then
 				internal_accumulation_count <= 0;
-				internal_result_valid(0) <= '1';
+				internal_result_valid <= '1';
 				internal_result <= accumulation + signed(adder_tree_result);
 				accumulation <= (others => '0');
 			else
@@ -185,10 +181,6 @@ if clk'event and clk = '1' then
 			end if;
 		end if;
 
-
-		for i in 1 to CONVERSION_LATENCY loop
-			internal_result_valid(i) <= internal_result_valid(i-1);
-		end loop;
 	end if;
 
 	for k in 0 to 15 loop

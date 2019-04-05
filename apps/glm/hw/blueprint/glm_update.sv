@@ -75,7 +75,7 @@ module glm_update
     multiply
     (
         .clk,
-        .resetn(!reset),
+        .reset(reset),
         .trigger(multiply_trigger),
         .scalar(multiply_scalar),
         .vector(multiply_vector),
@@ -105,7 +105,7 @@ module glm_update
     subtract
     (
         .clk,
-        .resetn(!reset),
+        .reset(reset),
         .trigger(subtract_trigger),
         .vector1(subtract_vector1),
         .vector2(subtract_vector2),
@@ -193,7 +193,7 @@ module glm_update
                     end
                 end
 
-                if (multiply_trigger_d[1])
+                if (multiply_trigger_d[0])
                 begin
                     MEM_model.re <= 1'b1;
                     MEM_model.raddr <= MEM_model_offset + num_lines_multiplied_final;

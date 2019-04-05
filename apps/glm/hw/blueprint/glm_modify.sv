@@ -66,54 +66,34 @@ module glm_modify
         logic       done;
     } fp_compute_regs;
 
-    localparam SUBTRACT_LATENCY = 2;
-    logic [SUBTRACT_LATENCY-1:0] sub_status = 0;
     fp_compute_regs sub_regs;
-    always_ff @(posedge clk)
-    begin
-        sub_status[0] <= sub_regs.trigger;
-        for (int i = 1; i < SUBTRACT_LATENCY; i++)
-        begin
-            sub_status[i] <= sub_status[i-1];
-        end
-        sub_regs.done <= sub_status[SUBTRACT_LATENCY-1];
-    end
-    fp_subtract_arria10
-    subtract
-    (
-        .clk,
-        .areset(reset),
-        .a(sub_regs.leftoperand),
-        .b(sub_regs.rightoperand),
-        .q(sub_regs.result)
-    );
+    float_subtract
+    subtract (
+        .clk(clk),
+        .reset(reset),
+        .in1(sub_regs.leftoperand),
+        .in2(sub_regs.rightoperand),
+        .in_valid(sub_regs.trigger),
+        .q(sub_regs.result),
+        .q_valid(sub_regs.done));
 
-    localparam MULTIPLY_LATENCY = 2;
-    logic [MULTIPLY_LATENCY-1:0] mult_status = 0;
     fp_compute_regs mult_regs;
-    always_ff @(posedge clk)
-    begin
-        mult_status[0] <= mult_regs.trigger;
-        for (int i = 1; i < MULTIPLY_LATENCY; i++)
-        begin
-            mult_status[i] <= mult_status[i-1];
-        end
-        mult_regs.done <= mult_status[MULTIPLY_LATENCY-1];
-    end
-    fp_mult_arria10
-    multiply
-    (
-        .clk,
-        .areset(reset),
-        .a(mult_regs.leftoperand),
-        .b(mult_regs.rightoperand),
-        .q(mult_regs.result)
-    );
+    logic mult_regs_trigger_1d;
+    float_mult
+    multiply (
+        .clk(clk),
+        .reset(reset),
+        .in1(mult_regs.leftoperand),
+        .in2(mult_regs.rightoperand),
+        .in_valid(mult_regs.trigger),
+        .q(mult_regs.result),
+        .q_valid(mult_regs.done));
 
     always_ff @(posedge clk)
     begin
         sub_regs.trigger <= 1'b0;
         mult_regs.trigger <= 1'b0;
+        mult_regs_trigger_1d <= mult_regs.trigger;
         FIFO_dot.re <= 1'b0;
         MEM_labels.re <= 1'b0;
         MEM_labels.we <= 1'b0;
@@ -197,7 +177,7 @@ module glm_modify
                     mult_regs.rightoperand <= FIFO_dot.rdata;;
                 end
 
-                if (mult_status[0])
+                if (mult_regs_trigger_1d)
                 begin
                     MEM_labels.re <= 1'b1;
                     MEM_labels.raddr <= MEM_labels_load_offset + (offset_by_index[15:4]);

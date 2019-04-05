@@ -13,18 +13,20 @@ memory/write_bram.sv
 memory/write_bram_vector2scalar.sv
 memory/write_fifo.sv
 
+compute/float_mult.sv
+compute/float_subtract.sv
 compute/fixed_adder_tree.vhd
-compute/float_scalar_vector_mult.vhd
-compute/float_vector_mult.vhd
-compute/float_vector_subtract.vhd
+compute/float_scalar_vector_mult.sv
+compute/float_vector_mult.sv
+compute/float_vector_subtract.sv
 compute/hybrid_dot_product.vhd
 
-IP/fp_converter48_arria10/fp_converter48_arria10.qip
-IP/fp_converter_arria10/fp_converter_arria10.qip
-IP/fp_div_arria10/fp_div_arria10.qip
-IP/fp_exp_arria10/fp_exp_arria10.qip
-IP/fp_exp_arria10_nohard/fp_exp_arria10_nohard.qip
-IP/fp_gt_arria10/fp_gt_arria10.qip
-IP/fp_lt_arria10/fp_lt_arria10.qip
-IP/fp_mult_arria10/fp_mult_arria10.qip
-IP/fp_subtract_arria10/fp_subtract_arria10.qip
+IP/intel_IP/fp_converter48_arria10/fp_converter48_arria10.qip
+IP/intel_IP/fp_converter_arria10/fp_converter_arria10.qip
+IP/intel_IP/fp_div_arria10/fp_div_arria10.qip
+IP/intel_IP/fp_exp_arria10/fp_exp_arria10.qip
+IP/intel_IP/fp_exp_arria10_nohard/fp_exp_arria10_nohard.qip
+IP/intel_IP/fp_gt_arria10/fp_gt_arria10.qip
+IP/intel_IP/fp_lt_arria10/fp_lt_arria10.qip
+IP/intel_IP/fp_mult_arria10/fp_mult_arria10.qip
+IP/intel_IP/fp_subtract_arria10/fp_subtract_arria10.qip

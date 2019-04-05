@@ -23,3 +23,14 @@
 - cd ./intel_work/build_synth
 - chmod a+x ./build/generate_pr_bitstream.sh
 - ${OPAE_PLATFORM_ROOT}/bin/run.sh
+
+## Xilinx
+
+### Compiling simulation libraries for modelsim
+- Start the preferred version of vivado in a temp directory
+- Create a dummy project
+- Tools->Compile Simulation Libraries
+- Set the "Compiled library location" to a permenant dir (the compile libraries will exist there and sourced from there by modelsim)
+Example location: SOMEWHERE/Tools/Mentor/questa-10.5a/questasim/vivado2018_2_compile_simlib
+- After compilation is done, copy paste all lines (secureip = SOMEWHERE/Tools/Mentor/questa-10.5a/questasim/vivado2018_2_compile_simlib/questa/secureip)
+to SOMEWHERE/Tools/Mentor/questa-10.5a/questasim/modelsim.ini
