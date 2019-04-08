@@ -180,7 +180,7 @@ bool FPGA_ColumnML::fSGD(
 	//
 	// *************************************************************************
 	m_outputSizeInCL = (numEpochs*m_numFeaturesInCL+1);
-	realloc(m_outputHandle, m_outputSizeInCL*64);
+	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
 	WriteProgramMemory(pcContextStore, pcContextLoad);
@@ -345,7 +345,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	//
 	// *************************************************************************
 	m_outputSizeInCL = (numEpochs*m_numFeaturesInCL+1);
-	realloc(m_outputHandle, m_outputSizeInCL*64);
+	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
 	WriteProgramMemory(pcContextStore, pcContextLoad);
@@ -476,7 +476,7 @@ bool FPGA_ColumnML::fSCD(
 	//
 	// *************************************************************************
 	m_outputSizeInCL = 1;
-	realloc(m_outputHandle, m_outputSizeInCL*64);
+	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
 	WriteProgramMemory(0, 0);
@@ -616,7 +616,7 @@ bool FPGA_ColumnML::fSGD_blocking(
 	// *************************************************************************
 
 	m_outputSizeInCL = (numEpochs*m_numFeaturesInCL+1);
-	realloc(m_outputHandle, m_outputSizeInCL*64);
+	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
 	WriteProgramMemory(pcContextStore, pcContextLoad);
@@ -644,9 +644,9 @@ void FPGA_ColumnML::ReadBandwidth(uint32_t numIterations) {
 	m_inst[pc].IncrementIndex(2);
 	pc++;
 
-	realloc(m_handle, numIterations*numLines*64);
+	m_ifpga->Realloc(m_inputHandle, numIterations*numLines*64);
 	m_outputSizeInCL = 1;
-	realloc(m_outputHandle, m_outputSizeInCL*64);
+	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
 	WriteProgramMemory(0, 0);
@@ -673,15 +673,15 @@ void FPGA_ColumnML::Correctness() {
 	m_inst[pc].Jump(2, 0, pcLoad, 0xFFFFFFFF);
 	pc++;
 
-	realloc(m_handle, numLines*64);
-	auto input = CastToInt('i');
+	m_ifpga->Realloc(m_inputHandle, numLines*64);
+	auto input = iFPGA::CastToInt(m_inputHandle);
 	for (uint32_t i = 0; i < numLines*16; i++) {
 		input[i] = i+1;
 	}
 
 	m_outputSizeInCL = (numLines+1);
-	realloc(m_outputHandle, m_outputSizeInCL*64);
-	auto output = CastToInt('i');
+	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
+	auto output = iFPGA::CastToInt(m_outputHandle);
 	for (uint32_t i = 0; i < (numLines+1)*16; i++) {
 		output[i] = 0;
 	}

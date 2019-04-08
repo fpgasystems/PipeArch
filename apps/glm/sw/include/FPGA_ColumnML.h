@@ -10,10 +10,6 @@ class FPGA_ColumnML : public ColumnML {
 private:
 	iFPGA* m_ifpga;
 
-	shared_buffer::ptr_t m_handle;
-	shared_buffer::ptr_t m_outputHandle;
-	shared_buffer::ptr_t m_programMemoryHandle;
-
 	volatile float* m_memory = nullptr;
 	volatile float* m_model = nullptr;
 	volatile float* m_labels = nullptr;
@@ -32,34 +28,19 @@ private:
 	MemoryFormat m_currentMemoryFormat;
 	bool m_useContextSwitch;
 
-	void realloc(shared_buffer::ptr_t& handle, size_t size) {
-		if (handle != NULL) {
-			handle->release();
-			handle = NULL;
-		}
-		handle = m_ifpga->malloc(size);
-	}
-
-	void free(shared_buffer::ptr_t& handle) {
-		if (handle != NULL) {
-			handle->release();
-			handle = NULL;
-		}
-	}
-
 	void WriteProgramMemory(uint32_t pcContextStore, uint32_t pcContextLoad) {
 		cout << "WriteProgramMemory..." << endl;
 
 		uint32_t pcStart = 0;
-		auto output = CastToInt('o');
+		auto output = iFPGA::CastToInt(m_outputHandle);
 		output[0] = 0; // Done
 		output[1] = 0; // reg 0;
 		output[2] = 0; // reg 1;
 		output[3] = 0; // reg 2;
 		output[4] = ((pcContextLoad&0xFF) << 16) | ((pcContextStore&0xFF) << 8) | (pcStart&0xFF);
 
-		realloc(m_programMemoryHandle, m_numInstructions*Instruction::NUM_BYTES);
-		auto programMemory = reinterpret_cast<volatile uint32_t*>(m_programMemoryHandle->c_type());
+		m_ifpga->Realloc(m_programMemoryHandle, m_numInstructions*Instruction::NUM_BYTES);
+		auto programMemory = iFPGA::CastToInt(m_programMemoryHandle);
 		assert(NULL != programMemory);
 		for (uint32_t i = 0; i < m_numInstructions; i++) {
 			m_inst[i].LoadInstruction(programMemory + i*Instruction::NUM_WORDS);
@@ -67,6 +48,10 @@ private:
 	}
 
 public:
+	iFPGA_ptr m_inputHandle;
+	iFPGA_ptr m_outputHandle;
+	iFPGA_ptr m_programMemoryHandle;
+
 	uint32_t m_numSamplesInCL;
 	uint32_t m_numFeaturesInCL;
 	uint32_t m_alignedNumSamples;
@@ -83,7 +68,7 @@ public:
 	uint32_t m_numInstructions;
 
 	FPGA_ColumnML(iFPGA* ifpga) {
-		m_handle = NULL;
+		m_inputHandle = NULL;
 		m_outputHandle = NULL;
 		m_programMemoryHandle = NULL;
 		m_ifpga = ifpga;
@@ -91,7 +76,7 @@ public:
 	}
 
 	FPGA_ColumnML(iFPGA* ifpga, bool useContextSwitch) {
-		m_handle = NULL;
+		m_inputHandle = NULL;
 		m_outputHandle = NULL;
 		m_programMemoryHandle = NULL;
 		m_ifpga = ifpga;
@@ -99,50 +84,17 @@ public:
 	}
 
 	~FPGA_ColumnML() {
-		cout << "m_handle->release()" << endl;
-		free(m_handle);
-		cout << "m_outputHandle->release()" << endl;
-		free(m_outputHandle);
-		cout << "m_programMemoryHandle->release()" << endl;
-		free(m_programMemoryHandle);
+		m_ifpga->Free(m_inputHandle);
+		m_ifpga->Free(m_outputHandle);
+		m_ifpga->Free(m_programMemoryHandle);
 	}
 
 	void ResetContext() {
-		auto output = CastToInt('o');
+		auto output = iFPGA::CastToInt(m_outputHandle);
 		output[0] = 0; // Done
 		output[1] = 0; // reg 0;
 		output[2] = 0; // reg 1;
 		output[3] = 0; // reg 2;
-	}
-
-	volatile uint32_t* CastToInt(char which) {
-		volatile uint32_t* temp = NULL;
-		if (which == 'i' && m_handle != NULL) {
-			temp = reinterpret_cast<volatile uint32_t*>(m_handle->c_type());
-		}
-		else if (which == 'o' && m_outputHandle != NULL) {
-			temp = reinterpret_cast<volatile uint32_t*>(m_outputHandle->c_type());
-		}
-		else if (which == 'p' && m_programMemoryHandle != NULL) {
-			temp = reinterpret_cast<volatile uint32_t*>(m_programMemoryHandle->c_type());
-		}
-		assert(NULL != temp);
-		return temp;
-	}
-
-	volatile float* CastToFloat(char which) {
-		volatile float* temp = NULL;
-		if (which == 'i' && m_handle != NULL) {
-			temp = reinterpret_cast<volatile float*>(m_handle->c_type());
-		}
-		else if (which == 'o' && m_outputHandle != NULL) {
-			temp = reinterpret_cast<volatile float*>(m_outputHandle->c_type());
-		}
-		else if (which == 'p' && m_programMemoryHandle != NULL) {
-			temp = reinterpret_cast<volatile float*>(m_programMemoryHandle->c_type());
-		}
-		assert(NULL != temp);
-		return temp;
 	}
 
 	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
@@ -188,9 +140,8 @@ public:
 			countCL += m_cstore->m_numSamples*m_numFeaturesInCL;
 			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
 
-			realloc(m_handle, countCL*64);
-			m_memory = reinterpret_cast<volatile float*>(m_handle->c_type());
-			assert(NULL != m_memory);
+			m_ifpga->Realloc(m_inputHandle, countCL*64);
+			m_memory = iFPGA::CastToFloat(m_inputHandle);
 			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
 
 			m_model = m_memory + m_modelChunk.m_offsetInCL*16;
@@ -255,9 +206,8 @@ public:
 				}
 			}
 
-			realloc(m_handle, countCL*64);
-			m_memory = reinterpret_cast<volatile float*>(m_handle->c_type());
-			assert(NULL != m_memory);
+			m_ifpga->Realloc(m_inputHandle, countCL*64);
+			m_memory = iFPGA::CastToFloat(m_inputHandle);
 			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
 
 			m_residual = m_memory + m_residualChunk.m_offsetInCL*16;

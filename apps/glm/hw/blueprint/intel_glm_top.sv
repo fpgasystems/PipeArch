@@ -43,6 +43,8 @@ module intel_glm_top
         .DMA_read(inst_dma_read.to_dma),
         .DMA_write(inst_dma_write.to_dma),
         .config_regs(config_regs),
+        .ctrl_idle(),
+        .ctrl_done(),
         .synchronize(synchronize),
         .synchronize_done(synchronize_done)
     );

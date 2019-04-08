@@ -13,6 +13,8 @@ module glm_top
     // CSR connections
     input config_registers config_regs [4],
 
+    output logic ctrl_idle,
+    output logic ctrl_done,
     output logic synchronize,
     input logic synchronize_done
 );
@@ -129,6 +131,8 @@ module glm_top
 
     always_ff @(posedge clk)
     begin
+        ctrl_idle <= 1'b0;
+        ctrl_done <= 1'b0;
         DMA_read.control.start <= 1'b0;
         DMA_write.control.start <= 1'b0;
         DMA_write.tx_write.we <= 1'b0;
@@ -141,6 +145,7 @@ module glm_top
         case (request_state)
             RXTX_STATE_IDLE:
             begin
+                ctrl_idle <= 1'b1;
                 if (thread_information.status == THREAD_LOAD_PROGRAM)
                 begin
                     request_state <= RXTX_STATE_PROGRAM_READ;
@@ -205,6 +210,7 @@ module glm_top
             begin
                 if (DMA_write.rx_write.wvalid)
                 begin
+                    ctrl_done <= 1'b1;
                     request_state <= RXTX_STATE_IDLE;
                 end
             end

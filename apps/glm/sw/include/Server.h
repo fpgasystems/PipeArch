@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream> 
+#include <algorithm>
 #include <vector>
 #include <mutex>
 #include <queue>
@@ -70,7 +72,7 @@ public:
 	}
 
 	bool IsFinished() {
-		auto output = m_cML->CastToInt('o');
+		auto output = iFPGA::CastToInt(m_cML->m_outputHandle);
 		if (1 == output[0] && (output[4] & 0xFF) == 0) {
 			m_state = finished;
 			m_stopTime = get_time();
@@ -80,7 +82,7 @@ public:
 	}
 
 	bool IsPaused() {
-		auto output = m_cML->CastToInt('o');
+		auto output = iFPGA::CastToInt(m_cML->m_outputHandle);
 		if (1 == output[0] && (output[4] & 0xFF) > 0) {
 			m_state = paused;
 			return true;
@@ -217,7 +219,7 @@ public:
 		FThread* threadToMigrate = NULL;
 
 		uint32_t i = 0;
-		uint32_t pos = -1;
+		int pos = -1;
 		for (FThread* t: m_runningThreads) {
 			uint32_t minimum = numeric_limits<uint32_t>::max();
 			if ((t->GetState() == idle || t->GetState() == paused) && t->GetNumTimesResumed() < minimum) {
@@ -268,15 +270,15 @@ private:
 #endif
 		fthread->Resume();
 
-		auto programMemory = fthread->m_cML->CastToInt('p');
-		auto inputMemory = fthread->m_cML->CastToInt('i');
-		auto outputMemory = fthread->m_cML->CastToInt('o');
+		auto programMemory = iFPGA::CastToInt(fthread->m_cML->m_programMemoryHandle);
+		auto inputMemory = iFPGA::CastToInt(fthread->m_cML->m_inputHandle);
+		auto outputMemory = iFPGA::CastToInt(fthread->m_cML->m_outputHandle);
 
 		outputMemory[0] = 0;
-		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (fthread->m_cML->m_numInstructions & 0xFF) );
-		iFPGA::writeCSR(whichInstance*4 + 1, intptr_t(programMemory));
-		iFPGA::writeCSR(whichInstance*4 + 2, intptr_t(inputMemory));
-		iFPGA::writeCSR(whichInstance*4 + 3, intptr_t(outputMemory));
+		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (fthread->m_cML->m_numInstructions & 0xFF) );
+		iFPGA::WriteConfigReg(whichInstance*4 + 1, (uint64_t)programMemory);
+		iFPGA::WriteConfigReg(whichInstance*4 + 2, (uint64_t)inputMemory);
+		iFPGA::WriteConfigReg(whichInstance*4 + 3, (uint64_t)outputMemory);
 	}
 
 	void PauseThread(FThread* fthread, uint32_t whichInstance) {
@@ -291,7 +293,7 @@ private:
 #ifdef PRINT_STATUS
 		cout << "PauseThread with id: " << fthread->GetId() << endl;
 #endif
-		iFPGA::writeCSR(whichInstance*4 + 0, (vc_select << 30) | (1 << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
+		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (1 << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
 		fthread->Pause();
 	}
 
@@ -344,7 +346,7 @@ private:
 				FThread* fthread = m_requestQueue.front();
 
 				if ( fthread != nullptr ) {
-					uint32_t whichInstance = -1;
+					int whichInstance = -1;
 					uint32_t minimumLoad = numeric_limits<uint32_t>::max();
 					for (uint32_t k = 0; k < m_numInstances; k++) {
 						if (m_instance[k]->GetNumThreads() < minimumLoad) {
@@ -408,9 +410,8 @@ private:
 	}
 
 public:
-	Server(const char* accel_uuid,
-		bool enableContextSwitch,
-		bool enableThreadMigration) : iFPGA(accel_uuid)
+	Server(bool enableContextSwitch,
+		bool enableThreadMigration) : iFPGA()
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;
@@ -419,10 +420,9 @@ public:
 		ConstructorCommon();
 	}
 
-	Server(const char* accel_uuid,
-		bool enableContextSwitch,
+	Server(bool enableContextSwitch,
 		bool enableThreadMigration,
-		uint32_t numInstances) : iFPGA(accel_uuid)
+		uint32_t numInstances) : iFPGA()
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;

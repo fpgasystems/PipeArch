@@ -2,9 +2,6 @@
 #include "FPGA_ColumnML.h"
 #include "Server.h"
 
-// State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script
-#include "afu_json_info.h"
-
 /*
 1. Have NUM_JOB_TYPES job types, each with a standalone runtime, affected by the algorithm, minibatch size, dataset size etc.
 First measure standalone runtimes for NUM_JOB_TYPES jobs.
@@ -110,7 +107,7 @@ int main(int argc, char* argv[]) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
-	Server server(AFU_ACCEL_UUID, enableContextSwitch, enableThreadMigration);
+	Server server(enableContextSwitch, enableThreadMigration);
 
 	FPGA_ColumnML* columnML[MAX_NUM_JOBS];
 	for (uint32_t i = 0; i < numJobs; i++) {
@@ -197,7 +194,7 @@ int main(int argc, char* argv[]) {
 
 	for (uint32_t i = 0; i < numJobs; i++) {
 #ifdef VALIDATE_LOSS
-		auto output1 = columnML[i]->CastToFloat('o');
+		auto output1 = iFPGA::CastToFloat(columnML[i]->m_outputHandle);
 		float* xHistory1 = (float*)(output1 + 16);
 		for (uint32_t e = 0; e < jobs[i%NUM_JOB_TYPES].m_numEpochs; e++) {
 			float loss = columnML[i]->Loss(jobs[i%NUM_JOB_TYPES].m_type, xHistory1 + e*columnML[i]->m_alignedNumFeatures, lambda, &args[i%NUM_JOB_TYPES]);

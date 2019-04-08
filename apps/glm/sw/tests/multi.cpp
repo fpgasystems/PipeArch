@@ -2,9 +2,6 @@
 #include "FPGA_ColumnML.h"
 #include "Server.h"
 
-// State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script
-#include "afu_json_info.h"
-
 #define VALUE_TO_INT_SCALER 10
 
 int main(int argc, char* argv[]) {
@@ -25,7 +22,7 @@ int main(int argc, char* argv[]) {
 	uint32_t partitionSize = 16000;
 
 	const uint32_t NUM_JOBS = 4;
-	Server server(AFU_ACCEL_UUID, true, true);
+	Server server(true, true);
 
 	FPGA_ColumnML* columnML[NUM_JOBS];
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
@@ -77,7 +74,7 @@ int main(int argc, char* argv[]) {
 
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
 
-		auto output1 = columnML[i]->CastToFloat('o');
+		auto output1 = iFPGA::CastToFloat(columnML[i]->m_outputHandle);
 		float* xHistory1 = (float*)(output1 + 16);
 		for (uint32_t e = 0; e < numEpochs; e++) {
 			float loss = columnML[i]->Loss(type, xHistory1 + e*columnML[i]->m_alignedNumFeatures, lambda, &args);

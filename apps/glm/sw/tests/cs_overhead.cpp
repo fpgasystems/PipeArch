@@ -2,9 +2,6 @@
 #include "FPGA_ColumnML.h"
 #include "Server.h"
 
-// State from the AFU's JSON file, extracted using OPAE's afu_json_mgr script
-#include "afu_json_info.h"
-
 /*
 1. Overhead of context-switch: Enqueue 1 job type (that job should be high priority,
 so it will not be paused) on a busy server, measure response time. Compare this to
@@ -109,7 +106,7 @@ int main(int argc, char* argv[]) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
-	Server server(AFU_ACCEL_UUID, enableContextSwitch, enableThreadMigration, 1);
+	Server server(enableContextSwitch, enableThreadMigration, 1);
 
 	FPGA_ColumnML* columnML[MAX_NUM_JOBS];
 	for (uint32_t i = 0; i < numJobs; i++) {
@@ -222,7 +219,7 @@ int main(int argc, char* argv[]) {
 
 	for (uint32_t i = 0; i < numJobs; i++) {
 #ifdef VALIDATE_LOSS
-		auto output = columnML[i]->CastToFloat('o');
+		auto output = iFPGA::CastToFloat(columnML[i]->m_outputHandle);
 		float* xHistory = (float*)(output + 16);
 		for (uint32_t e = 0; e < jobs[i%NUM_JOB_TYPES].m_numEpochs; e++) {
 			float loss = columnML[i]->Loss(jobs[i%NUM_JOB_TYPES].m_type, xHistory + e*columnML[i]->m_alignedNumFeatures, lambda, &args[i%NUM_JOB_TYPES]);
@@ -240,7 +237,7 @@ int main(int argc, char* argv[]) {
 	highArgs.m_constantStepSize = true;
 
 #ifdef VALIDATE_LOSS
-	auto output = highColumnML->CastToFloat('o');
+	auto output = iFPGA::CastToFloat(highColumnML->m_outputHandle);
 	float* xHistory = (float*)(output + 16);
 	for (uint32_t e = 0; e < numEpochs; e++) {
 		float loss = highColumnML->Loss(linreg, xHistory + e*highColumnML->m_alignedNumFeatures, lambda, &highArgs);
