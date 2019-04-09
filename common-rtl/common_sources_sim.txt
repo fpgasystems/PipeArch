@@ -2,8 +2,8 @@ C:../opae/base/hw/rtl/base_sources.txt
 
 +incdir+.
 pipearch_copy.sv
-pipearch_dma_read.sv
-pipearch_dma_write.sv
+intel_dma/pipearch_dma_read.sv
+intel_dma/pipearch_dma_write.sv
 
 memory/bram.sv
 memory/fifo.sv
@@ -54,3 +54,12 @@ IP/intel_IP/fp_subtract_arria10/sim/fp_subtract_arria10.v
 IP/xilinx_IP/xlnx_fp_mult/sim/xlnx_fp_mult.vhd
 IP/xilinx_IP/xlnx_fp_subtract/sim/xlnx_fp_subtract.vhd
 IP/xilinx_IP/xlnx_dec23_to_fp_convert/sim/xlnx_dec23_to_fp_convert.vhd
+
+memory/normal2axis_fifo.vhd
+memory/simple_dual_port_ram.vhd
+xilinx_dma/krnl_axi_read_master.sv
+xilinx_dma/krnl_axi_write_master.sv
+xilinx_dma/krnl_control_s_axi.v
+xilinx_dma/krnl_counter.sv
+xilinx_dma/pipearch_dma_read_xilinx.sv
+xilinx_dma/pipearch_dma_write_xilinx.sv

@@ -1,5 +1,4 @@
 `include "pipearch_common.vh"
-`include "glm_common.vh"
 
 `default_nettype none
 
@@ -181,8 +180,8 @@ module xilinx_glm_top
     glm_top
     glm_top_inst
     (
-        .clk(clk),
-        .reset(reset),
+        .clk(ap_clk),
+        .reset(areset),
         .DMA_read(inst_dma_read.to_dma),
         .DMA_write(inst_dma_write.to_dma),
         .config_regs(config_regs),

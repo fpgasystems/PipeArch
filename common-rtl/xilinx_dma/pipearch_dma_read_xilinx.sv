@@ -52,6 +52,7 @@ module pipearch_dma_read_xilinx
     // AXI4 Read Master
     logic krnl_ctrl_start;
     logic krnl_ctrl_done;
+    logic krnl_ctrl_done_issued;
     logic [CLADDR_WIDTH-1:0] krnl_ctrl_addr;
     logic [31:0] krnl_ctrl_length;
     krnl_axi_read_master #( 
@@ -125,7 +126,6 @@ module pipearch_dma_read_xilinx
     // *************************************************************************
     logic [1:0] offset_accumulate;
     logic [31:0] num_wait_fifo_lines;
-    logic [31:0] RX_num_wait_fifo_lines;
     logic [31:0] num_received_lines;
     logic [31:0] num_forward_request_lines;
     logic [31:0] num_forwarded_lines;
@@ -237,6 +237,8 @@ module pipearch_dma_read_xilinx
                     num_wait_fifo_lines <= tx_fifo_access.rdata[$bits(t_claddr)+5*32] ? temp_reg[4][30:0] : 32'b0;
                     // *************************************************************************
                     offset_accumulate <= 2'b0;
+                    num_forward_request_lines <= 0;
+                    num_forwarded_lines <= 0;
                     request_state <= STATE_PREPROCESS;
                 end
             end
@@ -256,6 +258,7 @@ module pipearch_dma_read_xilinx
                 krnl_ctrl_start <= 1'b1;
                 krnl_ctrl_addr <= DRAM_load_offset;
                 krnl_ctrl_length <= DRAM_load_length;
+                krnl_ctrl_done_issued <= 1'b0;
                 request_state <= STATE_READ;
             end
 
@@ -288,7 +291,12 @@ module pipearch_dma_read_xilinx
                     num_forwarded_lines <= num_forwarded_lines + 1;
                 end
 
-                if (num_forwarded_lines == DRAM_load_length && num_wait_fifo_lines == DRAM_load_length && krnl_ctrl_done)
+                if (krnl_ctrl_done)
+                begin
+                    krnl_ctrl_done_issued <= 1'b1;
+                end
+
+                if (num_forwarded_lines == DRAM_load_length && krnl_ctrl_done_issued)
                 begin
                     request_state <= STATE_DONE;
                 end

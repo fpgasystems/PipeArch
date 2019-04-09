@@ -2,9 +2,11 @@
 `include "csr_mgr.vh"
 `include "afu_json_info.vh"
 `include "pipearch_common.vh"
-`include "glm_common.vh"
 
 module intel_arbiter
+#(
+    parameter NUM_INSTANCES = 2
+)
 (
     input logic clk,
     input logic userclk,
@@ -22,6 +24,8 @@ module intel_arbiter
     input logic c0NotEmpty,
     input logic c1NotEmpty
 );
+    
+
     // ====================================================================
     //
     //  Transfer reset

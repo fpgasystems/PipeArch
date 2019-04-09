@@ -181,6 +181,11 @@ module glm_writeback
                         send_state <= STATE_DONE;
                     end
                 end
+
+                if (DMA_write.status.done)
+                begin
+                    send_state <= STATE_DONE;
+                end
             end
 
             STATE_DONE:

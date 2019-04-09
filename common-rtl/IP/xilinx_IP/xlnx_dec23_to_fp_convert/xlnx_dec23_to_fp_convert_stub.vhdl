@@ -1,13 +1,13 @@
 -- Copyright 1986-2018 Xilinx, Inc. All Rights Reserved.
 -- --------------------------------------------------------------------------------
 -- Tool Version: Vivado v.2018.2 (lin64) Build 2258646 Thu Jun 14 20:02:38 MDT 2018
--- Date        : Fri Apr  5 11:35:00 2019
+-- Date        : Tue Apr  9 14:24:13 2019
 -- Host        : kkara-desktop running 64-bit Ubuntu 16.04.5 LTS
 -- Command     : write_vhdl -force -mode synth_stub
---               /home/kkara/Projects/pipearch/apps/glm/xilinx_work/ip_project/ip_project.srcs/sources_1/ip/xlnx_dec23_to_fp_convert/xlnx_dec23_to_fp_convert_stub.vhdl
+--               /home/kkara/Projects/aws-apps/rtl_vadd/_x/link/vivado/prj/prj.srcs/sources_1/ip/xlnx_dec23_to_fp_convert/xlnx_dec23_to_fp_convert_stub.vhdl
 -- Design      : xlnx_dec23_to_fp_convert
 -- Purpose     : Stub declaration of top-level module interface
--- Device      : xcvu9p-fsgd2104-2L-e
+-- Device      : xcvu9p-fsgd2104-2-i
 -- --------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;

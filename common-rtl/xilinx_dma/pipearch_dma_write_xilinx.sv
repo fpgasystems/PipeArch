@@ -33,8 +33,21 @@ module pipearch_dma_write_xilinx
     input  wire [1:0]                           m_axi_gmem_BRESP,
     input  wire [C_M_AXI_GMEM_ID_WIDTH - 1:0]   m_axi_gmem_BID,
 
-    dma_write_interface DMA_write
+    dma_write_interface.at_dma DMA_write
 );
+
+    // *************************************************************************
+    //
+    //   Internal State
+    //
+    // *************************************************************************
+    typedef enum logic [1:0]
+    {
+        STATE_IDLE,
+        STATE_WRITE,
+        STATE_DONE
+    } t_writestate;
+    t_writestate send_state;
 
     // *************************************************************************
     //
@@ -56,7 +69,7 @@ module pipearch_dma_write_xilinx
         .m_axis_tvalid(m_axis_tvalid),
         .m_axis_tready(m_axis_tready),
         .m_axis_tdata(m_axis_tdata),
-        .almostfull(DMA_write.rx_write.almostfull),
+        .almostfull(DMA_write.rx_write.walmostfull),
         .count()
     );
 
@@ -122,19 +135,6 @@ module pipearch_dma_write_xilinx
 
     // *************************************************************************
     //
-    //   Internal State
-    //
-    // *************************************************************************
-    typedef enum logic [1:0]
-    {
-        STATE_IDLE,
-        STATE_WRITE,
-        STATE_DONE
-    } t_writestate;
-    t_writestate send_state;
-
-    // *************************************************************************
-    //
     //   Counter
     //
     // *************************************************************************
@@ -145,6 +145,7 @@ module pipearch_dma_write_xilinx
     begin
         krnl_ctrl_start <= 1'b0;
         DMA_write.rx_write.wvalid <= 1'b0;
+        DMA_write.status.done <= 1'b0;
 
         case(send_state)
             STATE_IDLE:
@@ -184,10 +185,15 @@ module pipearch_dma_write_xilinx
             STATE_DONE:
             begin
                 DMA_write.status.done <= 1'b1;
-                ack_state <= STATE_IDLE;
+                send_state <= STATE_IDLE;
             end
 
         endcase
+
+        if (reset)
+        begin
+            send_state <= STATE_IDLE;
+        end
     end
 
 endmodule // pipearch_dma_write_xilinx

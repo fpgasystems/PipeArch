@@ -32,20 +32,24 @@
 #
 # *******************************************************************************/
 
-set path_to_hdl1    "../../hw/blueprint"
-set path_to_hdl2    "../../../../common-rtl/"
-set path_to_hdl3    "../../../../common-rtl/compute"
-set path_to_hdl4    "../../../../common-rtl/memory"
-set path_to_ip      "../../../../common-rtl/IP/xilinx_IP"
+set path_to_hdl1    "../hw/common"
+set path_to_hdl2    "../hw/xilinx_top"
+set path_to_hdl3    "../../../common-rtl/"
+set path_to_hdl4    "../../../common-rtl/xilinx_dma"
+set path_to_hdl5    "../../../common-rtl/compute"
+set path_to_hdl6    "../../../common-rtl/memory"
+set path_to_ip      "../../../common-rtl/IP/xilinx_IP/"
 set path_to_packaged "./packaged_kernel_${suffix}"
 set path_to_tmp_project "./tmp_kernel_pack_${suffix}"
 
-create_project -force kernel_pack $path_to_tmp_project 
-add_files -norecurse [glob $path_to_hdl1/*.v $path_to_hdl1/*.sv $path_to_hdl1/*.vhd]
-add_files -norecurse [glob $path_to_hdl2/*.v $path_to_hdl2/*.sv $path_to_hdl2/*.vhd]
-add_files -norecurse [glob $path_to_hdl3/*.v $path_to_hdl3/*.sv $path_to_hdl3/*.vhd]
-add_files -norecurse [glob $path_to_hdl4/*.v $path_to_hdl4/*.sv $path_to_hdl4/*.vhd]
-add_files -recurse [glob $path_to_ip/*.xci]
+create_project -force kernel_pack $path_to_tmp_project -part xcvu9p-fsgd2104-2-i
+add_files -norecurse [glob $path_to_hdl1/*.v $path_to_hdl1/*.sv $path_to_hdl1/*.vhd $path_to_hdl1/*.vh]
+add_files -norecurse [glob $path_to_hdl2/*.v $path_to_hdl2/*.sv $path_to_hdl2/*.vhd $path_to_hdl2/*.vh]
+add_files -norecurse [glob $path_to_hdl3/*.v $path_to_hdl3/*.sv $path_to_hdl3/*.vhd $path_to_hdl3/*.vh]
+add_files -norecurse [glob $path_to_hdl4/*.v $path_to_hdl4/*.sv $path_to_hdl4/*.vhd $path_to_hdl4/*.vh]
+add_files -norecurse [glob $path_to_hdl5/*.v $path_to_hdl5/*.sv $path_to_hdl5/*.vhd $path_to_hdl5/*.vh]
+add_files -norecurse [glob $path_to_hdl6/*.v $path_to_hdl6/*.sv $path_to_hdl6/*.vhd $path_to_hdl6/*.vh]
+add_files -norecurse [glob $path_to_ip/*/*.xci]
 update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
 ipx::package_project -root_dir $path_to_packaged -vendor xilinx.com -library RTLKernel -taxonomy /KernelIP -import_files -set_current false

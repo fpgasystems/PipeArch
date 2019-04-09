@@ -1,0 +1,15 @@
+C:../../../../common-rtl/common_sources_sim.txt
+
+../common/glm_dot.sv
+../common/glm_load.sv
+../common/glm_modify.sv
+../common/glm_top.sv
+../common/glm_update.sv
+../common/glm_writeback.sv
+intel_arbiter.sv
+intel_glm_top.sv
+intel_top.sv
+pipearch_cci.json
+
+../xilinx_top/xilinx_top.v
+../xilinx_top/xilinx_glm_top.sv

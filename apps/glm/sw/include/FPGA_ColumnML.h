@@ -10,7 +10,7 @@ class FPGA_ColumnML : public ColumnML {
 private:
 	iFPGA* m_ifpga;
 
-	volatile float* m_memory = nullptr;
+	volatile float* m_base = nullptr;
 	volatile float* m_model = nullptr;
 	volatile float* m_labels = nullptr;
 	volatile float* m_samples = nullptr;
@@ -45,6 +45,14 @@ private:
 		for (uint32_t i = 0; i < m_numInstructions; i++) {
 			m_inst[i].LoadInstruction(programMemory + i*Instruction::NUM_WORDS);
 		}
+
+#ifdef XILINX
+		vector<cl::Memory> buffersToCopy;
+		buffersToCopy.push_back(iFPGA::CastToPtr(m_inputHandle));
+		buffersToCopy.push_back(iFPGA::CastToPtr(m_outputHandle));
+		buffersToCopy.push_back(iFPGA::CastToPtr(m_programMemoryHandle));
+		m_ifpga->CopyToFPGA(buffersToCopy);
+#endif
 	}
 
 public:
@@ -141,12 +149,12 @@ public:
 			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
 
 			m_ifpga->Realloc(m_inputHandle, countCL*64);
-			m_memory = iFPGA::CastToFloat(m_inputHandle);
-			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
+			m_base = iFPGA::CastToFloat(m_inputHandle);
+			memset((void*)m_base, 0, 16*countCL*sizeof(float));
 
-			m_model = m_memory + m_modelChunk.m_offsetInCL*16;
-			m_labels = m_memory + m_labelsChunk.m_offsetInCL*16;
-			m_samples = m_memory + m_samplesChunk.m_offsetInCL*16;
+			m_model = m_base + m_modelChunk.m_offsetInCL*16;
+			m_labels = m_base + m_labelsChunk.m_offsetInCL*16;
+			m_samples = m_base + m_samplesChunk.m_offsetInCL*16;
 
 			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 				m_model[j] = 0;
@@ -207,16 +215,16 @@ public:
 			}
 
 			m_ifpga->Realloc(m_inputHandle, countCL*64);
-			m_memory = iFPGA::CastToFloat(m_inputHandle);
-			memset((void*)m_memory, 0, 16*countCL*sizeof(float));
+			m_base = iFPGA::CastToFloat(m_inputHandle);
+			memset((void*)m_base, 0, 16*countCL*sizeof(float));
 
-			m_residual = m_memory + m_residualChunk.m_offsetInCL*16;
-			m_labels = m_memory + m_labelsChunk.m_offsetInCL*16;
-			m_model = m_memory + m_modelChunk.m_offsetInCL*16;
-			m_accessprops = (uint32_t*)(m_memory + m_accesspropsChunk.m_offsetInCL*16);
+			m_residual = m_base + m_residualChunk.m_offsetInCL*16;
+			m_labels = m_base + m_labelsChunk.m_offsetInCL*16;
+			m_model = m_base + m_modelChunk.m_offsetInCL*16;
+			m_accessprops = (uint32_t*)(m_base + m_accesspropsChunk.m_offsetInCL*16);
 			m_columns = new volatile float*[m_cstore->m_numFeatures];
 			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				m_columns[j] = m_memory + m_columnsChunks[j][0].m_offsetInCL*16;
+				m_columns[j] = m_base + m_columnsChunks[j][0].m_offsetInCL*16;
 			}
 
 			for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {

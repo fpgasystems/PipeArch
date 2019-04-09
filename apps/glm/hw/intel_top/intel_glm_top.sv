@@ -2,7 +2,6 @@
 `include "csr_mgr.vh"
 `include "afu_json_info.vh"
 `include "pipearch_common.vh"
-`include "glm_common.vh"
 
 module intel_glm_top
 (

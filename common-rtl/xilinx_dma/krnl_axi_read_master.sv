@@ -46,11 +46,11 @@ module krnl_axi_read_master #(
   parameter integer C_ID_WIDTH         = 1,   // Must be >= $clog2(C_NUM_CHANNELS)
   parameter integer C_ADDR_WIDTH       = 64,
   parameter integer C_DATA_WIDTH       = 32,
-  parameter integer C_NUM_CHANNELS     = 2,   // Only 2 tested.
-  parameter integer C_LENGTH_WIDTH     = 32,  
+  parameter integer C_NUM_CHANNELS     = 2,
+  parameter integer C_LENGTH_WIDTH     = 32,
   parameter integer C_BURST_LEN        = 256, // Max AXI burst length for read commands
   parameter integer C_LOG_BURST_LEN    = 8,
-  parameter integer C_MAX_OUTSTANDING  = 3 
+  parameter integer C_MAX_OUTSTANDING  = 3
 )
 (
   // System signals
@@ -109,7 +109,7 @@ logic                                                         fifo_stall;
 logic                                                         arxfer;
 logic                                                         arvalid_r = 1'b0; 
 logic [C_NUM_CHANNELS-1:0][C_ADDR_WIDTH-1:0]                  addr;
-logic [C_ID_WIDTH-1:0]                                        id = {C_ID_WIDTH{1'b1}};
+logic [C_ID_WIDTH-1:0]                                        id = C_NUM_CHANNELS == 1 ? 1'b0 : {C_ID_WIDTH{1'b1}};
 logic [LP_TRANSACTION_CNTR_WIDTH-1:0]                         ar_transactions_to_go;
 logic                                                         ar_final_transaction;
 logic [C_NUM_CHANNELS-1:0]                                    incr_ar_to_r_cnt;
@@ -186,10 +186,10 @@ end
 // each channel is assigned a different id. The transactions are interleaved.
 always @(posedge aclk) begin 
   if (start) begin 
-    id <= {C_ID_WIDTH{1'b1}};
+    id <= C_NUM_CHANNELS == 1 ? 1'b0 : {C_ID_WIDTH{1'b1}};
   end
   else begin
-    id <= arxfer ? id - 1'b1 : id; 
+    id <= arxfer && C_NUM_CHANNELS > 1 ? id - 1'b1 : id; 
   end
 end
 

@@ -13,7 +13,7 @@
 
 using namespace std;
 
-// #define PRINT_STATUS
+#define PRINT_STATUS
 
 static const struct timespec PAUSE {.tv_sec = 0, .tv_nsec = 1000};
 
@@ -103,6 +103,7 @@ public:
 			case finished:
 				return "finished";
 		}
+		return "error";
 	}
 
 	void WaitUntilFinished() {
@@ -115,12 +116,14 @@ public:
 class Instance {
 private:
 	uint32_t m_id;
+	iFPGA* m_ifpga;
 	vector<FThread*> m_runningThreads;
 
 public:
 
-	Instance(uint32_t id) {
+	Instance(uint32_t id, iFPGA* ifpga) {
 		m_id = id;
+		m_ifpga = ifpga;
 	}
 
 	uint32_t GetId() {
@@ -158,6 +161,17 @@ public:
 	void UpdateStates() {
 		vector<uint32_t> toErase;
 		uint32_t pos = 0;
+
+#ifdef XILINX
+		vector<cl::Memory> buffersToCopy;
+		for (FThread* t: m_runningThreads) {
+			buffersToCopy.push_back(m_ifpga->CastToPtr(t->m_cML->m_outputHandle));
+		}
+		if (buffersToCopy.size() > 0) {
+			m_ifpga->CopyFromFPGA(buffersToCopy);
+		}
+#endif
+
 		for (FThread* t: m_runningThreads) {
 			if (t->IsFinished()) {
 				cout << "------ FThread with id: " << t->GetId() << " is finished" << endl;
@@ -270,15 +284,25 @@ private:
 #endif
 		fthread->Resume();
 
-		auto programMemory = iFPGA::CastToInt(fthread->m_cML->m_programMemoryHandle);
-		auto inputMemory = iFPGA::CastToInt(fthread->m_cML->m_inputHandle);
-		auto outputMemory = iFPGA::CastToInt(fthread->m_cML->m_outputHandle);
+		auto output = iFPGA::CastToInt(fthread->m_cML->m_outputHandle);
+		output[0] = 0;
 
-		outputMemory[0] = 0;
+		cout << "output resetted" << endl;
+
+		auto programMemory = iFPGA::CastToPtr(fthread->m_cML->m_programMemoryHandle);
+		auto inputMemory = iFPGA::CastToPtr(fthread->m_cML->m_inputHandle);
+		auto outputMemory = iFPGA::CastToPtr(fthread->m_cML->m_outputHandle);
+
+		cout << "Writing args" << endl;
+
 		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (fthread->m_cML->m_numInstructions & 0xFF) );
-		iFPGA::WriteConfigReg(whichInstance*4 + 1, (uint64_t)programMemory);
-		iFPGA::WriteConfigReg(whichInstance*4 + 2, (uint64_t)inputMemory);
-		iFPGA::WriteConfigReg(whichInstance*4 + 3, (uint64_t)outputMemory);
+		iFPGA::WriteConfigReg(whichInstance*4 + 1, programMemory);
+		iFPGA::WriteConfigReg(whichInstance*4 + 2, inputMemory);
+		iFPGA::WriteConfigReg(whichInstance*4 + 3, outputMemory);
+
+#ifdef XILINX
+		iFPGA::StartKernel();
+#endif
 	}
 
 	void PauseThread(FThread* fthread, uint32_t whichInstance) {
@@ -402,7 +426,7 @@ private:
 		unique_lock<mutex> lck(m_mtx);
 		m_numThreads = 0;
 		for (uint32_t k = 0; k < m_numInstances; k++) {
-			m_instance[k] = new Instance(k);
+			m_instance[k] = new Instance(k, this);
 		}
 		m_serverThread = thread(&Server::ProcessRequests, this);
 		cout << "Waiting..." << endl;

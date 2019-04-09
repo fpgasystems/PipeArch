@@ -1,3 +1,13 @@
 build_sim
 obj
 output
+*.jou
+*.log
+tmp_*
+
+emconfig.json
+packaged_kernel_*
+xclbin/
+sdaccel_*.csv
+.run/
+_x/

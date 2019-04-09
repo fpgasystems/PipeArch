@@ -6,8 +6,8 @@ bool FPGA_ColumnML::fSGD(
 	float stepSize,
 	float lambda)
 {
-	if (m_memory == nullptr) {
-		cout << "m_memory is nullptr!" << endl;
+	if (m_base == nullptr) {
+		cout << "m_base is nullptr!" << endl;
 		return false;
 	}
 
@@ -195,8 +195,8 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	float stepSize,
 	float lambda)
 {
-	if (m_memory == nullptr) {
-		cout << "m_memory is nullptr!" << endl;
+	if (m_base == nullptr) {
+		cout << "m_base is nullptr!" << endl;
 		return false;
 	}
 	if (m_partitionSize%minibatchSize > 0) {
@@ -359,8 +359,8 @@ bool FPGA_ColumnML::fSCD(
 	float stepSize, 
 	float lambda)
 {
-	if (m_memory == nullptr) {
-		cout << "m_memory is nullptr!" << endl;
+	if (m_base == nullptr) {
+		cout << "m_base is nullptr!" << endl;
 		return false;
 	}
 
@@ -490,8 +490,8 @@ bool FPGA_ColumnML::fSGD_blocking(
 	float stepSize,
 	float lambda)
 {
-	if (m_memory == nullptr) {
-		cout << "m_memory is nullptr!" << endl;
+	if (m_base == nullptr) {
+		cout << "m_base is nullptr!" << endl;
 		return false;
 	}
 

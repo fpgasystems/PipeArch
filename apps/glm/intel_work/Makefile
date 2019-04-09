@@ -40,7 +40,7 @@ ex:
 
 # AFU info from JSON file, including AFU UUID
 AFU_JSON_INFO = $(OBJDIR)/afu_json_info.h
-$(AFU_JSON_INFO): $(hw_path)/blueprint/pipearch_cci.json | objdir
+$(AFU_JSON_INFO): $(hw_path)/intel_top/pipearch_cci.json | objdir
 	afu_json_mgr json-info --afu-json=$^ --c-hdr=$@
 $(OBJS): $(AFU_JSON_INFO)
 
