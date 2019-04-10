@@ -46,13 +46,13 @@ private:
 			m_inst[i].LoadInstruction(programMemory + i*Instruction::NUM_WORDS);
 		}
 
-#ifdef XILINX
-		vector<cl::Memory> buffersToCopy;
-		buffersToCopy.push_back(iFPGA::CastToPtr(m_inputHandle));
-		buffersToCopy.push_back(iFPGA::CastToPtr(m_outputHandle));
-		buffersToCopy.push_back(iFPGA::CastToPtr(m_programMemoryHandle));
-		m_ifpga->CopyToFPGA(buffersToCopy);
-#endif
+// #ifdef XILINX
+// 		vector<cl::Memory> buffersToCopy;
+// 		buffersToCopy.push_back(iFPGA::CastToPtr(m_inputHandle));
+// 		buffersToCopy.push_back(iFPGA::CastToPtr(m_outputHandle));
+// 		buffersToCopy.push_back(iFPGA::CastToPtr(m_programMemoryHandle));
+// 		m_ifpga->CopyToFPGA(buffersToCopy);
+// #endif
 	}
 
 public:

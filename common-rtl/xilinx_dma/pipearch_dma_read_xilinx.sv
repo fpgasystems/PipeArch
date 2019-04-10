@@ -48,11 +48,13 @@ module pipearch_dma_read_xilinx
     localparam integer LP_AXI_BURST_LEN = 4096/LP_DW_BYTES < 256 ? 4096/LP_DW_BYTES : 256;
     localparam integer LP_LOG_BURST_LEN = $clog2(LP_AXI_BURST_LEN);
     localparam integer LP_RD_MAX_OUTSTANDING = 3;
+    localparam integer LP_RM_MAX_OUTSTANDING_LINES = LP_RD_MAX_OUTSTANDING*LP_AXI_BURST_LEN;
 
     // AXI4 Read Master
     logic krnl_ctrl_start;
     logic krnl_ctrl_done;
     logic krnl_ctrl_done_issued;
+    logic krnl_ctrl_prog_full;
     logic [CLADDR_WIDTH-1:0] krnl_ctrl_addr;
     logic [31:0] krnl_ctrl_length;
     krnl_axi_read_master #( 
@@ -73,7 +75,7 @@ module pipearch_dma_read_xilinx
         .ctrl_done      (krnl_ctrl_done),
         .ctrl_offset    (krnl_ctrl_addr) ,
         .ctrl_length    (krnl_ctrl_length) ,
-        .ctrl_prog_full (prefetch_fifo_access.almostfull) ,
+        .ctrl_prog_full (krnl_ctrl_prog_full) ,
 
         .arvalid        (m_axi_gmem_ARVALID),
         .arready        (m_axi_gmem_ARREADY),
@@ -126,9 +128,12 @@ module pipearch_dma_read_xilinx
     // *************************************************************************
     logic [1:0] offset_accumulate;
     logic [31:0] num_wait_fifo_lines;
+    logic [31:0] num_requested_lines;
     logic [31:0] num_received_lines;
     logic [31:0] num_forward_request_lines;
     logic [31:0] num_forwarded_lines;
+    logic [31:0] num_lines_in_flight;
+    logic signed [31:0] prefetch_fifo_free_count;
 
     // *************************************************************************
     //
@@ -204,6 +209,15 @@ module pipearch_dma_read_xilinx
 
     always_ff @(posedge clk)
     begin
+        // =================================
+        //
+        //   Calculate Allowed Lines
+        //
+        // =================================
+        num_lines_in_flight <= num_requested_lines - num_forwarded_lines;
+        prefetch_fifo_free_count <= PREFETCH_SIZE - num_lines_in_flight;
+        krnl_ctrl_prog_full <= prefetch_fifo_free_count < LP_RM_MAX_OUTSTANDING_LINES;
+
         krnl_ctrl_start <= 1'b0;
         prefetch_fifo_access.re <= 1'b0;
         DMA_read.rx_read.rvalid <= 1'b0;
@@ -237,6 +251,7 @@ module pipearch_dma_read_xilinx
                     num_wait_fifo_lines <= tx_fifo_access.rdata[$bits(t_claddr)+5*32] ? temp_reg[4][30:0] : 32'b0;
                     // *************************************************************************
                     offset_accumulate <= 2'b0;
+                    num_requested_lines <= 0;
                     num_forward_request_lines <= 0;
                     num_forwarded_lines <= 0;
                     request_state <= STATE_PREPROCESS;
@@ -256,7 +271,7 @@ module pipearch_dma_read_xilinx
             STATE_TRIGGER:
             begin
                 krnl_ctrl_start <= 1'b1;
-                krnl_ctrl_addr <= DRAM_load_offset;
+                krnl_ctrl_addr <= (DRAM_load_offset << CL_BYTE_IDX_BITS);
                 krnl_ctrl_length <= DRAM_load_length;
                 krnl_ctrl_done_issued <= 1'b0;
                 request_state <= STATE_READ;
@@ -276,6 +291,11 @@ module pipearch_dma_read_xilinx
                     else if (DMA_read.tx_read.rlength == 2'b00) begin
                         num_wait_fifo_lines <= num_wait_fifo_lines + 1;
                     end
+                end
+
+                if (m_axi_gmem_ARVALID)
+                begin
+                    num_requested_lines <= num_requested_lines + m_axi_gmem_ARLEN + 1;
                 end
 
                 if (!prefetch_fifo_access.empty && num_forward_request_lines < num_wait_fifo_lines)

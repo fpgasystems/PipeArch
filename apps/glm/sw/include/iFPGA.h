@@ -25,13 +25,19 @@
 #endif
 
 class iFPGA {
+protected:
+	static const uint32_t MAX_MEMORY_SIZE = (1 << 10)*16;
+	static const uint32_t MAX_NUM_INSTANCES = MAKEFILE_MAX_NUM_INSTANCES;
+	static const uint32_t NUM_INSTANCES_PER_BANK = MAKEFILE_NUM_INSTANCES_PER_BANK;
+	uint32_t m_numInstances;
+
 private:
 #ifdef XILINX
 	std::vector<cl::Device> m_devices;
 	cl::Device m_device;
 	cl::Context m_context;
 	cl::Program m_program;
-	cl::CommandQueue m_queue;
+	cl::CommandQueue m_queue[MAX_NUM_INSTANCES];
 	cl::Kernel m_kernel;
 #else
 	OPAE_SVC_WRAPPER* m_fpga;
@@ -39,7 +45,9 @@ private:
 #endif
 
 public:
-	iFPGA() {
+
+	iFPGA(uint32_t numInstances) {
+		m_numInstances = numInstances;
 #ifdef XILINX
 		cl_int err;
 		m_devices = xcl::get_xil_devices();
@@ -51,8 +59,11 @@ public:
 		cl::Program::Binaries bins = xcl::import_binary_file(binaryFile);
 		m_devices.resize(1);
 		m_program = cl::Program(m_context, m_devices, bins, NULL, &err);
-		m_queue = cl::CommandQueue(m_context, m_device, CL_QUEUE_PROFILING_ENABLE, &err);
 		m_kernel = cl::Kernel(m_program, "xilinx_top", &err);
+
+		for (uint32_t i = 0; i < m_numInstances; i++) {
+			m_queue[i] = cl::CommandQueue(m_context, m_device, CL_QUEUE_PROFILING_ENABLE, &err);
+		}
 #else
 		if ( !(strcmp(AFU_ACCEL_UUID,"") == 0) ) {
 			m_fpga = new OPAE_SVC_WRAPPER(AFU_ACCEL_UUID);
@@ -117,11 +128,8 @@ public:
 
 	void WriteConfigReg(uint32_t idx, uint64_t v) {
 #ifdef XILINX
-		cout << "Writing argument" << endl;
 		string name;
 		m_kernel.getInfo(CL_KERNEL_FUNCTION_NAME, &name);
-
-		cout << "m_kernel name: " << name << endl;
 		m_kernel.setArg(idx, v);
 #else
 		m_csrs->writeCSR(idx, v);
@@ -130,7 +138,6 @@ public:
 
 #ifdef XILINX
 	void WriteConfigReg(uint32_t idx, cl::Buffer& v) {
-		cout << "Writing cl::Buffer" << endl;
 		m_kernel.setArg(idx, v);
 	}
 #else
@@ -140,6 +147,35 @@ public:
 #endif
 
 #ifdef XILINX
+	void UpdateBank(iFPGA_ptr& handle, uint32_t whichInstance) {
+		uint32_t whichBank = (uint32_t)(whichInstance/NUM_INSTANCES_PER_BANK);
+		if (whichBank != 0) {
+			cl_int err;
+			cl_mem_ext_ptr_t ext_ptr;
+			switch(whichBank) {
+				case 3:
+					ext_ptr.flags = XCL_MEM_DDR_BANK3;
+					break;
+				case 2:
+					ext_ptr.flags = XCL_MEM_DDR_BANK2;
+					break;
+				case 1:
+					ext_ptr.flags = XCL_MEM_DDR_BANK1;
+					break;
+				default:
+					ext_ptr.flags = XCL_MEM_DDR_BANK0;
+					break;
+			}
+			void* handlePtr = NULL;
+			handle->getInfo(CL_MEM_HOST_PTR, &handlePtr);
+			ext_ptr.obj = handlePtr;
+			ext_ptr.param = 0;
+			size_t handleSize = 0;
+			handle->getInfo(CL_MEM_SIZE, &handleSize);
+			handle = new cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, handleSize, &ext_ptr, &err);
+		}
+	}
+
 	static cl::Buffer CastToPtr(iFPGA_ptr handle) {
 		return *handle;
 	}
@@ -156,7 +192,6 @@ public:
 #ifdef XILINX
 		void* temp2 = 0;
 		handle->getInfo(CL_MEM_HOST_PTR, &temp2);
-		cout << "temp2: " << temp2 << endl;
 		temp = reinterpret_cast<volatile uint32_t*>(temp2);
 #else
 		temp = reinterpret_cast<volatile uint32_t*>(handle->c_type());
@@ -212,25 +247,25 @@ public:
 #ifdef XILINX
 	void CopyToFPGA(vector<cl::Memory>& buffersToCopy) {
 		cout << "CopyToFPGA" << endl;
-		cl_int err = m_queue.enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
-		err = m_queue.finish();
+		cl_int err = m_queue[0].enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
+		// err = m_queue.finish();
 	}
 
-	void CopyFromFPGA(vector<cl::Memory>& buffersToCopy) {
+	void CopyFromFPGA(vector<cl::Memory>& buffersToCopy, uint32_t whichInstance) {
 		cout << "CopyFromFPGA" << endl;
-		cl_int err = m_queue.enqueueMigrateMemObjects(buffersToCopy, CL_MIGRATE_MEM_OBJECT_HOST);
-		err = m_queue.finish();
+		cl_int err = m_queue[whichInstance].enqueueMigrateMemObjects(buffersToCopy, CL_MIGRATE_MEM_OBJECT_HOST);
+		// err = m_queue.finish();
 	}
 
-	void StartKernel() {
+	void StartKernel(uint32_t whichInstance) {
 		cout << "StartKernel" << endl;
 		cl_int err;
-		err = m_queue.enqueueTask(m_kernel);
+		err = m_queue[whichInstance].enqueueTask(m_kernel);
 	}
 
-	void WaitForKernel() {
+	void WaitForKernel(uint32_t whichInstance) {
 		cout << "WaitForKernel" << endl;
-		cl_int err = m_queue.finish();
+		cl_int err = m_queue[whichInstance].finish();
 	}
 #endif
 };

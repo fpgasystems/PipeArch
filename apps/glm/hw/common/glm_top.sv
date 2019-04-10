@@ -33,14 +33,13 @@ module glm_top
     //   COMMON FUNCTIONS
     //
     // =================================
-    localparam CL_BYTE_IDX_BITS = 6;
     typedef logic [$bits(t_claddr) + CL_BYTE_IDX_BITS - 1 : 0] t_byteaddr;
     function automatic t_claddr byteAddrToClAddr(t_byteaddr addr);
-`ifdef XILINX
-        return addr[0 +: $bits(t_claddr)];
-`else
+// `ifdef XILINX
+//         return addr[0 +: $bits(t_claddr)];
+// `else
         return addr[CL_BYTE_IDX_BITS +: $bits(t_claddr)];
-`endif
+// `endif
     endfunction
 
     typedef enum logic [1:0]

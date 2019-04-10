@@ -154,7 +154,7 @@ module pipearch_dma_write_xilinx
                 begin
                     krnl_ctrl_start <= 1'b1;
                     // *************************************************************************
-                    krnl_ctrl_addr <= DMA_write.control.addr;
+                    krnl_ctrl_addr <= (DMA_write.control.addr << CL_BYTE_IDX_BITS);
                     krnl_ctrl_length <= DMA_write.control.regs.reg4;
                     // *************************************************************************
                     num_sent_lines <= 0;

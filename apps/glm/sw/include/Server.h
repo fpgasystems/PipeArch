@@ -21,14 +21,15 @@ enum FThreadState {idle, running, to_be_paused, paused, finished};
 
 class FThread {
 private:
-	uint32_t m_id;
 	FThreadState m_state;
+	uint32_t m_id;
 	uint32_t m_numTimesResumed;
 	double m_startTime;
 	double m_stopTime;
 	uint32_t m_priority;
 
 public:
+	bool m_outputCopyRequested;
 	FPGA_ColumnML* m_cML;
 
 	FThread(FPGA_ColumnML* cML, uint32_t id, uint32_t priority) {
@@ -39,6 +40,7 @@ public:
 		m_startTime = get_time();
 		m_stopTime = 0;
 		m_priority = priority;
+		m_outputCopyRequested = false;
 		m_cML-> ResetContext();
 	}
 
@@ -76,6 +78,7 @@ public:
 		if (1 == output[0] && (output[4] & 0xFF) == 0) {
 			m_state = finished;
 			m_stopTime = get_time();
+			m_outputCopyRequested = false;
 			return true;
 		}
 		return false;
@@ -85,6 +88,7 @@ public:
 		auto output = iFPGA::CastToInt(m_cML->m_outputHandle);
 		if (1 == output[0] && (output[4] & 0xFF) > 0) {
 			m_state = paused;
+			m_outputCopyRequested = false;
 			return true;
 		}
 		return false;
@@ -130,11 +134,21 @@ public:
 		return m_id;
 	}
 
-	bool operator< (Instance &other) {
-		return GetNumThreads() < other.GetNumThreads();
+	static bool CompareNumThreads (Instance* first, Instance* second) {
+		return first->GetNumThreads() < second->GetNumThreads();
 	}
 
 	void AddThread(FThread* fthread) {
+#ifdef XILINX
+		m_ifpga->UpdateBank(fthread->m_cML->m_inputHandle, m_id);
+		m_ifpga->UpdateBank(fthread->m_cML->m_outputHandle, m_id);
+		m_ifpga->UpdateBank(fthread->m_cML->m_programMemoryHandle, m_id);
+		vector<cl::Memory> buffersToCopy;
+		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_inputHandle));
+		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_outputHandle));
+		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_programMemoryHandle));
+		m_ifpga->CopyToFPGA(buffersToCopy);
+#endif
 		m_runningThreads.push_back(fthread);
 	}
 
@@ -165,10 +179,13 @@ public:
 #ifdef XILINX
 		vector<cl::Memory> buffersToCopy;
 		for (FThread* t: m_runningThreads) {
-			buffersToCopy.push_back(m_ifpga->CastToPtr(t->m_cML->m_outputHandle));
+			if (t->m_outputCopyRequested == false && (t->GetState() == running || t->GetState() == to_be_paused) ) {
+				buffersToCopy.push_back(m_ifpga->CastToPtr(t->m_cML->m_outputHandle));
+				t->m_outputCopyRequested = true;
+			}
 		}
 		if (buffersToCopy.size() > 0) {
-			m_ifpga->CopyFromFPGA(buffersToCopy);
+			m_ifpga->CopyFromFPGA(buffersToCopy, m_id);
 		}
 #endif
 
@@ -236,11 +253,13 @@ public:
 		int pos = -1;
 		for (FThread* t: m_runningThreads) {
 			uint32_t minimum = numeric_limits<uint32_t>::max();
+			cout << "t->GetNumTimesResumed(): " << t->GetNumTimesResumed() << endl;
 			if ((t->GetState() == idle || t->GetState() == paused) && t->GetNumTimesResumed() < minimum) {
 				minimum = t->GetNumTimesResumed();
 				threadToMigrate = t;
 				pos = i;
 			}
+			cout << "pos: " << pos << endl;
 			i++;
 		}
 
@@ -255,10 +274,7 @@ public:
 
 class Server : public iFPGA {
 private:
-	static const uint32_t MAX_MEMORY_SIZE = (1 << 10)*16;
-	static const uint32_t MAX_NUM_INSTANCES = 2;
 	static const uint32_t vc_select = 0;
-	uint32_t m_numInstances;
 
 	bool m_run;
 	mutex m_mtx;
@@ -266,7 +282,7 @@ private:
 
 	thread m_serverThread;
 	queue<FThread*> m_requestQueue;
-	Instance* m_instance[MAX_NUM_INSTANCES];
+	Instance* m_instance[iFPGA::MAX_NUM_INSTANCES];
 	uint32_t m_numThreads;
 	bool m_enableContextSwitch;
 	bool m_enableThreadMigration;
@@ -295,14 +311,21 @@ private:
 
 		cout << "Writing args" << endl;
 
-		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (fthread->m_cML->m_numInstructions & 0xFF) );
+#ifdef XILINX // On sdaccel we have to trigger context switch already while starting the kernel
+		uint64_t triggerContextSwitch = m_enableContextSwitch;
+		iFPGA::WriteConfigReg(0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
+		iFPGA::WriteConfigReg(1, programMemory);
+		iFPGA::WriteConfigReg(2, inputMemory);
+		iFPGA::WriteConfigReg(3, outputMemory);
+		iFPGA::StartKernel(whichInstance);
+#else // On opae we can write the config registers dynamically to trigger context switch only when necessary
+		uint64_t triggerContextSwitch = 0;
+		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
 		iFPGA::WriteConfigReg(whichInstance*4 + 1, programMemory);
 		iFPGA::WriteConfigReg(whichInstance*4 + 2, inputMemory);
 		iFPGA::WriteConfigReg(whichInstance*4 + 3, outputMemory);
-
-#ifdef XILINX
-		iFPGA::StartKernel();
 #endif
+
 	}
 
 	void PauseThread(FThread* fthread, uint32_t whichInstance) {
@@ -317,7 +340,9 @@ private:
 #ifdef PRINT_STATUS
 		cout << "PauseThread with id: " << fthread->GetId() << endl;
 #endif
+#ifndef XILINX // We cannot write config registers while a kernel is running in sdaccel
 		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (1 << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
+#endif
 		fthread->Pause();
 	}
 
@@ -340,7 +365,7 @@ private:
 		for (uint32_t i = 0; i < m_numInstances; i++) {
 			temp.push_back(m_instance[i]);
 		}
-		sort(temp.begin(), temp.end());
+		stable_sort(temp.begin(), temp.end(), Instance::CompareNumThreads);
 
 		if (temp.front()->GetNumThreads() < temp.back()->GetNumThreads()-1) {
 			FThread* fthread = temp.back()->GetThreadToMigrate();
@@ -390,9 +415,11 @@ private:
 					m_requestQueue.pop();
 				}
 			}
+#ifndef XILINX
 			if (m_numInstances > 1 && m_enableThreadMigration) {
 				RedistributeThreads();
 			}
+#endif
 			ScheduleThreads();
 			lck.unlock();
 
@@ -435,22 +462,20 @@ private:
 
 public:
 	Server(bool enableContextSwitch,
-		bool enableThreadMigration) : iFPGA()
+		bool enableThreadMigration) : iFPGA(iFPGA::MAX_NUM_INSTANCES)
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;
-		m_numInstances = MAX_NUM_INSTANCES;
 
 		ConstructorCommon();
 	}
 
 	Server(bool enableContextSwitch,
 		bool enableThreadMigration,
-		uint32_t numInstances) : iFPGA()
+		uint32_t numInstances) : iFPGA(numInstances)
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;
-		m_numInstances = numInstances;
 
 		ConstructorCommon();
 	}

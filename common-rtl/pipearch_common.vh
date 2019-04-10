@@ -12,6 +12,8 @@ typedef logic [CLADDR_WIDTH-1:0] t_claddr;
 parameter CLDATA_WIDTH  = 512;
 typedef logic [CLDATA_WIDTH-1:0] t_cldata;
 
+localparam CL_BYTE_IDX_BITS = 6; // 64 bytes
+
 typedef struct packed {
     logic[15:0] offset;
     logic[15:0] length;
