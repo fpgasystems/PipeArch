@@ -9,7 +9,7 @@ TEST = scratch
 OBJDIR = obj
 INCLUDE = $(sw_path)/include
 CFLAGS += -I./$(OBJDIR)
-CPPFLAGS += -I./$(OBJDIR) -march=native
+CPPFLAGS += -I./$(OBJDIR) -march=native -DMAKEFILE_MAX_NUM_INSTANCES=2 -DMAKEFILE_NUM_INSTANCES_PER_BANK=2
 
 # Files and folders
 LOCAL_SRCS = $(wildcard $(sw_path)/src/*.cpp)

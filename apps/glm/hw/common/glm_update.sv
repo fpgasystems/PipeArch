@@ -94,7 +94,6 @@ module glm_update
     end
 
     logic subtract_trigger;
-    logic [511:0] subtract_vector1;
     logic [511:0] subtract_vector2;
     logic subtract_valid;
     logic [511:0] subtract_result;
@@ -107,7 +106,7 @@ module glm_update
         .clk,
         .reset(reset),
         .trigger(subtract_trigger),
-        .vector1(subtract_vector1),
+        .vector1(MEM_model.rdata),
         .vector2(subtract_vector2),
         .result_valid(subtract_valid),
         .result(subtract_result)
@@ -118,19 +117,7 @@ module glm_update
         if (multiply_valid && update_state == STATE_MAIN)
         begin
             subtract_trigger <= 1'b1;
-            subtract_vector1 <= MEM_model.rdata;
             subtract_vector2 <= multiply_result;
-        end
-    end
-
-    logic [31:0] debug_MEM_model_wdata [16];
-    logic [31:0] debug_multiply_result [16];
-    always_comb
-    begin
-        for (int i = 0; i < 16; i++)
-        begin
-            debug_MEM_model_wdata[i] = MEM_model.wdata[i*32+31 -: 32];
-            debug_multiply_result[i] = multiply_result[i*32+31 -: 32];
         end
     end
 
@@ -193,7 +180,7 @@ module glm_update
                     end
                 end
 
-                if (multiply_trigger_d[0])
+                if (multiply_trigger_d[1])
                 begin
                     MEM_model.re <= 1'b1;
                     MEM_model.raddr <= MEM_model_offset + num_lines_multiplied_final;
@@ -234,6 +221,17 @@ module glm_update
         if (reset)
         begin
             update_state <= STATE_IDLE;
+        end
+    end
+
+    logic [31:0] debug_MEM_model_wdata [16];
+    logic [31:0] debug_multiply_result [16];
+    always_comb
+    begin
+        for (int i = 0; i < 16; i++)
+        begin
+            debug_MEM_model_wdata[i] = MEM_model.wdata[i*32+31 -: 32];
+            debug_multiply_result[i] = multiply_result[i*32+31 -: 32];
         end
     end
 

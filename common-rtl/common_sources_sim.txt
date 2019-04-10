@@ -13,10 +13,11 @@ memory/write_bram.sv
 memory/write_bram_vector2scalar.sv
 memory/write_fifo.sv
 
-compute/float_mult.sv
-compute/float_subtract.sv
+compute/dec23_to_float_convert.sv
 compute/fixed_adder_tree.vhd
+compute/float_mult.sv
 compute/float_scalar_vector_mult.sv
+compute/float_subtract.sv
 compute/float_vector_mult.sv
 compute/float_vector_subtract.sv
 compute/hybrid_dot_product.vhd
