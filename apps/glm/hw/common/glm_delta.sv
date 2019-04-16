@@ -1,6 +1,6 @@
 `include "pipearch_common.vh"
 
-module glm_dot
+module glm_delta
 (
     input  logic clk,
     input  logic reset,
@@ -12,7 +12,7 @@ module glm_dot
 
     fifobram_interface.read REGION_left_read,
     fifobram_interface.read REGION_right_read,
-    fifobram_interface.write REGION_dot_write
+    fifobram_interface.write REGION_delta_write
 );
 
     // *************************************************************************
@@ -25,8 +25,8 @@ module glm_dot
         STATE_IDLE,
         STATE_TRIGGER,
         STATE_PROCESS
-    } t_dotstate;
-    t_dotstate dot_state;
+    } t_deltastate;
+    t_deltastate delta_state;
 
     // *************************************************************************
     //
@@ -82,21 +82,22 @@ module glm_dot
     //   Computation
     //
     // *************************************************************************
-    logic dot_trigger;
-    logic dot_done;
-    logic [31:0] dot_result;
-    hybrid_dot_product
-    #(.LOG2_VALUES_PER_LINE(4))
-    dot_compute
+    logic subtract_trigger;
+    logic subtract_valid;
+    logic [CLDATA_WIDTH-1:0] subtract_result;
+    float_vector_subtract
+    #(
+        .VALUES_PER_LINE(16)
+    )
+    subtract
     (
         .clk,
-        .resetn(!reset),
-        .trigger(dot_trigger),
-        .accumulation_count(32'(num_lines_to_process)),
+        .reset(reset),
+        .trigger(subtract_trigger),
         .vector1(FIFO_REGION_left_read.rdata),
         .vector2(FIFO_REGION_right_read.rdata),
-        .result_valid(dot_done),
-        .result(dot_result)
+        .result_valid(subtract_valid),
+        .result(subtract_result)
     );
     always_ff @(posedge clk)
     begin
@@ -108,32 +109,32 @@ module glm_dot
             FIFO_REGION_right_read.re <= 1'b1;
         end
     end
-    assign dot_trigger = FIFO_REGION_left_read.rvalid && FIFO_REGION_right_read.rvalid;
+    assign subtract_trigger = FIFO_REGION_left_read.rvalid && FIFO_REGION_right_read.rvalid;
 
     // *************************************************************************
     //
     //   Write Channels
     //
     // *************************************************************************
-    internal_interface #(.WIDTH(32)) from_dot_to_output();
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_subtract_to_output();
     write_region
-    write_REGION_dot_write (
+    write_REGION_delta_write (
         .clk, .reset,
         .op_start(read_trigger),
         .configreg(output_accessproperties),
         .iterations(num_iterations),
-        .into_write(from_dot_to_output.commonwrite_source),
-        .region_access(REGION_dot_write)
+        .into_write(from_subtract_to_output.commonwrite_source),
+        .region_access(REGION_delta_write)
     );
-    assign from_dot_to_output.we = dot_done;
-    assign from_dot_to_output.wdata = dot_result;
+    assign from_subtract_to_output.we = subtract_valid;
+    assign from_subtract_to_output.wdata = subtract_result;
 
     always_ff @(posedge clk)
     begin
         read_trigger <= 1'b0;
         op_done <= 1'b0;
 
-        case (dot_state)
+        case (delta_state)
             STATE_IDLE:
             begin
                 if (op_start)
@@ -147,14 +148,14 @@ module glm_dot
                     // *************************************************************************
                     num_processed_lines <= 0;
                     num_performed_iterations <= 0;
-                    dot_state <= STATE_PROCESS;
+                    delta_state <= STATE_PROCESS;
                     read_trigger <= 1'b1;
                 end
             end
 
             STATE_PROCESS:
             begin
-                if (dot_trigger)
+                if (subtract_trigger)
                 begin
                     num_processed_lines <= num_processed_lines + 1;
                     if (num_processed_lines == num_lines_to_process-1)
@@ -163,13 +164,13 @@ module glm_dot
                     end
                 end
 
-                if (dot_done)
+                if (subtract_valid)
                 begin
                     num_performed_iterations <= num_performed_iterations + 1;
                     if (num_performed_iterations == num_iterations-1)
                     begin
                         op_done <= 1'b1;
-                        dot_state <= STATE_IDLE;
+                        delta_state <= STATE_IDLE;
                     end
                 end
             end
@@ -177,8 +178,8 @@ module glm_dot
 
         if (reset)
         begin
-            dot_state <= STATE_IDLE;
+            delta_state <= STATE_IDLE;
         end
     end
 
-endmodule // glm_dot
+endmodule // glm_delta

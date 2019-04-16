@@ -7,11 +7,10 @@ intel_dma/pipearch_dma_write.sv
 
 memory/bram.sv
 memory/fifo.sv
-memory/read_bram.sv
-memory/read_fifo.sv
-memory/write_bram.sv
-memory/write_bram_vector2scalar.sv
-memory/write_fifo.sv
+memory/read_region.sv
+memory/read_region2fifo.sv
+memory/region.sv
+memory/write_region.sv
 
 compute/dec23_to_float_convert.sv
 compute/fixed_adder_tree.vhd

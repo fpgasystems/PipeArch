@@ -12,12 +12,18 @@ typedef logic [CLADDR_WIDTH-1:0] t_claddr;
 parameter CLDATA_WIDTH  = 512;
 typedef logic [CLDATA_WIDTH-1:0] t_cldata;
 
-localparam CL_BYTE_IDX_BITS = 6; // 64 bytes
+parameter CL_BYTE_IDX_BITS = 6; // 64 bytes
+
+parameter LOG2_ACCESS_SIZE = 14;
 
 typedef struct packed {
-    logic[15:0] offset;
-    logic[15:0] length;
-} bram_access_properties;
+    logic write_bram;
+    logic write_fifo;
+    logic[LOG2_ACCESS_SIZE-1:0] offset;
+    logic[LOG2_ACCESS_SIZE-1:0] length;
+    logic[15:0] iterations;
+    logic keep_count_along_iterations;
+} access_properties;
 
 typedef struct packed {
     logic [63:0] data;
@@ -157,10 +163,17 @@ interface fifobram_interface
     logic                   we;
     logic [LOG2_DEPTH-1:0]  waddr;
     logic [WIDTH-1:0]       wdata;
+    // wfifobram 01 -> bram
+    // wfifobram 10 -> fifo
+    // wfifobram 11 -> both
+    logic [1:0]             wfifobram = 2'b01;
 
     // Request
     logic                   re;
     logic [LOG2_DEPTH-1:0]  raddr;
+    // rfifobram 01 -> bram
+    // rfifobram 10 -> fifo
+    logic [1:0]             rfifobram = 2'b01;
 
     // Read
     logic [WIDTH-1:0]       rdata;
@@ -171,25 +184,51 @@ interface fifobram_interface
     logic empty;
     logic [LOG2_DEPTH-1:0] count;
 
-    modport bram_write(
-        output we,
-        output waddr,
-        output wdata);
-
-    modport bram_read(
-        output re,
-        output raddr,
-        input rdata,
-        input rvalid);
-
-    modport bram_readwrite(
+    modport write(
         output we,
         output waddr,
         output wdata,
+        output wfifobram,
+        input almostfull,
+        input count);
+
+    modport read(
         output re,
         output raddr,
+        output rfifobram,
         input rdata,
-        input rvalid);
+        input rvalid,
+        input empty);
+
+    modport source(
+        input we,
+        input waddr,
+        input wdata,
+        input wfifobram,
+        output almostfull,
+        output count,
+        input re,
+        input raddr,
+        input rfifobram,
+        output rdata,
+        output rvalid,
+        output empty);
+
+    modport write_source(
+        input we,
+        input waddr,
+        input wdata,
+        input wfifobram,
+        output almostfull,
+        output count);
+
+    modport read_source(
+        input re,
+        input raddr,
+        input rfifobram,
+        output rdata,
+        output rvalid,
+        output empty);
 
     modport bram_source(
         input we,
@@ -200,18 +239,6 @@ interface fifobram_interface
         output rdata,
         output rvalid);
 
-    modport fifo_write(
-        output we,
-        output wdata,
-        input almostfull,
-        input count);
-
-    modport fifo_read(
-        output re,
-        input rdata,
-        input rvalid,
-        input empty);
-    
     modport fifo_source(
         input we,
         input wdata,

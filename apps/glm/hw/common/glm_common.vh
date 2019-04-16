@@ -6,15 +6,15 @@ parameter LOG2_PROGRAM_SIZE = 8;
 parameter PROGRAM_SIZE = 2**LOG2_PROGRAM_SIZE;
 parameter NUM_REGS = 3;
 parameter REGS_WIDTH = 32*NUM_REGS;
-parameter LOG2_INTERNAL_SIZE = 9;
-parameter NUM_OPS = 8;
+parameter LOG2_INTERNAL_SIZE = 6;
+parameter NUM_OPS = 9;
 
 // *************************************************************************
 //
 //   NUM_LOAD_CHANNELS
 //
 // *************************************************************************
-parameter NUM_LOAD_CHANNELS = 5;
+parameter NUM_LOAD_CHANNELS = 4;
 
 // *************************************************************************
 //

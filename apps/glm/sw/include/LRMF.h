@@ -35,8 +35,13 @@ struct Label {
 	int m_value;
 };
 
+struct LabelT {
+	int m_Mindex;
+	int m_value;
+};
+
 class LRMF {
-private:
+protected:
 
 	uint32_t m_numFeatures;
 	uint32_t m_Mdim;
@@ -62,7 +67,6 @@ private:
 
 		return count;
 	}
-
 
 	void deallocData() {
 		// dealloc if not nullptr
@@ -94,7 +98,7 @@ public:
 		deallocData();
 	}
 
-	void ReadNetflixData(char* pathToFile) {
+	void ReadNetflixData(char* pathToFile, int Mdim) {
 		FILE* f = fopen(pathToFile, "r");
 		if (f == NULL) {
 			cout << "Can't find files at pathToFile" << endl;
@@ -106,6 +110,9 @@ public:
 		size_t readsize;
 
 		readsize = fread(&m_Mdim, sizeof(uint32_t), 1, f);
+		if (Mdim != -1) {
+			m_Mdim = Mdim;
+		}
 		cout << "m_Mdim: " << m_Mdim << endl;
 		m_L.reserve(m_Mdim);
 
@@ -192,8 +199,8 @@ public:
 		float loss = 0.0;
 		for (uint32_t m = 0; m < m_Mdim; m++) {
 			float temploss = 0.0;
+			float* M_vector = m_M + m*m_numFeatures;
 			for (uint32_t u = 0; u < m_L[m].size(); u++) {
-				float* M_vector = m_M + m*m_numFeatures;
 				float* U_vector = m_U + m_L[m][u].m_Uindex*m_numFeatures;
 
 				float dot = Dot(M_vector, U_vector, m_numFeatures);
@@ -216,11 +223,11 @@ public:
 			for (uint32_t m = 0; m < m_Mdim; m++) {
 				// cout << "m: " << m << endl;
 				// cout << "m_L[m].size(): " << m_L[m].size() << endl;
+				float* M_vector = m_M + m*m_numFeatures;
+
 				for (uint32_t u = 0; u < m_L[m].size(); u++) {
 
 					// cout << "m_L[m][u].m_Uindex: " << m_L[m][u].m_Uindex << endl;
-
-					float* M_vector = m_M + m*m_numFeatures;
 					float* U_vector = m_U + m_L[m][u].m_Uindex*m_numFeatures;
 
 					float dot = Dot(M_vector, U_vector, m_numFeatures);
@@ -235,6 +242,107 @@ public:
 				}
 			}
 			// loss = Loss(lambda);
+			loss = RMSE();
+			cout << "Loss " << e << ": " << loss << endl;
+		}
+
+	}
+
+	void OptimizeTransposed(float stepSize, float lambda, uint32_t numEpochs) {
+		float loss = RMSE();
+		cout << "Initial Loss: " << loss << endl;
+
+		vector< vector<LabelT> > Ltranspose;
+		Ltranspose.resize(m_Udim);
+		for (uint32_t m = 0; m < m_Mdim; m++) {
+			for (uint32_t u = 0; u < m_L[m].size(); u++) {
+				uint32_t uindex = m_L[m][u].m_Uindex;
+				LabelT temp;
+				temp.m_Mindex = m;
+				temp.m_value = m_L[m][u].m_value;
+				Ltranspose[uindex].push_back(temp);
+			}
+		}
+
+		for (uint32_t e = 0; e < numEpochs; e++) {
+
+			for (uint32_t u = 0; u < m_Udim; u++) {
+				
+				float* U_vector = m_U + u*m_numFeatures;
+
+				for (uint32_t m = 0; m < Ltranspose[u].size(); m++) {
+
+					float* M_vector = m_M + Ltranspose[u][m].m_Mindex*m_numFeatures;
+
+					float dot = Dot(M_vector, U_vector, m_numFeatures);
+					float error = dot - Ltranspose[u][m].m_value;
+
+					for (uint32_t j = 0; j < m_numFeatures; j++) {
+						float M_temp = M_vector[j];
+						float U_temp = U_vector[j];
+						M_vector[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
+						U_vector[j] = U_temp - stepSize*(error*M_temp + lambda*U_temp);
+					}
+				}
+			}
+			loss = RMSE();
+			cout << "Loss " << e << ": " << loss << endl;
+		}
+	}
+
+	void OptimizeTiled(uint32_t tileSize, float stepSize, float lambda, uint32_t numEpochs) {
+
+		float loss = RMSE();
+		cout << "Initial Loss: " << loss << endl;
+
+
+		uint32_t numTiles = m_Mdim/tileSize;
+		uint32_t rest = m_Mdim - numTiles*tileSize;
+		cout << "rest: " << rest << endl;
+
+		vector< vector< vector<LabelT> >  > Ltranspose;
+		Ltranspose.resize(m_Udim);
+		for (uint32_t u = 0; u < m_Udim; u++) {
+			Ltranspose[u].resize(numTiles);
+		}
+
+		for (uint32_t t = 0; t < numTiles; t++) {
+			for (uint32_t i = 0; i < tileSize; i++) {
+				for (uint32_t u = 0; u < m_L[t*tileSize + i].size(); u++) {
+					uint32_t uindex = m_L[t*tileSize + i][u].m_Uindex;
+					LabelT temp;
+					temp.m_Mindex = i;
+					temp.m_value = m_L[t*tileSize + i][u].m_value;
+					Ltranspose[uindex][t].push_back(temp);
+				}
+			}
+		}
+
+		for (uint32_t e = 0; e < numEpochs; e++) {
+
+			for (uint32_t t = 0; t < numTiles; t++) {
+				float* M_tile_offset = m_M + t*tileSize*m_numFeatures;
+
+				for (uint32_t u = 0; u < m_Udim; u++) {
+					float* U_vector = m_U + u*m_numFeatures;
+
+					cout << "Ltranspose[" << u << "][" << t << "].size(): " << Ltranspose[u][t].size() << endl;
+					for (uint32_t m = 0; m < Ltranspose[u][t].size(); m++) {
+						float* M_vector = M_tile_offset + Ltranspose[u][t][m].m_Mindex*m_numFeatures;
+
+						float dot = Dot(M_vector, U_vector, m_numFeatures);
+						float error = dot - Ltranspose[u][t][m].m_value;
+
+						for (uint32_t j = 0; j < m_numFeatures; j++) {
+							float M_temp = M_vector[j];
+							float U_temp = U_vector[j];
+							M_vector[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
+							U_vector[j] = U_temp - stepSize*(error*M_temp + lambda*U_temp);
+						}
+					}
+				}
+			}
+
 			loss = RMSE();
 			cout << "Loss " << e << ": " << loss << endl;
 		}

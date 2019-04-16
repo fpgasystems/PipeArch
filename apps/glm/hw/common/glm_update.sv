@@ -8,14 +8,13 @@ module glm_update
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [6],
+    input logic [31:0] regs [5],
 
-    fifobram_interface.fifo_read FIFO_samplesforward,
-    fifobram_interface.fifo_read FIFO_gradient,
-    fifobram_interface.bram_readwrite MEM_model,
-    fifobram_interface.fifo_write FIFO_modelforward
+    fifobram_interface.read REGION_samples_read,
+    fifobram_interface.read REGION_gradient_read,
+    fifobram_interface.read MEM_model_read,
+    fifobram_interface.write REGION_model_write
 );
-    
     // *************************************************************************
     //
     //   Internal State
@@ -24,8 +23,6 @@ module glm_update
     typedef enum logic [1:0]
     {
         STATE_IDLE,
-        STATE_GRADIENT_GET,
-        STATE_GRADIENT_RECEIVE,
         STATE_MAIN
     } t_updatestate;
     t_updatestate update_state;
@@ -35,16 +32,20 @@ module glm_update
     //   Instruction Information
     //
     // *************************************************************************
+    logic [15:0] num_lines_to_process;
     logic [15:0] num_iterations;
+    logic [31:0] REGION_samples_read_accessproperties;
+    logic [31:0] REGION_gradient_read_accessproperties;
     logic [15:0] MEM_model_offset;
-    logic [15:0] MEM_model_length;
-    logic write_to_model_forward;
+    logic [13:0] MEM_model_length;
+    logic [31:0] REGION_model_write_accessproperties;
 
     // *************************************************************************
     //
     //   Counter
     //
     // *************************************************************************
+    logic read_trigger;
     logic [15:0] num_lines_multiplied_requested;
     logic [15:0] num_lines_multiplied;
     logic [15:0] num_lines_multiplied_final;
@@ -54,14 +55,43 @@ module glm_update
 
     // *************************************************************************
     //
+    //   Read Channels
+    //
+    // *************************************************************************
+    fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_REGION_samples_read();
+    read_region2fifo
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
+    read_REGION_samples_read (
+        .clk, .reset,
+        .op_start(read_trigger),
+        .configreg(REGION_samples_read_accessproperties),
+        .iterations(num_iterations),
+        .region_access(REGION_samples_read),
+        .fifo_access(FIFO_REGION_samples_read.read_source)
+    );
+
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(6)) FIFO_REGION_gradient_read();
+    read_region2fifo
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
+    read_REGION_gradient_read (
+        .clk, .reset,
+        .op_start(read_trigger),
+        .configreg(REGION_gradient_read_accessproperties),
+        .iterations(num_iterations),
+        .region_access(REGION_gradient_read),
+        .fifo_access(FIFO_REGION_gradient_read.read_source)
+    );
+
+    // *************************************************************************
+    //
     //   Computation
     //
     // *************************************************************************
     logic multiply_trigger;
     logic [31:0] multiply_scalar;
-    logic [511:0] multiply_vector;
+    logic [CLDATA_WIDTH-1:0] multiply_vector;
     logic multiply_valid;
-    logic [511:0] multiply_result;
+    logic [CLDATA_WIDTH-1:0] multiply_result;
     logic [1:0] multiply_trigger_d;
     always_ff @(posedge clk)
     begin
@@ -85,18 +115,18 @@ module glm_update
     always_ff @(posedge clk)
     begin
         multiply_trigger <= 1'b0;
-        if (FIFO_samplesforward.rvalid && update_state == STATE_MAIN)
+        if (FIFO_REGION_samples_read.rvalid && update_state == STATE_MAIN)
         begin
             multiply_trigger <= 1'b1;
-            multiply_scalar <= FIFO_gradient.rdata;
-            multiply_vector <= FIFO_samplesforward.rdata;
+            multiply_scalar <= FIFO_REGION_gradient_read.rdata;
+            multiply_vector <= FIFO_REGION_samples_read.rdata;
         end
     end
 
     logic subtract_trigger;
-    logic [511:0] subtract_vector2;
+    logic [CLDATA_WIDTH-1:0] subtract_vector2;
     logic subtract_valid;
-    logic [511:0] subtract_result;
+    logic [CLDATA_WIDTH-1:0] subtract_result;
     float_vector_subtract
     #(
         .VALUES_PER_LINE(16)
@@ -106,7 +136,7 @@ module glm_update
         .clk,
         .reset(reset),
         .trigger(subtract_trigger),
-        .vector1(MEM_model.rdata),
+        .vector1(MEM_model_read.rdata),
         .vector2(subtract_vector2),
         .result_valid(subtract_valid),
         .result(subtract_result)
@@ -121,13 +151,15 @@ module glm_update
         end
     end
 
+
     always_ff @(posedge clk)
     begin
-        FIFO_gradient.re <= 1'b0;
-        FIFO_samplesforward.re <= 1'b0;
-        MEM_model.re <= 1'b0;
-        MEM_model.we <= 1'b0;
-        FIFO_modelforward.we <= 1'b0;
+        read_trigger <= 1'b0;
+        FIFO_REGION_gradient_read.re <= 1'b0;
+        FIFO_REGION_samples_read.re <= 1'b0;
+        MEM_model_read.re <= 1'b0;
+        MEM_model_read.rfifobram <= 2'b01;
+        REGION_model_write.we <= 1'b0;
         op_done <= 1'b0;
 
         case(update_state)
@@ -136,11 +168,15 @@ module glm_update
                 if (op_start)
                 begin
                     // *************************************************************************
+                    num_lines_to_process <= regs[0][15:0];
+                    num_iterations <= regs[0][31:16];
+                    REGION_samples_read_accessproperties <= regs[1];
+                    REGION_gradient_read_accessproperties <= regs[2];
                     MEM_model_offset <= regs[3][15:0];
-                    MEM_model_length <= regs[3][31:16];
-                    write_to_model_forward <= regs[4][31];
-                    num_iterations <= regs[4][15:0];
+                    MEM_model_length <= regs[3][29:16];
+                    REGION_model_write_accessproperties <= regs[4];
                     // *************************************************************************
+                    read_trigger <= 1'b1;
                     num_performed_iterations <= 0;
                     num_finished_iterations <= 0;
                     num_lines_multiplied_requested <= 16'b0;
@@ -153,16 +189,15 @@ module glm_update
 
             STATE_MAIN:
             begin
-
-                if (num_lines_multiplied_requested == 0 && !FIFO_samplesforward.empty && !FIFO_gradient.empty && !FIFO_modelforward.almostfull)
+                if (num_lines_multiplied_requested == 0 && !FIFO_REGION_samples_read.empty && !FIFO_REGION_gradient_read.empty && !REGION_model_write.almostfull)
                 begin
-                    FIFO_gradient.re <= 1'b1;
-                    FIFO_samplesforward.re <= 1'b1;
+                    FIFO_REGION_gradient_read.re <= 1'b1;
+                    FIFO_REGION_samples_read.re <= 1'b1;
                     num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
                 end
-                else if (num_lines_multiplied_requested > 0 && num_lines_multiplied_requested < MEM_model_length && !FIFO_samplesforward.empty && !FIFO_modelforward.almostfull)
+                else if (num_lines_multiplied_requested > 0 && num_lines_multiplied_requested < MEM_model_length && !FIFO_REGION_samples_read.empty && !REGION_model_write.almostfull)
                 begin
-                    FIFO_samplesforward.re <= 1'b1;
+                    FIFO_REGION_samples_read.re <= 1'b1;
                     num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
                 end
 
@@ -182,8 +217,8 @@ module glm_update
 
                 if (multiply_trigger_d[1])
                 begin
-                    MEM_model.re <= 1'b1;
-                    MEM_model.raddr <= MEM_model_offset + num_lines_multiplied_final;
+                    MEM_model_read.re <= 1'b1;
+                    MEM_model_read.raddr <= MEM_model_offset + num_lines_multiplied_final;
                     num_lines_multiplied_final <= num_lines_multiplied_final + 1;
                     if (num_lines_multiplied_final == MEM_model_length-1)
                     begin
@@ -191,17 +226,12 @@ module glm_update
                     end
                 end
 
-                if (write_to_model_forward)
-                begin
-                    FIFO_modelforward.we <= subtract_valid;
-                    FIFO_modelforward.wdata <= subtract_result;
-                end
-
                 if (subtract_valid)
                 begin
-                    MEM_model.we <= 1'b1;
-                    MEM_model.waddr <= MEM_model_offset + num_lines_subtracted;
-                    MEM_model.wdata <= subtract_result;
+                    REGION_model_write.we <= 1'b1;
+                    REGION_model_write.waddr <= REGION_model_write_accessproperties[15:0] + num_lines_subtracted;
+                    REGION_model_write.wdata <= subtract_result;
+                    REGION_model_write.wfifobram <= REGION_model_write_accessproperties[31:30];
                     num_lines_subtracted <= num_lines_subtracted + 1;
                     if (num_lines_subtracted == MEM_model_length-1)
                     begin
@@ -215,23 +245,11 @@ module glm_update
                     end
                 end
             end
-
         endcase
 
         if (reset)
         begin
             update_state <= STATE_IDLE;
-        end
-    end
-
-    logic [31:0] debug_MEM_model_wdata [16];
-    logic [31:0] debug_multiply_result [16];
-    always_comb
-    begin
-        for (int i = 0; i < 16; i++)
-        begin
-            debug_MEM_model_wdata[i] = MEM_model.wdata[i*32+31 -: 32];
-            debug_multiply_result[i] = multiply_result[i*32+31 -: 32];
         end
     end
 

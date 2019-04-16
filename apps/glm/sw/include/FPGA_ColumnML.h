@@ -71,6 +71,7 @@ public:
 	uint32_t m_rest;
 	uint32_t m_restInCL;
 	uint32_t m_outputSizeInCL;
+	uint32_t m_numEpochs;
 
 	Instruction m_inst[Instruction::MAX_NUM_INSTRUCTIONS];
 	uint32_t m_numInstructions;
@@ -106,6 +107,10 @@ public:
 	}
 
 	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
+		return CreateMemoryLayout(format, partitionSize, 1);
+	}
+
+	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize, uint32_t numEpochs) {
 		m_currentMemoryFormat = format;
 
 		m_numSamplesInCL = (m_cstore->m_numSamples >> 4) + ((m_cstore->m_numSamples&0xF) > 0);
@@ -118,6 +123,7 @@ public:
 		m_numPartitions = m_cstore->m_numSamples/m_partitionSize;
 		m_rest = m_cstore->m_numSamples % m_partitionSize;
 		m_restInCL = (m_rest >> 4) + ((m_rest&0xF) > 0);
+		m_numEpochs = numEpochs;
 
 		std::cout << "m_numSamplesInCL: " << m_numSamplesInCL << std::endl;
 		std::cout << "m_numFeaturesInCL: " << m_numFeaturesInCL << std::endl;
@@ -185,7 +191,7 @@ public:
 #endif
 			// Model
 			m_modelChunk.m_offsetInCL = countCL;
-			countCL += m_numPartitions*m_numFeaturesInCL;
+			countCL += m_numEpochs*m_numPartitions*m_numFeaturesInCL;
 			m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
 #ifdef DEBUG_COPY
 			cout << "m_modelChunk.m_offsetInCL: " << m_modelChunk.m_offsetInCL << endl;
@@ -231,9 +237,11 @@ public:
 				m_residual[i] = 0;
 				m_labels[i] = m_cstore->m_labels[i];
 			}
-			for (uint32_t p = 0; p < m_numPartitions; p++) {
-				for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
-					m_model[p*m_alignedNumFeatures + j] = 0;
+			for (uint32_t e = 0; e < m_numEpochs; e++) {
+				for (uint32_t p = 0; p < m_numPartitions; p++) {
+					for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
+						m_model[e*m_numPartitions*m_alignedNumFeatures + p*m_alignedNumFeatures + j] = 0;
+					}
 				}
 			}
 			for (uint32_t p = 0; p < m_numPartitions; p++) {
@@ -275,15 +283,12 @@ public:
 		float stepSize,
 		float lambda);
 
-	vector<float> GetModelSCD() {
-		vector<float> avgModel(m_alignedNumFeatures);
-		for (uint32_t p = 0; p < m_numPartitions; p++) {
-			for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
-				if (p == 0) {
-					avgModel[j] = m_model[p*m_alignedNumFeatures + j];
-				}
-				else {
-					avgModel[j] += m_model[p*m_alignedNumFeatures + j];
+	vector<float> GetModelSCD(uint32_t epoch) {
+		vector<float> avgModel(m_alignedNumFeatures, 0);
+		for (uint32_t e = 0; e < epoch+1; e++) {
+			for (uint32_t p = 0; p < m_numPartitions; p++) {
+				for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
+					avgModel[j] += m_model[e*m_numPartitions*m_alignedNumFeatures + p*m_alignedNumFeatures + j];
 				}
 			}
 		}

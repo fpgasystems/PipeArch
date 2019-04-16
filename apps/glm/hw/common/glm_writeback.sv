@@ -13,8 +13,8 @@ module glm_writeback
     input t_claddr in_addr,
     input t_claddr out_addr,
 
-    fifobram_interface.bram_read MEM_model,
-    fifobram_interface.bram_read MEM_labels,
+    fifobram_interface.read REGION0_read,
+    fifobram_interface.read REGION1_read,
 
     dma_write_interface.to_dma DMA_write
 );
@@ -45,45 +45,47 @@ module glm_writeback
     logic [3:0] select_channel;
     logic write_fence;
 
-    internal_interface #(.WIDTH(512)) to_writeback();
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) to_writeback();
     // *************************************************************************
     //
     //   Store Channels
     //
     // *************************************************************************
-    internal_interface #(.WIDTH(512)) to_writeback_from_MEM_model();
-    read_bram
-    read_MEM_model_inst (
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) to_writeback_from_REGION0();
+    read_region
+    read_REGION0 (
         .clk, .reset,
         .op_start(DMA_write.control.start),
         .configreg(regs[6]),
-        .memory_access(MEM_model),
-        .outfrom_read(to_writeback_from_MEM_model.commonread_source)
+        .iterations(16'd1),
+        .region_access(REGION0_read),
+        .outfrom_read(to_writeback_from_REGION0.commonread_source)
     );
 
-    internal_interface #(.WIDTH(512)) to_writeback_from_MEM_labels();
-    read_bram
-    read_MEM_labels_inst (
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) to_writeback_from_REGION1();
+    read_region
+    read_REGION1 (
         .clk, .reset,
         .op_start(DMA_write.control.start),
         .configreg(regs[7]),
-        .memory_access(MEM_labels),
-        .outfrom_read(to_writeback_from_MEM_labels.commonread_source)
+        .iterations(16'd1),
+        .region_access(REGION1_read),
+        .outfrom_read(to_writeback_from_REGION1.commonread_source)
     );
 
     always_ff @(posedge clk)
     begin
         if (select_channel == 0)
         begin
-            to_writeback.rvalid <= to_writeback_from_MEM_model.rvalid;
-            to_writeback.rdata <= to_writeback_from_MEM_model.rdata;
-            to_writeback_from_MEM_model.almostfull <= to_writeback.almostfull;
+            to_writeback.rvalid <= to_writeback_from_REGION0.rvalid;
+            to_writeback.rdata <= to_writeback_from_REGION0.rdata;
+            to_writeback_from_REGION0.almostfull <= to_writeback.almostfull;
         end
         else if (select_channel == 1)
         begin
-            to_writeback.rvalid <= to_writeback_from_MEM_labels.rvalid;
-            to_writeback.rdata <= to_writeback_from_MEM_labels.rdata;
-            to_writeback_from_MEM_labels.almostfull <= to_writeback.almostfull;
+            to_writeback.rvalid <= to_writeback_from_REGION1.rvalid;
+            to_writeback.rdata <= to_writeback_from_REGION1.rdata;
+            to_writeback_from_REGION1.almostfull <= to_writeback.almostfull;
         end
         to_writeback.almostfull <= DMA_write.rx_write.walmostfull || !DMA_write.status.active || (send_state != STATE_WRITE);
     end

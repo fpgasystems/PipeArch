@@ -16,11 +16,11 @@ module glm_load
     // request/response
     dma_read_interface DMA_read,
 
-    fifobram_interface.fifo_write FIFO_input,
-    fifobram_interface.fifo_write FIFO_samplesforward,
-    fifobram_interface.bram_write MEM_model,
-    fifobram_interface.bram_write MEM_labels,
-    fifobram_interface.bram_readwrite MEM_accessprops
+    fifobram_interface.write REGION0_write,
+    fifobram_interface.write REGION1_write,
+    fifobram_interface.write REGION2_write,
+    fifobram_interface.write MEM_accessprops_write,
+    fifobram_interface.read MEM_accessprops_read
 );
     logic internal_reset;
     always_ff @(posedge clk)
@@ -28,79 +28,70 @@ module glm_load
         internal_reset <= reset;
     end
 
-    internal_interface #(.WIDTH(512)) from_load();
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load();
     // *************************************************************************
     //
     //   Load Channels
     //
     // *************************************************************************
-    internal_interface #(.WIDTH(512)) from_load_to_FIFO_input();
-    write_fifo
-    write_FIFO_input_inst (
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION0();
+    write_region
+    write_REGION0 (
         .clk, .reset(internal_reset),
         .op_start(op_start),
         .configreg(regs[5]),
-        .into_write(from_load_to_FIFO_input.commonwrite_source),
-        .fifo_access(FIFO_input)
+        .iterations(16'd1),
+        .into_write(from_load_to_REGION0.commonwrite_source),
+        .region_access(REGION0_write)
     );
 
-    internal_interface #(.WIDTH(512)) from_load_to_FIFO_samplesforward();
-    write_fifo
-    write_FIFO_samplesforward_inst (
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION1();
+    write_region
+    write_REGION1 (
         .clk, .reset(internal_reset),
         .op_start(op_start),
         .configreg(regs[6]),
-        .into_write(from_load_to_FIFO_samplesforward.commonwrite_source),
-        .fifo_access(FIFO_samplesforward)
+        .iterations(16'd1),
+        .into_write(from_load_to_REGION1.commonwrite_source),
+        .region_access(REGION1_write)
     );
 
-    internal_interface #(.WIDTH(512)) from_load_to_MEM_model();
-    write_bram
-    write_MEM_model_inst (
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION2();
+    write_region
+    write_REGION2 (
         .clk, .reset(internal_reset),
         .op_start(op_start),
         .configreg(regs[7]),
-        .into_write(from_load_to_MEM_model.commonwrite_source),
-        .memory_access(MEM_model)
-    );
-
-    internal_interface #(.WIDTH(512)) from_load_to_MEM_labels();
-    write_bram
-    write_MEM_labels_inst (
-        .clk, .reset(internal_reset),
-        .op_start(op_start),
-        .configreg(regs[8]),
-        .into_write(from_load_to_MEM_labels.commonwrite_source),
-        .memory_access(MEM_labels)
+        .iterations(16'd1),
+        .into_write(from_load_to_REGION2.commonwrite_source),
+        .region_access(REGION2_write)
     );
 
     internal_interface #(.WIDTH(512)) from_load_to_MEM_accessprops();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) load_MEM_accessprops_interface();
-    write_bram
+    write_region
     write_MEM_accessprops_inst (
         .clk, .reset(internal_reset),
         .op_start(op_start),
-        .configreg(regs[9]),
+        .configreg(regs[8]),
+        .iterations(16'd1),
         .into_write(from_load_to_MEM_accessprops.commonwrite_source),
-        .memory_access(load_MEM_accessprops_interface.bram_write)
+        .region_access(MEM_accessprops_write)
     );
-    assign MEM_accessprops.we = load_MEM_accessprops_interface.we;
-    assign MEM_accessprops.waddr = load_MEM_accessprops_interface.waddr;
-    assign MEM_accessprops.wdata = load_MEM_accessprops_interface.wdata;
 
     always_ff @(posedge clk)
     begin
-        from_load_to_FIFO_input.we <= from_load.we;
-        from_load_to_FIFO_input.wdata <= from_load.wdata;
-        from_load_to_FIFO_samplesforward.we <= from_load.we;
-        from_load_to_FIFO_samplesforward.wdata <= from_load.wdata;
-        from_load_to_MEM_model.we <= from_load.we;
-        from_load_to_MEM_model.wdata <= from_load.wdata;
-        from_load_to_MEM_labels.we <= from_load.we;
-        from_load_to_MEM_labels.wdata <= from_load.wdata;
+        from_load_to_REGION0.we <= from_load.we;
+        from_load_to_REGION0.wdata <= from_load.wdata;
+        from_load_to_REGION1.we <= from_load.we;
+        from_load_to_REGION1.wdata <= from_load.wdata;
+        from_load_to_REGION2.we <= from_load.we;
+        from_load_to_REGION2.wdata <= from_load.wdata;
         from_load_to_MEM_accessprops.we <= from_load.we;
         from_load_to_MEM_accessprops.wdata <= from_load.wdata;
-        from_load.almostfull <= from_load_to_FIFO_input.almostfull | from_load_to_FIFO_samplesforward.almostfull | from_load_to_MEM_model.almostfull | from_load_to_MEM_labels.almostfull;
+        from_load.almostfull <= from_load_to_REGION0.almostfull |
+                                from_load_to_REGION1.almostfull |
+                                from_load_to_REGION2.almostfull |
+                                from_load_to_MEM_accessprops.almostfull;
     end 
 
     // *************************************************************************
@@ -159,9 +150,9 @@ module glm_load
     //   Receive FIFO
     //
     // *************************************************************************
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) prefetch_fifo_access();
+    fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)) prefetch_fifo_access();
     fifo
-    #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_PREFETCH_SIZE)
     )
     prefetch_fifo
     (
@@ -201,7 +192,7 @@ module glm_load
         DMA_read.tx_read.re <= 1'b0;
 
         from_load.we <= 1'b0;
-        MEM_accessprops.re <= 1'b0;
+        MEM_accessprops_read.re <= 1'b0;
         op_done <= 1'b0;
 
         // =================================
@@ -265,18 +256,18 @@ module glm_load
 
             STATE_FETCH_ACCESSPROPS:
             begin
-                MEM_accessprops.re <= 1'b1;
-                MEM_accessprops.raddr <= accessprops_raddr >> 3;
+                MEM_accessprops_read.re <= 1'b1;
+                MEM_accessprops_read.raddr <= accessprops_raddr >> 3;
                 accessprops_position <= accessprops_raddr[2:0];
                 request_state <= STATE_RECEIVE_ACCESSPROPS;
             end
 
             STATE_RECEIVE_ACCESSPROPS:
             begin
-                if (MEM_accessprops.rvalid)
+                if (MEM_accessprops_read.rvalid)
                 begin
-                    accessprops_DRAM_offset <= MEM_accessprops.rdata[accessprops_position*64+31 -: 32];
-                    accessprops_DRAM_length <= MEM_accessprops.rdata[accessprops_position*64+63 -: 32];
+                    accessprops_DRAM_offset <= MEM_accessprops_read.rdata[accessprops_position*64+31 -: 32];
+                    accessprops_DRAM_length <= MEM_accessprops_read.rdata[accessprops_position*64+63 -: 32];
                     request_state <= STATE_ADD_ACCESSPROPS;
                 end
             end

@@ -21,9 +21,9 @@ int main(int argc, char* argv[]) {
 	minibatchSize = atoi(argv[4]);
 	numEpochs = atoi(argv[5]);
 
-	uint32_t partitionSize = 16000;
+	uint32_t partitionSize = 1024;
 
-	Server server(true, true);
+	Server server(false, true);
 
 	FPGA_ColumnML columnML(&server);
 
@@ -50,11 +50,10 @@ int main(int argc, char* argv[]) {
 
 
 	// Set memory format / decide on SGD or SCD
-	MemoryFormat format = RowStore;
-	columnML.CreateMemoryLayout(format, partitionSize);
-
+	MemoryFormat format = ColumnStore;
 
 	if (format == RowStore) {
+		columnML.CreateMemoryLayout(format, partitionSize);
 		stepSize = 0.01;
 		columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 
@@ -66,6 +65,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	else {
+		columnML.CreateMemoryLayout(format, partitionSize, numEpochs);
 		stepSize = 1;
 		columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
 
@@ -85,8 +85,10 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	else {
-		float loss = columnML.Loss(type, columnML.GetModelSCD().data(), lambda, &args);
-		cout << "loss: " << loss << endl;
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = columnML.Loss(type, columnML.GetModelSCD(e).data(), lambda, &args);
+			cout << "loss " << e << ": " << loss << endl;
+		}
 	}
 
 	return 0;

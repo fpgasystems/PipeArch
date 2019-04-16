@@ -8,33 +8,35 @@ module pipearch_copy
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [5],
+    input logic [31:0] regs [2],
     
-    fifobram_interface.bram_read MEM_read,
-    fifobram_interface.bram_write MEM_write
+    fifobram_interface.read REGION_read,
+    fifobram_interface.write REGION_write
 );
 
-    internal_interface #(.WIDTH(512)) from_MEM_read();
-    read_bram
-    read_MEM_inst (
+    internal_interface #(.WIDTH(512)) from_REGION_read();
+    read_region
+    read_REGION_inst (
         .clk, .reset,
         .op_start(op_start),
-        .configreg(regs[3]),
-        .memory_access(MEM_read),
-        .outfrom_read(from_MEM_read.commonread_source)
+        .configreg(regs[0]),
+        .iterations(16'd1),
+        .region_access(REGION_read),
+        .outfrom_read(from_REGION_read.commonread_source)
     );
 
-    write_bram
-    write_MEM_inst (
+    write_region
+    write_REGION_inst (
         .clk, .reset,
         .op_start(op_start),
-        .configreg(regs[4]),
-        .into_write(from_MEM_read.commonwrite_source),
-        .memory_access(MEM_write)
+        .configreg(regs[1]),
+        .iterations(16'd1),
+        .into_write(from_REGION_read.commonwrite_source),
+        .region_access(REGION_write)
     );
 
-    assign from_MEM_read.we = from_MEM_read.rvalid;
-    assign from_MEM_read.wdata = from_MEM_read.rdata;
+    assign from_REGION_read.we = from_REGION_read.rvalid;
+    assign from_REGION_read.wdata = from_REGION_read.rdata;
 
     // *************************************************************************
     //
@@ -72,7 +74,7 @@ module pipearch_copy
                 if (op_start)
                 begin
                     // *************************************************************************
-                    num_lines_to_copy <= regs[3][31:16];
+                    num_lines_to_copy <= regs[0][29:16];
                     // *************************************************************************
                     num_copied_lines <= 0;
                     copy_state <= STATE_COPY;
@@ -81,7 +83,7 @@ module pipearch_copy
 
             STATE_COPY:
             begin
-                if (from_MEM_read.we)
+                if (from_REGION_read.we)
                 begin
                     num_copied_lines <= num_copied_lines + 1;
                     if (num_copied_lines == num_lines_to_copy-1)

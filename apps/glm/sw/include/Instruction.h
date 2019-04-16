@@ -1,36 +1,81 @@
 #pragma once
 
-struct access_t {
+enum DataSource {BRAM, FIFO, FIFOBRAM};
+
+class access_t {
+public:
+	bool m_bram;
+	bool m_fifo;
 	uint32_t m_offsetInCL;
 	uint32_t m_lengthInCL;
-};
+	bool m_keepCountAlongIterations;
 
-class AccessProperties {
-private:
-	access_t* m_properties;
-	uint32_t m_numChannels;
-
-public:
-	AccessProperties(uint32_t numChannels)  {
-		m_numChannels = numChannels;
-		m_properties = new access_t[numChannels];
-		for (uint32_t i = 0; i < numChannels; i++) {
-			m_properties[i].m_offsetInCL = 0;
-			m_properties[i].m_lengthInCL = 0;
-		}
+	access_t()  {
+		m_bram = false;
+		m_fifo = false;
+		m_offsetInCL = 0;
+		m_lengthInCL = 0;
+		m_keepCountAlongIterations = false;
 	}
 
-	void Set(uint32_t channel, uint32_t offsetInCL, uint32_t lengthInCL) {
-		m_properties[channel].m_offsetInCL = offsetInCL;
-		m_properties[channel].m_lengthInCL = lengthInCL;
+	access_t(uint32_t offsetInCL, uint32_t lengthInCL)  {
+		m_bram = true;
+		m_fifo = false;
+		m_offsetInCL = offsetInCL;
+		m_lengthInCL = lengthInCL;
+		m_keepCountAlongIterations = false;
 	}
 
-	access_t Get(uint32_t channel) {
-		return m_properties[channel];
+	access_t(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL)  {
+		m_bram = (source == BRAM || source == FIFOBRAM);
+		m_fifo = (source == FIFO || source == FIFOBRAM);
+		m_offsetInCL = offsetInCL;
+		m_lengthInCL = lengthInCL;
+		m_keepCountAlongIterations = false;
 	}
 
-	uint32_t GetNumChannels() {
-		return m_numChannels;
+	access_t(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL, bool keepCountAlongIterations)  {
+		m_bram = (source == BRAM || source == FIFOBRAM);
+		m_fifo = (source == FIFO || source == FIFOBRAM);
+		m_offsetInCL = offsetInCL;
+		m_lengthInCL = lengthInCL;
+		m_keepCountAlongIterations = keepCountAlongIterations;
+	}
+
+	access_t(DataSource source, uint32_t lengthInCL)  {
+		m_bram = (source == BRAM || source == FIFOBRAM);
+		m_fifo = (source == FIFO || source == FIFOBRAM);
+		m_offsetInCL = 0;
+		m_lengthInCL = lengthInCL;
+		m_keepCountAlongIterations = false;
+	}
+
+	void Set(uint32_t offsetInCL, uint32_t lengthInCL) {
+		m_bram = true;
+		m_fifo = false;
+		m_offsetInCL = offsetInCL;
+		m_lengthInCL = lengthInCL;
+	}
+
+	void Set(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL) {
+		m_bram = (source == BRAM || source == FIFOBRAM);
+		m_fifo = (source == FIFO || source == FIFOBRAM);
+		m_offsetInCL = offsetInCL;
+		m_lengthInCL = lengthInCL;
+	}
+
+	void Set(DataSource source, uint32_t lengthInCL) {
+		m_bram = (source == BRAM || source == FIFOBRAM);
+		m_fifo = (source == FIFO || source == FIFOBRAM);
+		m_lengthInCL = lengthInCL;
+	}
+
+	uint32_t GetReg() {
+		return	((m_fifo ? 1:0) << 31) |
+				((m_bram ? 1:0) << 30) |
+				((m_lengthInCL & 0xFFFF) << 16) |
+				((m_keepCountAlongIterations ? 1:0) << 15) |
+				(m_offsetInCL & 0xFFFF);
 	}
 };
 
@@ -40,6 +85,16 @@ public:
 	static const uint32_t NUM_WORDS = 16;
 	static const uint32_t NUM_BYTES = NUM_WORDS*4;
 	uint32_t m_data[NUM_WORDS];
+
+	static const uint32_t NUM_LOAD_CHANNELS = 4;
+	static const uint32_t LOAD_REGION_INPUT_CHANNEL = 0;
+	static const uint32_t LOAD_REGION_MODEL_CHANNEL = 1;
+	static const uint32_t LOAD_REGION_LABELS_CHANNEL = 2;
+	static const uint32_t LOAD_MEM_ACCESSPROPS_CHANNEL = 3;
+
+	static const uint32_t NUM_WRITEBACK_CHANNELS = 2;
+	static const uint32_t WRITEBACK_MODEL_CHANNEL = 0;
+	static const uint32_t WRITEBACK_LABELS_CHANNEL = 1;
 
 	Instruction() {
 		for (unsigned i = 0; i < 16; i++) {
@@ -129,7 +184,7 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		AccessProperties accessProperties)
+		vector<access_t> loadAccess)
 	{
 		uint32_t enableMultiline = 1;
 		m_data[15] |= (2 << 4);
@@ -138,8 +193,8 @@ public:
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
-		for (uint32_t i = 0; i < accessProperties.GetNumChannels(); i++) {
-			m_data[5+i] = (accessProperties.Get(i).m_lengthInCL << 16) | accessProperties.Get(i).m_offsetInCL;
+		for (uint32_t i = 0; i < loadAccess.size(); i++) {
+			m_data[5+i] = loadAccess[i].GetReg();
 		}
 	}
 
@@ -148,7 +203,7 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		AccessProperties accessProperties)
+		vector<access_t> loadAccess)
 	{
 		uint32_t enableMultiline = 1;
 		uint32_t useLocalAccessProps = 1;
@@ -158,8 +213,8 @@ public:
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
-		for (uint32_t i = 0; i < accessProperties.GetNumChannels(); i++) {
-			m_data[5+i] = (accessProperties.Get(i).m_lengthInCL << 16) | accessProperties.Get(i).m_offsetInCL;
+		for (uint32_t i = 0; i < loadAccess.size(); i++) {
+			m_data[5+i] = loadAccess[i].GetReg();
 		}
 	}
 
@@ -172,7 +227,7 @@ public:
 		uint32_t offsetByIndex2,
 		uint32_t whichChannel,
 		bool writeFence,
-		AccessProperties accessProperties)
+		vector<access_t> writebackAccess)
 	{
 		m_data[15] |= (3 << 4);
 		m_data[3] = ((uint32_t)useInputSpace << 31) | storeOffsetDRAM;
@@ -181,8 +236,8 @@ public:
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
 		m_data[5] = ((uint32_t)writeFence << 4) | (whichChannel & 0xFFFF);
-		for (uint32_t i = 0; i < accessProperties.GetNumChannels(); i++) {
-			m_data[6+i] = (accessProperties.Get(i).m_lengthInCL << 16) | accessProperties.Get(i).m_offsetInCL;
+		for (uint32_t i = 0; i < writebackAccess.size(); i++) {
+			m_data[6+i] = writebackAccess[i].GetReg();
 		}
 	}
 
@@ -195,91 +250,126 @@ public:
 	void Dot(
 		uint32_t numIterations,
 		uint32_t numLinesToProcess,
-		bool readFromModelForward,
-		bool performSubtraction,
-		uint32_t memModelLoadOffset,
-		uint32_t memLabelsLoadOffset)
+		access_t leftInputAccess,
+		access_t rightInputAccess,
+		access_t outputAccess)
 	{
 		m_data[15] |= (4 << 4);
-		m_data[3] = (((uint32_t)performSubtraction) << 17) | (((uint32_t)readFromModelForward) << 16) | (numLinesToProcess & 0xFFFF);
-		m_data[4] = ((memLabelsLoadOffset & 0xFFFF) << 16) | (memModelLoadOffset & 0xFFFF);
-		m_data[5] = numIterations & 0xFFFF;
+		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = leftInputAccess.GetReg();
+		m_data[5] = rightInputAccess.GetReg();
+		m_data[6] = outputAccess.GetReg();
 	}
 
 	void Dot(
 		uint32_t numLinesToProcess,
-		bool readFromModelForward,
-		bool performSubtraction,
-		uint32_t memModelLoadOffset,
-		uint32_t memLabelsLoadOffset)
+		access_t leftInputAccess,
+		access_t rightInputAccess,
+		access_t outputAccess)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (4 << 4);
-		m_data[3] = (((uint32_t)performSubtraction) << 17) | (((uint32_t)readFromModelForward) << 16) | (numLinesToProcess & 0xFFFF);
-		m_data[4] = ((memLabelsLoadOffset & 0xFFFF) << 16) | (memModelLoadOffset & 0xFFFF);
-		m_data[5] = numIterations & 0xFFFF;
+		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = leftInputAccess.GetReg();
+		m_data[5] = rightInputAccess.GetReg();
+		m_data[6] = outputAccess.GetReg();
+	}
+
+	void Delta(
+		uint32_t numIterations,
+		uint32_t numLinesToProcess,
+		access_t leftInputAccess,
+		access_t rightInputAccess,
+		access_t outputAccess)
+	{
+		m_data[15] |= (9 << 4);
+		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = leftInputAccess.GetReg();
+		m_data[5] = rightInputAccess.GetReg();
+		m_data[6] = outputAccess.GetReg();
+	}
+
+	void Delta(
+		uint32_t numLinesToProcess,
+		access_t leftInputAccess,
+		access_t rightInputAccess,
+		access_t outputAccess)
+	{
+		uint32_t numIterations = 1;
+		m_data[15] |= (9 << 4);
+		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = leftInputAccess.GetReg();
+		m_data[5] = rightInputAccess.GetReg();
+		m_data[6] = outputAccess.GetReg();
 	}
 
 	void Modify(
 		uint32_t numIterations,
-		uint32_t memLabelsLoadOffset,
-		uint32_t type,
-		uint32_t algo,
-		float stepSize,
-		float lambda)
+		uint32_t type, uint32_t algo, float stepSize, float lambda,
+		access_t labelsInputAccess,
+		access_t gradientOutputAccess)
 	{
 		m_data[15] |= (5 << 4);
-		m_data[3] = ((numIterations & 0xFFFF) << 16) | (memLabelsLoadOffset & 0xFFFF);
-		m_data[4] = (algo << 2) | (type & 0x3);
+		m_data[3] = labelsInputAccess.GetReg();
+		m_data[4] = (numIterations << 16) | (algo << 2) | (type & 0x3);
 		m_data[5] = *((uint32_t*)&stepSize);
 		m_data[6] = *((uint32_t*)&lambda);
+		m_data[7] = gradientOutputAccess.GetReg();
 	}
 
 	void Modify(
-		uint32_t memLabelsLoadOffset,
-		uint32_t type,
-		uint32_t algo,
-		float stepSize,
-		float lambda)
+		uint32_t type, uint32_t algo, float stepSize, float lambda,
+		access_t labelsInputAccess,
+		access_t gradientOutputAccess)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (5 << 4);
-		m_data[3] = ((numIterations & 0xFFFF) << 16) | (memLabelsLoadOffset & 0xFFFF);
-		m_data[4] = (algo << 2) | (type & 0x3);
+		m_data[3] = labelsInputAccess.GetReg();
+		m_data[4] = (numIterations << 16) | (algo << 2) | (type & 0x3);
 		m_data[5] = *((uint32_t*)&stepSize);
 		m_data[6] = *((uint32_t*)&lambda);
+		m_data[7] = gradientOutputAccess.GetReg();
 	}
 
 	void Update(
 		uint32_t numIterations,
-		uint32_t memModelLoadOffset,
-		uint32_t loadLength,
-		bool modelForward)
+		uint32_t numLinesToProcess,
+		access_t samplesInputAccess,
+		access_t gradientInputAccess,
+		access_t modelReadAccess,
+		access_t modelWriteAccess)
 	{
 		m_data[15] |= (6 << 4);
-		m_data[3] = (loadLength << 16) | (memModelLoadOffset & 0xFFFF);
-		m_data[4] = ((uint32_t)modelForward << 31) | (numIterations & 0xFFFF);
+		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = samplesInputAccess.GetReg();
+		m_data[5] = gradientInputAccess.GetReg();
+		m_data[6] = modelReadAccess.GetReg();
+		m_data[7] = modelWriteAccess.GetReg();
 	}
 
 	void Update(
-		uint32_t memModelLoadOffset,
-		uint32_t loadLength,
-		bool modelForward)
+		uint32_t numLinesToProcess,
+		access_t samplesInputAccess,
+		access_t gradientInputAccess,
+		access_t modelReadAccess,
+		access_t modelWriteAccess)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (6 << 4);
-		m_data[3] = (loadLength << 16) | (memModelLoadOffset & 0xFFFF);
-		m_data[4] = ((uint32_t)modelForward << 31) | (numIterations & 0xFFFF);
+		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = samplesInputAccess.GetReg();
+		m_data[5] = gradientInputAccess.GetReg();
+		m_data[6] = modelReadAccess.GetReg();
+		m_data[7] = modelWriteAccess.GetReg();
 	}
 
 	void Copy(
-		uint32_t loadOffset,
-		uint32_t storeOffset,
-		uint32_t length)
+		access_t sourceInputAccess,
+		access_t destinationOutputAccess)
 	{
 		m_data[15] |= (7 << 4);
-		m_data[3] = (length << 16) | (loadOffset & 0xFFFF);
-		m_data[4] = (length << 16) | (storeOffset & 0xFFFF);
+		m_data[3] = sourceInputAccess.GetReg();
+		m_data[4] = destinationOutputAccess.GetReg();
 	}
 
 	void Sync()
