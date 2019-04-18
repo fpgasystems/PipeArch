@@ -2,52 +2,73 @@
 
 enum DataSource {BRAM, FIFO, FIFOBRAM};
 
-class access_t {
+class remoteaccess_t {
+public:
+	uint32_t m_offsetInCL;
+	uint32_t m_lengthInCL;
+};
+
+class localaccess_t {
 public:
 	bool m_bram;
 	bool m_fifo;
 	uint32_t m_offsetInCL;
 	uint32_t m_lengthInCL;
 	bool m_keepCountAlongIterations;
+	bool m_useLocalProps;
 
-	access_t()  {
+	localaccess_t()  {
 		m_bram = false;
 		m_fifo = false;
 		m_offsetInCL = 0;
 		m_lengthInCL = 0;
 		m_keepCountAlongIterations = false;
+		m_useLocalProps = false;
 	}
 
-	access_t(uint32_t offsetInCL, uint32_t lengthInCL)  {
+	localaccess_t(uint32_t offsetInCL, uint32_t lengthInCL)  {
 		m_bram = true;
 		m_fifo = false;
 		m_offsetInCL = offsetInCL;
 		m_lengthInCL = lengthInCL;
 		m_keepCountAlongIterations = false;
+		m_useLocalProps = false;
 	}
 
-	access_t(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL)  {
+	localaccess_t(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL)  {
 		m_bram = (source == BRAM || source == FIFOBRAM);
 		m_fifo = (source == FIFO || source == FIFOBRAM);
 		m_offsetInCL = offsetInCL;
 		m_lengthInCL = lengthInCL;
 		m_keepCountAlongIterations = false;
+		m_useLocalProps = false;
 	}
 
-	access_t(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL, bool keepCountAlongIterations)  {
+	localaccess_t(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL, bool keepCountAlongIterations)  {
 		m_bram = (source == BRAM || source == FIFOBRAM);
 		m_fifo = (source == FIFO || source == FIFOBRAM);
 		m_offsetInCL = offsetInCL;
 		m_lengthInCL = lengthInCL;
 		m_keepCountAlongIterations = keepCountAlongIterations;
+		m_useLocalProps = false;
 	}
 
-	access_t(DataSource source, uint32_t lengthInCL)  {
+	localaccess_t(DataSource source, uint32_t offsetInCL, uint32_t lengthInCL, bool keepCountAlongIterations, bool useLocalAccessProps)  {
+		m_bram = (source == BRAM || source == FIFOBRAM);
+		m_fifo = (source == FIFO || source == FIFOBRAM);
+		m_offsetInCL = offsetInCL;
+		m_lengthInCL = lengthInCL;
+		m_keepCountAlongIterations = keepCountAlongIterations;
+		m_useLocalProps = useLocalAccessProps;
+	}
+
+	localaccess_t(DataSource source, uint32_t lengthInCL)  {
 		m_bram = (source == BRAM || source == FIFOBRAM);
 		m_fifo = (source == FIFO || source == FIFOBRAM);
 		m_offsetInCL = 0;
 		m_lengthInCL = lengthInCL;
 		m_keepCountAlongIterations = false;
+		m_useLocalProps = false;
 	}
 
 	void Set(uint32_t offsetInCL, uint32_t lengthInCL) {
@@ -73,9 +94,10 @@ public:
 	uint32_t GetReg() {
 		return	((m_fifo ? 1:0) << 31) |
 				((m_bram ? 1:0) << 30) |
-				((m_lengthInCL & 0xFFFF) << 16) |
+				((m_lengthInCL & 0x3FFF) << 16) |
 				((m_keepCountAlongIterations ? 1:0) << 15) |
-				(m_offsetInCL & 0xFFFF);
+				((m_useLocalProps << 14)) |
+				(m_offsetInCL & 0x3FFF);
 	}
 };
 
@@ -184,7 +206,7 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		vector<access_t> loadAccess)
+		vector<localaccess_t> loadAccess)
 	{
 		uint32_t enableMultiline = 1;
 		m_data[15] |= (2 << 4);
@@ -203,7 +225,7 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		vector<access_t> loadAccess)
+		vector<localaccess_t> loadAccess)
 	{
 		uint32_t enableMultiline = 1;
 		uint32_t useLocalAccessProps = 1;
@@ -227,7 +249,7 @@ public:
 		uint32_t offsetByIndex2,
 		uint32_t whichChannel,
 		bool writeFence,
-		vector<access_t> writebackAccess)
+		vector<localaccess_t> writebackAccess)
 	{
 		m_data[15] |= (3 << 4);
 		m_data[3] = ((uint32_t)useInputSpace << 31) | storeOffsetDRAM;
@@ -250,9 +272,9 @@ public:
 	void Dot(
 		uint32_t numIterations,
 		uint32_t numLinesToProcess,
-		access_t leftInputAccess,
-		access_t rightInputAccess,
-		access_t outputAccess)
+		localaccess_t leftInputAccess,
+		localaccess_t rightInputAccess,
+		localaccess_t outputAccess)
 	{
 		m_data[15] |= (4 << 4);
 		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
@@ -263,9 +285,9 @@ public:
 
 	void Dot(
 		uint32_t numLinesToProcess,
-		access_t leftInputAccess,
-		access_t rightInputAccess,
-		access_t outputAccess)
+		localaccess_t leftInputAccess,
+		localaccess_t rightInputAccess,
+		localaccess_t outputAccess)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (4 << 4);
@@ -278,9 +300,9 @@ public:
 	void Delta(
 		uint32_t numIterations,
 		uint32_t numLinesToProcess,
-		access_t leftInputAccess,
-		access_t rightInputAccess,
-		access_t outputAccess)
+		localaccess_t leftInputAccess,
+		localaccess_t rightInputAccess,
+		localaccess_t outputAccess)
 	{
 		m_data[15] |= (9 << 4);
 		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
@@ -291,9 +313,9 @@ public:
 
 	void Delta(
 		uint32_t numLinesToProcess,
-		access_t leftInputAccess,
-		access_t rightInputAccess,
-		access_t outputAccess)
+		localaccess_t leftInputAccess,
+		localaccess_t rightInputAccess,
+		localaccess_t outputAccess)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (9 << 4);
@@ -306,8 +328,8 @@ public:
 	void Modify(
 		uint32_t numIterations,
 		uint32_t type, uint32_t algo, float stepSize, float lambda,
-		access_t labelsInputAccess,
-		access_t gradientOutputAccess)
+		localaccess_t labelsInputAccess,
+		localaccess_t gradientOutputAccess)
 	{
 		m_data[15] |= (5 << 4);
 		m_data[3] = labelsInputAccess.GetReg();
@@ -319,8 +341,8 @@ public:
 
 	void Modify(
 		uint32_t type, uint32_t algo, float stepSize, float lambda,
-		access_t labelsInputAccess,
-		access_t gradientOutputAccess)
+		localaccess_t labelsInputAccess,
+		localaccess_t gradientOutputAccess)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (5 << 4);
@@ -334,10 +356,10 @@ public:
 	void Update(
 		uint32_t numIterations,
 		uint32_t numLinesToProcess,
-		access_t samplesInputAccess,
-		access_t gradientInputAccess,
-		access_t modelReadAccess,
-		access_t modelWriteAccess)
+		localaccess_t samplesInputAccess,
+		localaccess_t gradientInputAccess,
+		localaccess_t modelReadAccess,
+		localaccess_t modelWriteAccess)
 	{
 		m_data[15] |= (6 << 4);
 		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
@@ -349,10 +371,10 @@ public:
 
 	void Update(
 		uint32_t numLinesToProcess,
-		access_t samplesInputAccess,
-		access_t gradientInputAccess,
-		access_t modelReadAccess,
-		access_t modelWriteAccess)
+		localaccess_t samplesInputAccess,
+		localaccess_t gradientInputAccess,
+		localaccess_t modelReadAccess,
+		localaccess_t modelWriteAccess)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (6 << 4);
@@ -364,8 +386,8 @@ public:
 	}
 
 	void Copy(
-		access_t sourceInputAccess,
-		access_t destinationOutputAccess)
+		localaccess_t sourceInputAccess,
+		localaccess_t destinationOutputAccess)
 	{
 		m_data[15] |= (7 << 4);
 		m_data[3] = sourceInputAccess.GetReg();

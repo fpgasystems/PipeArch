@@ -21,8 +21,8 @@ typedef struct packed {
     logic write_fifo;
     logic[LOG2_ACCESS_SIZE-1:0] offset;
     logic[LOG2_ACCESS_SIZE-1:0] length;
-    logic[15:0] iterations;
     logic keep_count_along_iterations;
+    logic use_local_props;
 } access_properties;
 
 typedef struct packed {

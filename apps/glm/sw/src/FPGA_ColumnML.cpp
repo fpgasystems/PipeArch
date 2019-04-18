@@ -22,7 +22,7 @@ bool FPGA_ColumnML::fSGD(
 	uint32_t pc = 0;
 
 	// Load model
-	vector<access_t> loadModelWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadModelWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadModelWrite[Instruction::LOAD_REGION_MODEL_CHANNEL].Set(modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, loadModelWrite);
 	m_inst[pc].ResetIndex(0);
@@ -32,12 +32,12 @@ bool FPGA_ColumnML::fSGD(
 
 	uint32_t beginEpoch = pc;
 
-	access_t modelCopy(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t modelCopy(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Copy(modelCopy, modelCopy);
 	pc++;
 
 	// Load labels in partition
-	vector<access_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadLabelsWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(labelOffsetInBRAM, m_partitionSizeInCL);
 	m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
 	pc++;
@@ -46,35 +46,35 @@ bool FPGA_ColumnML::fSGD(
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	vector<access_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFOBRAM, 0, m_numFeaturesInCL);
 	m_inst[pc].Load(m_samplesChunk.m_offsetInCL, m_numFeaturesInCL, m_numFeaturesInCL, m_partitionSize*m_numFeaturesInCL, 0, loadSamplesWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	access_t dotLeftRead(FIFO, 0, m_numFeaturesInCL);
-	access_t dotRightRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	access_t dotWrite(FIFO, 1);
+	localaccess_t dotLeftRead(FIFO, 0, m_numFeaturesInCL);
+	localaccess_t dotRightRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t dotWrite(FIFO, 1);
 	m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
 	pc++;
 
 	// Start---Innermost loop
-	access_t labelsRead(BRAM, 0, 1);
-	access_t modifyWrite(FIFO, 1);
+	localaccess_t labelsRead(BRAM, 0, 1);
+	localaccess_t modifyWrite(FIFO, 1);
 	m_inst[pc].Modify(type, 0, stepSize, lambda, labelsRead, modifyWrite);
 	m_inst[pc].MakeNonBlocking();
 	uint32_t pcModify = pc;
 	pc++;
 
-	access_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL);
-	access_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	access_t updateModelWrite(FIFOBRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL);
+	localaccess_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t updateModelWrite(FIFOBRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
 	m_inst[pc].MakeNonBlocking();
 	m_inst[pc].IncrementIndex(0);
 	pc++;
 
-	access_t copyModelRead(FIFO, m_numFeaturesInCL);
+	localaccess_t copyModelRead(FIFO, m_numFeaturesInCL);
 	m_inst[pc].Copy(copyModelRead, copyModelRead);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
@@ -159,7 +159,7 @@ bool FPGA_ColumnML::fSGD(
 	}
 
 	// WriteBack
-	vector<access_t> writebackModelRead(Instruction::NUM_WRITEBACK_CHANNELS);
+	vector<localaccess_t> writebackModelRead(Instruction::NUM_WRITEBACK_CHANNELS);
 	writebackModelRead[Instruction::WRITEBACK_MODEL_CHANNEL].Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].WriteBack(false, 1, m_numFeaturesInCL,
 		0, 0, m_numFeaturesInCL,
@@ -237,7 +237,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	uint32_t pc = 0;
 
 	// Load model
-	vector<access_t> loadModelWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadModelWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadModelWrite[Instruction::LOAD_REGION_MODEL_CHANNEL].Set(modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, loadModelWrite);
 	m_inst[pc].ResetIndex(0);
@@ -246,7 +246,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	pc++;
 
 	// Load labels in partition
-	vector<access_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadLabelsWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(labelOffsetInBRAM, m_partitionSizeInCL);
 	m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
 	uint32_t pcLabels = pc;
@@ -257,33 +257,33 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	pc++;
 
 	// Start---Innermost loop
-	vector<access_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFOBRAM, 0, minibatchSize*m_numFeaturesInCL);
 	m_inst[pc].Load(m_samplesChunk.m_offsetInCL, minibatchSize*m_numFeaturesInCL, m_numFeaturesInCL, m_partitionSize*m_numFeaturesInCL, 0, loadSamplesWrite);
 	uint32_t pcSamples = pc;
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	access_t modelCopy(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t modelCopy(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Copy(modelCopy, modelCopy);
 	pc++;
 
-	access_t dotLeftRead(FIFO, 0, m_numFeaturesInCL);
-	access_t dotRightRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	access_t dotWrite(FIFO, 1);
+	localaccess_t dotLeftRead(FIFO, 0, m_numFeaturesInCL);
+	localaccess_t dotRightRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t dotWrite(FIFO, 1);
 	m_inst[pc].Dot(minibatchSize, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	access_t labelsRead(BRAM, 0, 1);
-	access_t modifyWrite(FIFO, 1);
+	localaccess_t labelsRead(BRAM, 0, 1);
+	localaccess_t modifyWrite(FIFO, 1);
 	m_inst[pc].Modify(minibatchSize, type, 0, scaledStepSize, lambda, labelsRead, modifyWrite);
 	// m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	access_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL, true);
-	access_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	access_t updateModelWrite(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL, true);
+	localaccess_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	localaccess_t updateModelWrite(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Update(minibatchSize, m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
 	m_inst[pc].IncrementIndex(0, minibatchSize);
 	m_inst[pc].Jump(0, m_partitionSize-minibatchSize, pcSamples, pc+1);
@@ -327,7 +327,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	}
 
 	// WriteBack
-	vector<access_t> writebackModelRead(Instruction::NUM_WRITEBACK_CHANNELS);
+	vector<localaccess_t> writebackModelRead(Instruction::NUM_WRITEBACK_CHANNELS);
 	writebackModelRead[Instruction::WRITEBACK_MODEL_CHANNEL].Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].WriteBack(false, 1, m_numFeaturesInCL,
 		0, 0, m_numFeaturesInCL,
@@ -403,60 +403,60 @@ bool FPGA_ColumnML::fSCD(
 	uint32_t pc = 0;
 
 	// Load residual
-	vector<access_t> loadResidualWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadResidualWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadResidualWrite[Instruction::LOAD_REGION_MODEL_CHANNEL].Set(residualOffsetInBRAM, m_partitionSizeInCL);
 	m_inst[pc].Load(m_residualChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadResidualWrite);
 	pc++;
 
 	// Load labels in partition
-	vector<access_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadLabelsWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(labelOffsetInBRAM, m_partitionSizeInCL);
 	m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
 	pc++;
 
 	// Load model
-	vector<access_t> loadModelWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadModelWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadModelWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_numFeaturesInCL, 0, m_numFeaturesInCL, m_numPartitions*m_numFeaturesInCL, loadModelWrite);
 	pc++;
 
 	// Load accessprops
-	vector<access_t> loadAccesspropsWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadAccesspropsWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadAccesspropsWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(accesspropsOffsetInBRAM, 2*m_numFeaturesInCL);
 	m_inst[pc].Load(m_accesspropsChunk.m_offsetInCL, 2*m_numFeaturesInCL, 0, 2*m_numFeaturesInCL, 0, loadAccesspropsWrite);
 	pc++;
 
 	// Load samples
-	vector<access_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
+	vector<localaccess_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFOBRAM, 0, m_partitionSizeInCL);
 	m_inst[pc].LocalLoad(0, 1, 0, 0, loadSamplesWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	access_t deltaLeftRead(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
-	access_t deltaRightRead(BRAM, labelOffsetInBRAM, m_partitionSizeInCL);
-	access_t deltaWrite(FIFO, m_partitionSizeInCL);
+	localaccess_t deltaLeftRead(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
+	localaccess_t deltaRightRead(BRAM, labelOffsetInBRAM, m_partitionSizeInCL);
+	localaccess_t deltaWrite(FIFO, m_partitionSizeInCL);
 	m_inst[pc].Delta(m_partitionSizeInCL, deltaLeftRead, deltaRightRead, deltaWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	access_t dotLeftRead(FIFO, 0, m_partitionSizeInCL);
-	access_t dotRightRead(FIFO, 0, m_partitionSizeInCL);
-	access_t dotWrite(FIFO, m_partitionSizeInCL);
+	localaccess_t dotLeftRead(FIFO, 0, m_partitionSizeInCL);
+	localaccess_t dotRightRead(FIFO, 0, m_partitionSizeInCL);
+	localaccess_t dotWrite(FIFO, m_partitionSizeInCL);
 	m_inst[pc].Dot(m_partitionSizeInCL, dotLeftRead, dotRightRead, dotWrite);
 	pc++;
 
 	// Start---Innermost loop
-	access_t modelRead(BRAM, modelOffsetInBRAM, 1);
-	access_t modifyWrite(FIFO, 1);
+	localaccess_t modelRead(BRAM, modelOffsetInBRAM, 1);
+	localaccess_t modifyWrite(FIFO, 1);
 	m_inst[pc].Modify(type, 1, scaledStepSize, scaledLambda, modelRead, modifyWrite);
 	m_inst[pc].MakeNonBlocking();
 	uint32_t pcModify = pc;
 	pc++;
 
-	access_t updateSamplesRead(BRAM, 0, m_partitionSizeInCL);
-	access_t updateModelRead(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
-	access_t updateModelWrite(FIFOBRAM, residualOffsetInBRAM, m_partitionSizeInCL);
+	localaccess_t updateSamplesRead(BRAM, 0, m_partitionSizeInCL);
+	localaccess_t updateModelRead(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
+	localaccess_t updateModelWrite(FIFOBRAM, residualOffsetInBRAM, m_partitionSizeInCL);
 	m_inst[pc].Update(m_partitionSizeInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
 	m_inst[pc].MakeNonBlocking();
 	m_inst[pc].IncrementIndex(0);
@@ -484,14 +484,14 @@ bool FPGA_ColumnML::fSCD(
 	m_inst[pc].Update(m_partitionSizeInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
 	pc++;
 
-	vector<access_t> writebackResidualRead(Instruction::NUM_WRITEBACK_CHANNELS);
+	vector<localaccess_t> writebackResidualRead(Instruction::NUM_WRITEBACK_CHANNELS);
 	writebackResidualRead[Instruction::WRITEBACK_MODEL_CHANNEL].Set(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
 	m_inst[pc].WriteBack(true, m_residualChunk.m_offsetInCL, m_partitionSizeInCL,
 		0, m_partitionSizeInCL, 0,
 		0, true, writebackResidualRead);
 	pc++;
 
-	vector<access_t> writebackModelRead(Instruction::NUM_WRITEBACK_CHANNELS);
+	vector<localaccess_t> writebackModelRead(Instruction::NUM_WRITEBACK_CHANNELS);
 	writebackModelRead[Instruction::WRITEBACK_LABELS_CHANNEL].Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
 		0, m_numFeaturesInCL, m_numPartitions*m_numFeaturesInCL,

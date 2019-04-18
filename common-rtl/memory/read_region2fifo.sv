@@ -13,17 +13,19 @@ module read_region2fifo
     input logic [31:0] configreg,
     input logic [15:0] iterations,
 
+    fifobram_interface.read props_access,
     fifobram_interface.read region_access,
     fifobram_interface.read_source fifo_access
 );
 
     internal_interface #(.WIDTH(WIDTH)) to_FIFO();
     read_region
-    read_REGION_left_read (
+    REGION_read (
         .clk, .reset,
         .op_start(op_start),
         .configreg(configreg),
         .iterations(iterations),
+        .props_access(props_access),
         .region_access(region_access),
         .outfrom_read(to_FIFO.commonread_source)
     );

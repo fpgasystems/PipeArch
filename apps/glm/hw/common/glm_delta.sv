@@ -53,6 +53,8 @@ module glm_delta
     //   Read Channels
     //
     // *************************************************************************
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read[3]();
+
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_REGION_left_read();
     read_region2fifo
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
@@ -61,6 +63,7 @@ module glm_delta
         .op_start(read_trigger),
         .configreg(REGION_left_read_accessproperties),
         .iterations(num_iterations),
+        .props_access(dummy_accessprops_read[0].read),
         .region_access(REGION_left_read),
         .fifo_access(FIFO_REGION_left_read.read_source)
     );
@@ -73,6 +76,7 @@ module glm_delta
         .op_start(read_trigger),
         .configreg(REGION_right_read_accessproperties),
         .iterations(num_iterations),
+        .props_access(dummy_accessprops_read[1].read),
         .region_access(REGION_right_read),
         .fifo_access(FIFO_REGION_right_read.read_source)
     );
@@ -124,6 +128,7 @@ module glm_delta
         .configreg(output_accessproperties),
         .iterations(num_iterations),
         .into_write(from_subtract_to_output.commonwrite_source),
+        .props_access(dummy_accessprops_read[2].read),
         .region_access(REGION_delta_write)
     );
     assign from_subtract_to_output.we = subtract_valid;

@@ -7,7 +7,7 @@
 enum MemoryFormat {RowStore, ColumnStore};
 
 class FPGA_ColumnML : public ColumnML {
-private:
+protected:
 	iFPGA* m_ifpga;
 
 	volatile float* m_base = nullptr;
@@ -18,12 +18,12 @@ private:
 	volatile uint32_t* m_accessprops = nullptr;
 	volatile float** m_columns = nullptr;
 
-	access_t m_modelChunk;
-	access_t m_labelsChunk;
-	access_t m_samplesChunk;
-	access_t m_residualChunk;
-	access_t m_accesspropsChunk;
-	access_t** m_columnsChunks;
+	remoteaccess_t m_modelChunk;
+	remoteaccess_t m_labelsChunk;
+	remoteaccess_t m_samplesChunk;
+	remoteaccess_t m_residualChunk;
+	remoteaccess_t m_accesspropsChunk;
+	remoteaccess_t** m_columnsChunks;
 
 	MemoryFormat m_currentMemoryFormat;
 	bool m_useContextSwitch;
@@ -38,6 +38,7 @@ private:
 		output[2] = 0; // reg 1;
 		output[3] = 0; // reg 2;
 		output[4] = ((pcContextLoad&0xFF) << 16) | ((pcContextStore&0xFF) << 8) | (pcStart&0xFF);
+		cout << "m_numInstructions: " << m_numInstructions << endl;
 
 		m_ifpga->Realloc(m_programMemoryHandle, m_numInstructions*Instruction::NUM_BYTES);
 		auto programMemory = iFPGA::CastToInt(m_programMemoryHandle);
@@ -45,14 +46,6 @@ private:
 		for (uint32_t i = 0; i < m_numInstructions; i++) {
 			m_inst[i].LoadInstruction(programMemory + i*Instruction::NUM_WORDS);
 		}
-
-// #ifdef XILINX
-// 		vector<cl::Memory> buffersToCopy;
-// 		buffersToCopy.push_back(iFPGA::CastToPtr(m_inputHandle));
-// 		buffersToCopy.push_back(iFPGA::CastToPtr(m_outputHandle));
-// 		buffersToCopy.push_back(iFPGA::CastToPtr(m_programMemoryHandle));
-// 		m_ifpga->CopyToFPGA(buffersToCopy);
-// #endif
 	}
 
 public:
@@ -206,9 +199,9 @@ public:
 			cout << "m_accesspropsChunk.m_lengthInCL: " << m_accesspropsChunk.m_lengthInCL << endl;
 #endif
 			// Columns
-			m_columnsChunks = new access_t*[m_cstore->m_numFeatures];
+			m_columnsChunks = new remoteaccess_t*[m_cstore->m_numFeatures];
 			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				m_columnsChunks[j] = new access_t[m_numPartitions];
+				m_columnsChunks[j] = new remoteaccess_t[m_numPartitions];
 				for (uint32_t p = 0; p < m_numPartitions; p++) {
 					m_columnsChunks[j][p].m_offsetInCL = countCL;
 					countCL += m_partitionSizeInCL;

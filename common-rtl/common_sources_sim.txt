@@ -10,6 +10,7 @@ memory/fifo.sv
 memory/read_region.sv
 memory/read_region2fifo.sv
 memory/region.sv
+memory/region_replicate.sv
 memory/write_region.sv
 
 compute/dec23_to_float_convert.sv

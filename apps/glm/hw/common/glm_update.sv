@@ -58,6 +58,8 @@ module glm_update
     //   Read Channels
     //
     // *************************************************************************
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read[2]();
+
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_REGION_samples_read();
     read_region2fifo
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
@@ -66,6 +68,7 @@ module glm_update
         .op_start(read_trigger),
         .configreg(REGION_samples_read_accessproperties),
         .iterations(num_iterations),
+        .props_access(dummy_accessprops_read[0].read),
         .region_access(REGION_samples_read),
         .fifo_access(FIFO_REGION_samples_read.read_source)
     );
@@ -78,6 +81,7 @@ module glm_update
         .op_start(read_trigger),
         .configreg(REGION_gradient_read_accessproperties),
         .iterations(num_iterations),
+        .props_access(dummy_accessprops_read[1].read),
         .region_access(REGION_gradient_read),
         .fifo_access(FIFO_REGION_gradient_read.read_source)
     );

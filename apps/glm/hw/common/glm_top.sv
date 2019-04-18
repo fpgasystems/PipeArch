@@ -801,14 +801,6 @@ module glm_top
         .access(REGION_labels_interface.source)
     );
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_accessprops_interface[1]();
-    region
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(1))
-    REGION_accessprops (
-        .clk, .reset,
-        .access(REGION_accessprops_interface.source)
-    );
-
     fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) REGION_dot_interface[1]();
     region
     #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE), .NUM_CHANNELS(1))
@@ -823,6 +815,16 @@ module glm_top
     REGION_gradient (
         .clk, .reset,
         .access(REGION_gradient_interface.source)
+    );
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_write();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_read[5]();
+    region_replicate
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_READ_CHANNELS(5))
+    MEM_accessprops (
+        .clk, .reset,
+        .write_access(MEM_accessprops_write.write_source),
+        .read_access(MEM_accessprops_read.read_source)
     );
 
     // =========================================================================
@@ -845,8 +847,8 @@ module glm_top
         .REGION0_write(REGION_input_interface[0].write),
         .REGION1_write(REGION_model2_interface[0].write),
         .REGION2_write(REGION_labels_interface[0].write),
-        .MEM_accessprops_write(REGION_accessprops_interface[0].write),
-        .MEM_accessprops_read(REGION_accessprops_interface[0].read)
+        .MEM_accessprops_write(MEM_accessprops_write.write),
+        .MEM_accessprops_read(MEM_accessprops_read[0].read)
     );
 
     glm_writeback
@@ -890,6 +892,8 @@ module glm_top
         .op_start(op_start[3]),
         .op_done(op_done[3]),
         .regs(dot_regs),
+        .MEM_props_left(MEM_accessprops_read[1].read),
+        .MEM_props_right(MEM_accessprops_read[2].read),
         .REGION_left_read(REGION_input_interface[0].read),
         .REGION_right_read(REGION_model1_interface[0].read),
         .REGION_dot_write(REGION_dot_interface[0].write)

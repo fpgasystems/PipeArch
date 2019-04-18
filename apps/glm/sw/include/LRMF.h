@@ -28,23 +28,12 @@
 #include <dirent.h>
 #include <cmath>
 #include <algorithm>
+#include "ColumnStore.h"
 
 using namespace std;
 
-static double get_time()
-{
-	struct timeval t;
-	gettimeofday(&t, NULL);
-	return t.tv_sec + t.tv_usec*1e-6;
-}
-
 struct Label {
 	int m_Uindex;
-	int m_value;
-};
-
-struct LabelT {
-	int m_Mindex;
 	int m_value;
 };
 
@@ -64,14 +53,14 @@ protected:
 	float* m_M; // m_Mdim x m_numFeatures
 	float* m_U; // m_Udim x m_numFeatures
 	vector< vector<Label> > m_L;
-	vector< vector<LabelT> > m_Ltranspose;
-	vector< vector< vector<LabelT> >  > m_LtransposeTiled;
 	vector< LabelB > m_LB;
 	vector< vector< LabelB > > m_LBTiled;
 
 	uint32_t m_numTilesM;
 	uint32_t m_numTilesU;
 	uint32_t m_tileSize;
+	uint32_t m_restM;
+	uint32_t m_restU;
 
 	int CountFiles(char* pathToDirectory) {
 		auto dir = opendir(pathToDirectory);
@@ -100,8 +89,13 @@ protected:
 		}
 	}
 
-	void RandInit(float* base, uint32_t lenght) {
-		for (uint32_t i = 0; i < lenght; i++) {
+	uint32_t RandRange(uint32_t max) {
+		float temp = (float)rand()/(float)RAND_MAX;
+		return (uint32_t)((float)max*temp);
+	}
+
+	void RandInit(float* base, uint32_t length) {
+		for (uint32_t i = 0; i < length; i++) {
 			base[i] = (float)rand()/(float)RAND_MAX;
 		}
 	}
@@ -176,21 +170,55 @@ public:
 		}
 		cout << "m_Udim: " << m_Udim << endl;
 
-		m_Ltranspose.resize(m_Udim);
-		for (uint32_t m = 0; m < m_Mdim; m++) {
-			for (uint32_t u = 0; u < m_L[m].size(); u++) {
-				uint32_t uindex = m_L[m][u].m_Uindex;
-				LabelT temp;
-				temp.m_Mindex = m;
-				temp.m_value = m_L[m][u].m_value;
-				m_Ltranspose[uindex].push_back(temp);
+		m_M = (float*)aligned_alloc(64, m_Mdim*m_numFeatures*sizeof(float));
+		RandInit(m_M, m_Mdim*m_numFeatures);
+		m_U = (float*)aligned_alloc(64, m_Udim*m_numFeatures*sizeof(float));
+		RandInit(m_U, m_Udim*m_numFeatures);
+
+		m_LBTiled.clear();
+	}
+
+	void GenerateSyntheticData(int Mdim, uint32_t Udim) {
+
+		srand(3);
+
+		m_Mdim = Mdim;
+		m_Udim = Udim;
+
+		m_L.reserve(m_Mdim);
+		for (uint32_t i = 0; i < m_Mdim; i++) {
+
+			uint32_t numEntries = RandRange(m_Udim);
+			// cout << "Mindex: " << i << endl;
+			// cout << "numEntries: " << numEntries << endl;
+
+			vector<Label> tempV;
+			tempV.reserve(numEntries);
+			for (uint32_t j = 0; j < numEntries; j++) {
+				Label tempLabel;
+				tempLabel.m_Uindex = RandRange(m_Udim);
+				tempLabel.m_value = RandRange(5);
+				tempV.push_back(tempLabel);
+
+				LabelB tempB;
+				tempB.m_Uindex = tempLabel.m_Uindex;
+				tempB.m_Mindex = i;
+				tempB.m_value = tempLabel.m_value;
+				m_LB.push_back(tempB);
 			}
+
+			m_L.push_back(tempV);
 		}
+
+		cout << "m_Mdim: " << m_Mdim << endl;
+		cout << "m_Udim: " << m_Udim << endl;
 
 		m_M = (float*)aligned_alloc(64, m_Mdim*m_numFeatures*sizeof(float));
 		RandInit(m_M, m_Mdim*m_numFeatures);
 		m_U = (float*)aligned_alloc(64, m_Udim*m_numFeatures*sizeof(float));
-		RandInit(m_U, m_Mdim*m_numFeatures);
+		RandInit(m_U, m_Udim*m_numFeatures);
+
+		m_LBTiled.clear();
 	}
 
 	void PrintLB() {
@@ -203,9 +231,18 @@ public:
 	void DivideLBIntoTiles(uint32_t tileSize) {
 		srand(3);
 
+		m_LBTiled.clear();
+
 		m_tileSize = tileSize;
 		m_numTilesM = m_Mdim/m_tileSize;
 		m_numTilesU = m_Udim/m_tileSize;
+		m_restM = m_Mdim - m_numTilesM*m_tileSize;
+		m_restU = m_Udim - m_numTilesU*m_tileSize;
+
+		cout << "m_numTilesM: " << m_numTilesM << endl;
+		cout << "m_numTilesU: " << m_numTilesU << endl;
+		cout << "m_restM: " << m_restM << endl;
+		cout << "m_restU: " << m_restU << endl;
 
 		uint32_t count = 0;
 		for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
@@ -230,38 +267,14 @@ public:
 			}
 		}
 
-		cout << "count: " << count << endl;
-		cout << "m_LB.size(): " << m_LB.size() << endl;
+		// cout << "count: " << count << endl;
+		// cout << "m_LB.size(): " << m_LB.size() << endl;
 
-		for (uint32_t i = 0; i < m_LBTiled[0].size(); i++) {
-			cout << m_LBTiled[0][i].m_Mindex << "\t";
-			cout << m_LBTiled[0][i].m_Uindex << "\t";
-			cout << m_LBTiled[0][i].m_value << endl;
-		}
-	}
-
-	uint32_t PopulateLTransposeTiled(uint32_t tileSize) {
-		uint32_t numTiles = m_Mdim/tileSize;
-		uint32_t rest = m_Mdim - numTiles*tileSize;
-		cout << "rest: " << rest << endl;
-
-		m_LtransposeTiled.resize(numTiles);
-		for(uint32_t t = 0; t < numTiles; t++) {
-			m_LtransposeTiled[t].resize(m_Udim);
-		}
-		for (uint32_t t = 0; t < numTiles; t++) {
-			for (uint32_t i = 0; i < tileSize; i++) {
-				for (uint32_t u = 0; u < m_L[t*tileSize + i].size(); u++) {
-					uint32_t uindex = m_L[t*tileSize + i][u].m_Uindex;
-					LabelT temp;
-					temp.m_Mindex = i;
-					temp.m_value = m_L[t*tileSize + i][u].m_value;
-					m_LtransposeTiled[t][uindex].push_back(temp);
-				}
-			}
-		}
-
-		return numTiles;
+		// for (uint32_t i = 0; i < m_LBTiled[0].size(); i++) {
+		// 	cout << m_LBTiled[0][i].m_Mindex << "\t";
+		// 	cout << m_LBTiled[0][i].m_Uindex << "\t";
+		// 	cout << m_LBTiled[0][i].m_value << endl;
+		// }
 	}
 
 	float Dot(float* vector1, float* vector2, uint32_t numFeatures) {
@@ -356,93 +369,7 @@ public:
 			// loss = Loss(lambda);
 
 			double end = get_time();
-			cout << "Time per epoch: " << end-start << endl;
-
-			loss = RMSE();
-			cout << "Loss " << e << ": " << loss << endl;
-		}
-	}
-
-	void OptimizeTransposed(float stepSize, float lambda, uint32_t numEpochs) {
-		float loss = RMSE();
-		cout << "Initial Loss: " << loss << endl;
-
-
-		for (uint32_t e = 0; e < numEpochs; e++) {
-
-			for (uint32_t u = 0; u < m_Udim; u++) {
-				
-				float* U_vector = m_U + u*m_numFeatures;
-
-				for (uint32_t m = 0; m < m_Ltranspose[u].size(); m++) {
-
-					float* M_vector = m_M + m_Ltranspose[u][m].m_Mindex*m_numFeatures;
-
-					float dot = Dot(M_vector, U_vector, m_numFeatures);
-					float error = dot - m_Ltranspose[u][m].m_value;
-
-					for (uint32_t j = 0; j < m_numFeatures; j++) {
-						float M_temp = M_vector[j];
-						float U_temp = U_vector[j];
-						M_vector[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
-						U_vector[j] = U_temp - stepSize*(error*M_temp + lambda*U_temp);
-					}
-				}
-			}
-			loss = RMSE();
-			cout << "Loss " << e << ": " << loss << endl;
-		}
-	}
-
-	void OptimizeTiled(uint32_t tileSize, uint32_t minibatchSize, float stepSize, float lambda, uint32_t numEpochs) {
-
-		float scaledStepSize = stepSize/minibatchSize;
-
-		float loss = RMSE();
-		cout << "Initial Loss: " << loss << endl;
-
-		uint32_t numTiles = PopulateLTransposeTiled(tileSize);
-
-		for (uint32_t e = 0; e < numEpochs; e++) {
-
-			double start = get_time();
-
-			for (uint32_t t = 0; t < numTiles; t++) {
-				float* M_tile_offset = m_M + t*tileSize*m_numFeatures;
-
-				for (uint32_t u = 0; u < m_Udim; u++) {
-					float* U_vector = m_U + u*m_numFeatures;
-
-					vector<float> U_vector_gradient;
-					U_vector_gradient.resize(m_numFeatures);
-					for (uint32_t j = 0; j < m_numFeatures; j++) {
-						U_vector_gradient[j] = U_vector[j];
-					}
-
-					// cout << "m_LtransposeTiled[" << t << "][" << u << "].size(): " << m_LtransposeTiled[t][u].size() << endl;
-					for (uint32_t m = 0; m < m_LtransposeTiled[t][u].size(); m++) {
-						float* M_vector = M_tile_offset + m_LtransposeTiled[t][u][m].m_Mindex*m_numFeatures;
-
-						float dot = Dot(M_vector, U_vector, m_numFeatures);
-						float error = dot - m_LtransposeTiled[t][u][m].m_value;
-
-						for (uint32_t j = 0; j < m_numFeatures; j++) {
-							float M_temp = M_vector[j];
-							float U_temp = U_vector[j];
-							M_vector[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
-							U_vector_gradient[j] = U_vector_gradient[j] - scaledStepSize*(error*M_temp + lambda*U_temp);
-						}
-
-						if ((m+1)%minibatchSize == 0) {
-							for (uint32_t j = 0; j < m_numFeatures; j++) {
-								U_vector[j] = U_vector_gradient[j];
-							}
-						}
-					}
-				}
-			}
-			double end = get_time();
-			cout << "Time per epoch: " << end-start << endl;
+			// cout << "Time per epoch: " << end-start << endl;
 
 			loss = RMSE();
 			cout << "Loss " << e << ": " << loss << endl;
@@ -450,6 +377,11 @@ public:
 	}
 
 	void OptimizeRound(float stepSize, float lambda, uint32_t numEpochs) {
+
+		if (m_LBTiled.size() == 0) {
+			cout << "m_LBTiled is empty" << endl;
+			return;
+		}
 
 		float loss = RMSE();
 		cout << "Initial Loss: " << loss << endl;
@@ -475,6 +407,8 @@ public:
 						float dot = Dot(M_vector, U_vector, m_numFeatures);
 						float error = dot - LTile[i].m_value;
 
+						cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " dot: " << dot << endl;
+
 						for (uint32_t j = 0; j < m_numFeatures; j++) {
 							float M_temp = M_vector[j];
 							float U_temp = U_vector[j];
@@ -486,7 +420,7 @@ public:
 			}
 
 			double end = get_time();
-			cout << "Time per epoch: " << end-start << endl;
+			// cout << "Time per epoch: " << end-start << endl;
 
 			loss = RMSE();
 			cout << "Loss " << e << ": " << loss << endl;

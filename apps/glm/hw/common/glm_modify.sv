@@ -94,6 +94,8 @@ module glm_modify
     //   Write Channels
     //
     // *************************************************************************
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read();
+
     internal_interface #(.WIDTH(32)) from_modify_to_output();
     write_region
     write_REGION_dot_write (
@@ -102,6 +104,7 @@ module glm_modify
         .configreg(regs[5]),
         .iterations(num_iterations),
         .into_write(from_modify_to_output.commonwrite_source),
+        .props_access(dummy_accessprops_read.read),
         .region_access(REGION_gradient_write)
     );
 

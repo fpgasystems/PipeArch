@@ -28,85 +28,20 @@ module glm_load
         internal_reset <= reset;
     end
 
-    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load();
-    // *************************************************************************
-    //
-    //   Load Channels
-    //
-    // *************************************************************************
-    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION0();
-    write_region
-    write_REGION0 (
-        .clk, .reset(internal_reset),
-        .op_start(op_start),
-        .configreg(regs[5]),
-        .iterations(16'd1),
-        .into_write(from_load_to_REGION0.commonwrite_source),
-        .region_access(REGION0_write)
-    );
-
-    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION1();
-    write_region
-    write_REGION1 (
-        .clk, .reset(internal_reset),
-        .op_start(op_start),
-        .configreg(regs[6]),
-        .iterations(16'd1),
-        .into_write(from_load_to_REGION1.commonwrite_source),
-        .region_access(REGION1_write)
-    );
-
-    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION2();
-    write_region
-    write_REGION2 (
-        .clk, .reset(internal_reset),
-        .op_start(op_start),
-        .configreg(regs[7]),
-        .iterations(16'd1),
-        .into_write(from_load_to_REGION2.commonwrite_source),
-        .region_access(REGION2_write)
-    );
-
-    internal_interface #(.WIDTH(512)) from_load_to_MEM_accessprops();
-    write_region
-    write_MEM_accessprops_inst (
-        .clk, .reset(internal_reset),
-        .op_start(op_start),
-        .configreg(regs[8]),
-        .iterations(16'd1),
-        .into_write(from_load_to_MEM_accessprops.commonwrite_source),
-        .region_access(MEM_accessprops_write)
-    );
-
-    always_ff @(posedge clk)
-    begin
-        from_load_to_REGION0.we <= from_load.we;
-        from_load_to_REGION0.wdata <= from_load.wdata;
-        from_load_to_REGION1.we <= from_load.we;
-        from_load_to_REGION1.wdata <= from_load.wdata;
-        from_load_to_REGION2.we <= from_load.we;
-        from_load_to_REGION2.wdata <= from_load.wdata;
-        from_load_to_MEM_accessprops.we <= from_load.we;
-        from_load_to_MEM_accessprops.wdata <= from_load.wdata;
-        from_load.almostfull <= from_load_to_REGION0.almostfull |
-                                from_load_to_REGION1.almostfull |
-                                from_load_to_REGION2.almostfull |
-                                from_load_to_MEM_accessprops.almostfull;
-    end 
-
     // *************************************************************************
     //
     //   Internal State
     //
     // *************************************************************************
-    typedef enum logic [2:0]
+    typedef enum logic [3:0]
     {
         STATE_IDLE,
         STATE_PREPROCESS,
         STATE_FETCH_ACCESSPROPS,
         STATE_RECEIVE_ACCESSPROPS,
         STATE_ADD_ACCESSPROPS,
-        STATE_TRIGGER,
+        STATE_DMA_TRIGGER,
+        STATE_WRITE_TRIGGER,
         STATE_READ,
         STATE_DONE
     } t_readstate;
@@ -126,6 +61,83 @@ module glm_load
     logic enable_multiline;
     logic use_accessprops;
     logic [LOG2_MEMORY_SIZE-1:0] accessprops_raddr;
+    logic [31:0] REGION0_accessproperties;
+    logic [31:0] REGION1_accessproperties;
+    logic [31:0] REGION2_accessproperties;
+    logic [31:0] MEM_accessprops_accessproperties;
+
+    // *************************************************************************
+    //
+    //   Load Channels
+    //
+    // *************************************************************************
+    logic write_trigger;
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read[4]();
+
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION0();
+    write_region
+    write_REGION0 (
+        .clk, .reset(internal_reset),
+        .op_start(write_trigger),
+        .configreg(REGION0_accessproperties),
+        .iterations(16'd1),
+        .into_write(from_load_to_REGION0.commonwrite_source),
+        .props_access(dummy_accessprops_read[0].read),
+        .region_access(REGION0_write)
+    );
+
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION1();
+    write_region
+    write_REGION1 (
+        .clk, .reset(internal_reset),
+        .op_start(write_trigger),
+        .configreg(REGION1_accessproperties),
+        .iterations(16'd1),
+        .into_write(from_load_to_REGION1.commonwrite_source),
+        .props_access(dummy_accessprops_read[1].read),
+        .region_access(REGION1_write)
+    );
+
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION2();
+    write_region
+    write_REGION2 (
+        .clk, .reset(internal_reset),
+        .op_start(write_trigger),
+        .configreg(REGION2_accessproperties),
+        .iterations(16'd1),
+        .into_write(from_load_to_REGION2.commonwrite_source),
+        .props_access(dummy_accessprops_read[2].read),
+        .region_access(REGION2_write)
+    );
+
+    internal_interface #(.WIDTH(512)) from_load_to_MEM_accessprops();
+    write_region
+    write_MEM_accessprops_inst (
+        .clk, .reset(internal_reset),
+        .op_start(write_trigger),
+        .configreg(MEM_accessprops_accessproperties),
+        .iterations(16'd1),
+        .into_write(from_load_to_MEM_accessprops.commonwrite_source),
+        .props_access(dummy_accessprops_read[3].read),
+        .region_access(MEM_accessprops_write)
+    );
+
+    always_ff @(posedge clk)
+    begin
+        from_load_to_REGION0.we <= from_load.we;
+        from_load_to_REGION0.wdata <= from_load.wdata;
+        from_load_to_REGION1.we <= from_load.we;
+        from_load_to_REGION1.wdata <= from_load.wdata;
+        from_load_to_REGION2.we <= from_load.we;
+        from_load_to_REGION2.wdata <= from_load.wdata;
+        from_load_to_MEM_accessprops.we <= from_load.we;
+        from_load_to_MEM_accessprops.wdata <= from_load.wdata;
+        from_load.almostfull <= from_load_to_REGION0.almostfull |
+                                from_load_to_REGION1.almostfull |
+                                from_load_to_REGION2.almostfull |
+                                from_load_to_MEM_accessprops.almostfull;
+    end 
 
     // *************************************************************************
     //
@@ -200,6 +212,8 @@ module glm_load
         //   Request State Machine
         //
         // =================================
+        write_trigger <= 1'b0;
+
         case (request_state)
             STATE_IDLE:
             begin
@@ -216,6 +230,10 @@ module glm_load
                     enable_multiline <= regs[4][31];
                     use_accessprops <= regs[3][31];
                     accessprops_raddr <= regs[3][29:0];
+                    REGION0_accessproperties <= regs[5];
+                    REGION1_accessproperties <= regs[6];
+                    REGION2_accessproperties <= regs[7];
+                    MEM_accessprops_accessproperties <= regs[8];
                     // *************************************************************************
                     accessprops_position <= 0;
                     offset_accumulate <= 2'b0;
@@ -248,7 +266,7 @@ module glm_load
                     running_DRAM_load_offset <= running_DRAM_load_offset + offset_by_index[offset_accumulate];
                     if (offset_accumulate == 2)
                     begin
-                        request_state <= trigger_dma ? STATE_TRIGGER : STATE_READ;
+                        request_state <= trigger_dma ? STATE_DMA_TRIGGER : STATE_WRITE_TRIGGER;
                     end
                 end
                 offset_accumulate <= offset_accumulate + 1;
@@ -276,10 +294,14 @@ module glm_load
             begin
                 running_DRAM_load_offset <= running_DRAM_load_offset + accessprops_DRAM_offset;
                 DRAM_load_length <= accessprops_DRAM_length;
-                request_state <= trigger_dma ? STATE_TRIGGER : STATE_READ;
+                REGION0_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
+                REGION1_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
+                REGION2_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
+                MEM_accessprops_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
+                request_state <= trigger_dma ? STATE_DMA_TRIGGER : STATE_WRITE_TRIGGER;
             end
 
-            STATE_TRIGGER:
+            STATE_DMA_TRIGGER:
             begin
                 if (DMA_read.status.idle)
                 begin
@@ -288,8 +310,14 @@ module glm_load
                     DMA_read.control.regs.reg4 <= {enable_multiline, DRAM_load_length};
                     DMA_read.control.addr <= {upper_part_address, running_DRAM_load_offset};
                     DMA_read.control.async <= 1'b0;
-                    request_state <= STATE_READ;
+                    request_state <= STATE_WRITE_TRIGGER;
                 end
+            end
+
+            STATE_WRITE_TRIGGER:
+            begin
+                write_trigger <= 1'b1;
+                request_state <= STATE_READ;
             end
 
             STATE_READ:

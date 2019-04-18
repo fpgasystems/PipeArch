@@ -9,6 +9,7 @@ module read_region
     input logic [31:0] configreg,
     input logic [15:0] iterations,
 
+    fifobram_interface.read props_access,
     fifobram_interface.read region_access,
     internal_interface.commonread_source outfrom_read
 );
@@ -17,11 +18,14 @@ module read_region
     //   Internal State
     //
     // *************************************************************************
-    typedef enum logic [1:0]
+    typedef enum logic [2:0]
     {
         STATE_IDLE,
         STATE_BRAM_READ,
-        STATE_FIFO_READ
+        STATE_FIFO_READ,
+        STATE_FETCH_PROPS,
+        STATE_RECEIVE_PROPS,
+        STATE_READ_WITH_PROPS
     } t_readstate;
     t_readstate read_state;
 
@@ -30,7 +34,11 @@ module read_region
     //   Instruction Information
     //
     // *************************************************************************
+    logic[15:0] num_iterations;
     access_properties memory_read;
+    logic [LOG2_ACCESS_SIZE-1:0] accessprops_offset;
+    logic [LOG2_ACCESS_SIZE-1:0] accessprops_length;
+    logic [3:0] accessprops_position;
 
     // *************************************************************************
     //
@@ -42,9 +50,11 @@ module read_region
 
     always_ff @(posedge clk)
     begin
+        props_access.re <= 1'b0;
+        region_access.re <= 1'b0;
+
         outfrom_read.rvalid <= region_access.rvalid;
         outfrom_read.rdata <= region_access.rdata;
-        region_access.re <= 1'b0;
 
         case (read_state)
             STATE_IDLE:
@@ -56,12 +66,17 @@ module read_region
                     memory_read.write_fifo <= configreg[31];
                     memory_read.offset <= configreg[13:0];
                     memory_read.length <= configreg[29:16];
-                    memory_read.iterations <= iterations;
+                    num_iterations <= iterations;
+                    memory_read.use_local_props <= configreg[14];
                     memory_read.keep_count_along_iterations <= configreg[15];
                     // *************************************************************************
                     num_requested_lines <= 0;
                     num_performed_iterations <= 0;
-                    if (configreg[29:16] == 16'b0)
+                    if (configreg[14])
+                    begin
+                        read_state <= STATE_FETCH_PROPS;
+                    end
+                    else if (configreg[29:16] == 16'b0 || configreg[31:30] == 2'b0)
                     begin
                         read_state <= STATE_IDLE;
                     end
@@ -72,6 +87,54 @@ module read_region
                     else
                     begin
                         read_state <= STATE_BRAM_READ;
+                    end
+                end
+            end
+
+            STATE_FETCH_PROPS:
+            begin
+                props_access.re <= 1'b1;
+                props_access.rfifobram <= 2'b01;
+                props_access.raddr <= memory_read.offset >> 4;
+                accessprops_position <= memory_read.offset[3:0];
+                read_state <= STATE_RECEIVE_PROPS;
+            end
+
+            STATE_RECEIVE_PROPS:
+            begin
+                if (props_access.rvalid)
+                begin
+                    accessprops_offset <= props_access.rdata[accessprops_position*32+13 -: 14];
+                    accessprops_length <= props_access.rdata[accessprops_position*32+29 -: 14];
+                    read_state <= STATE_READ_WITH_PROPS;
+                end
+            end
+
+            STATE_READ_WITH_PROPS:
+            begin
+                if (num_requested_lines < accessprops_length && !outfrom_read.almostfull)
+                begin
+                    region_access.re <= 1'b1;
+                    region_access.rfifobram <= 2'b01;
+                    region_access.raddr <= accessprops_offset + num_requested_lines;
+                    num_requested_lines <= num_requested_lines + 1;
+
+                    if (num_requested_lines == accessprops_length-1)
+                    begin
+                        num_performed_iterations <= num_performed_iterations + 1;
+                        if (num_performed_iterations == num_iterations-1)
+                        begin
+                            read_state <= STATE_IDLE;
+                        end
+                        else
+                        begin
+                            num_requested_lines <= 0;
+                            if (memory_read.keep_count_along_iterations)
+                            begin
+                                memory_read.offset <= memory_read.offset + memory_read.length;
+                            end
+                            read_state <= STATE_FETCH_PROPS;
+                        end
                     end
                 end
             end
@@ -88,7 +151,7 @@ module read_region
                     if (num_requested_lines == memory_read.length-1)
                     begin
                         num_performed_iterations <= num_performed_iterations + 1;
-                        if (num_performed_iterations == memory_read.iterations-1)
+                        if (num_performed_iterations == num_iterations-1)
                         begin
                             read_state <= STATE_IDLE;
                         end
@@ -115,7 +178,7 @@ module read_region
                     if (num_requested_lines == memory_read.length-1)
                     begin
                         num_performed_iterations <= num_performed_iterations + 1;
-                        if (num_performed_iterations == memory_read.iterations-1)
+                        if (num_performed_iterations == num_iterations-1)
                         begin
                             read_state <= STATE_IDLE;
                         end

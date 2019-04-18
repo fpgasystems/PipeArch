@@ -14,6 +14,8 @@ module pipearch_copy
     fifobram_interface.write REGION_write
 );
 
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read[2]();
+
     internal_interface #(.WIDTH(512)) from_REGION_read();
     read_region
     read_REGION_inst (
@@ -21,6 +23,7 @@ module pipearch_copy
         .op_start(op_start),
         .configreg(regs[0]),
         .iterations(16'd1),
+        .props_access(dummy_accessprops_read[0].read),
         .region_access(REGION_read),
         .outfrom_read(from_REGION_read.commonread_source)
     );
@@ -31,6 +34,7 @@ module pipearch_copy
         .op_start(op_start),
         .configreg(regs[1]),
         .iterations(16'd1),
+        .props_access(dummy_accessprops_read[1].read),
         .into_write(from_REGION_read.commonwrite_source),
         .region_access(REGION_write)
     );

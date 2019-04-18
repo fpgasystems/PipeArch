@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
 
 
 	// Set memory format / decide on SGD or SCD
-	MemoryFormat format = ColumnStore;
+	MemoryFormat format = RowStore;
 
 	if (format == RowStore) {
 		columnML.CreateMemoryLayout(format, partitionSize);

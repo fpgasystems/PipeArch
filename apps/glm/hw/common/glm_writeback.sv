@@ -51,6 +51,8 @@ module glm_writeback
     //   Store Channels
     //
     // *************************************************************************
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read[2]();
+
     internal_interface #(.WIDTH(CLDATA_WIDTH)) to_writeback_from_REGION0();
     read_region
     read_REGION0 (
@@ -59,6 +61,7 @@ module glm_writeback
         .configreg(regs[6]),
         .iterations(16'd1),
         .region_access(REGION0_read),
+        .props_access(dummy_accessprops_read[0].read),
         .outfrom_read(to_writeback_from_REGION0.commonread_source)
     );
 
@@ -70,6 +73,7 @@ module glm_writeback
         .configreg(regs[7]),
         .iterations(16'd1),
         .region_access(REGION1_read),
+        .props_access(dummy_accessprops_read[1].read),
         .outfrom_read(to_writeback_from_REGION1.commonread_source)
     );
 

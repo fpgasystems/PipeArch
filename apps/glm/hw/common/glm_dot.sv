@@ -10,6 +10,8 @@ module glm_dot
 
     input logic [31:0] regs [4],
 
+    fifobram_interface.read MEM_props_left,
+    fifobram_interface.read MEM_props_right,
     fifobram_interface.read REGION_left_read,
     fifobram_interface.read REGION_right_read,
     fifobram_interface.write REGION_dot_write
@@ -61,6 +63,7 @@ module glm_dot
         .op_start(read_trigger),
         .configreg(REGION_left_read_accessproperties),
         .iterations(num_iterations),
+        .props_access(MEM_props_left),
         .region_access(REGION_left_read),
         .fifo_access(FIFO_REGION_left_read.read_source)
     );
@@ -73,6 +76,7 @@ module glm_dot
         .op_start(read_trigger),
         .configreg(REGION_right_read_accessproperties),
         .iterations(num_iterations),
+        .props_access(MEM_props_right),
         .region_access(REGION_right_read),
         .fifo_access(FIFO_REGION_right_read.read_source)
     );
@@ -115,6 +119,8 @@ module glm_dot
     //   Write Channels
     //
     // *************************************************************************
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read();
+
     internal_interface #(.WIDTH(32)) from_dot_to_output();
     write_region
     write_REGION_dot_write (
@@ -123,6 +129,7 @@ module glm_dot
         .configreg(output_accessproperties),
         .iterations(num_iterations),
         .into_write(from_dot_to_output.commonwrite_source),
+        .props_access(dummy_accessprops_read.read),
         .region_access(REGION_dot_write)
     );
     assign from_dot_to_output.we = dot_done;
