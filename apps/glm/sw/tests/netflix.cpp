@@ -41,10 +41,18 @@ int main(int argc, char* argv[]) {
 	}
 	lrmf.DivideLBIntoTiles(tileSize);
 
+	lrmf.PrintM();
+	lrmf.PrintU();
+
 	// lrmf.Optimize(stepSize, lambda, numEpochs);
 	lrmf.OptimizeRound(stepSize, lambda, numEpochs);
 
 #ifdef FPGA
+	lrmf.RandInitMU();
+
+	lrmf.PrintM();
+	lrmf.PrintU();
+
 	lrmf.CreateMemoryLayout();
 	lrmf.fOptimizeRound(stepSize, lambda, numEpochs);
 

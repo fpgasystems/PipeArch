@@ -113,6 +113,7 @@ public:
 	static const uint32_t LOAD_REGION_MODEL_CHANNEL = 1;
 	static const uint32_t LOAD_REGION_LABELS_CHANNEL = 2;
 	static const uint32_t LOAD_MEM_ACCESSPROPS_CHANNEL = 3;
+	static const uint32_t LOAD_MEM_LOCALPROPS_CHANNEL = 4;
 
 	static const uint32_t NUM_WRITEBACK_CHANNELS = 2;
 	static const uint32_t WRITEBACK_MODEL_CHANNEL = 0;
@@ -378,6 +379,38 @@ public:
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (6 << 4);
+		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = samplesInputAccess.GetReg();
+		m_data[5] = gradientInputAccess.GetReg();
+		m_data[6] = modelReadAccess.GetReg();
+		m_data[7] = modelWriteAccess.GetReg();
+	}
+
+	void Update2(
+		uint32_t numIterations,
+		uint32_t numLinesToProcess,
+		localaccess_t samplesInputAccess,
+		localaccess_t gradientInputAccess,
+		localaccess_t modelReadAccess,
+		localaccess_t modelWriteAccess)
+	{
+		m_data[15] |= (10 << 4);
+		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
+		m_data[4] = samplesInputAccess.GetReg();
+		m_data[5] = gradientInputAccess.GetReg();
+		m_data[6] = modelReadAccess.GetReg();
+		m_data[7] = modelWriteAccess.GetReg();
+	}
+
+	void Update2(
+		uint32_t numLinesToProcess,
+		localaccess_t samplesInputAccess,
+		localaccess_t gradientInputAccess,
+		localaccess_t modelReadAccess,
+		localaccess_t modelWriteAccess)
+	{
+		uint32_t numIterations = 1;
+		m_data[15] |= (10 << 4);
 		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
 		m_data[4] = samplesInputAccess.GetReg();
 		m_data[5] = gradientInputAccess.GetReg();

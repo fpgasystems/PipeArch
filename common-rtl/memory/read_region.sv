@@ -36,8 +36,9 @@ module read_region
     // *************************************************************************
     logic[15:0] num_iterations;
     access_properties memory_read;
-    logic [LOG2_ACCESS_SIZE-1:0] accessprops_offset;
-    logic [LOG2_ACCESS_SIZE-1:0] accessprops_length;
+    logic [CLDATA_WIDTH-1:0] accessprops_data;
+    logic [LOG2_ACCESS_SIZE-1:0] current_offset;
+    logic [LOG2_ACCESS_SIZE-1:0] current_length;
     logic [3:0] accessprops_position;
 
     // *************************************************************************
@@ -47,6 +48,10 @@ module read_region
     // *************************************************************************
     logic [LOG2_ACCESS_SIZE-1:0] num_requested_lines;
     logic [15:0] num_performed_iterations;
+
+    assign accessprops_position = memory_read.offset[3:0];
+    assign current_offset = accessprops_data[accessprops_position*32+13 -: 14];
+    assign current_length = accessprops_data[accessprops_position*32+29 -: 14];
 
     always_ff @(posedge clk)
     begin
@@ -96,7 +101,6 @@ module read_region
                 props_access.re <= 1'b1;
                 props_access.rfifobram <= 2'b01;
                 props_access.raddr <= memory_read.offset >> 4;
-                accessprops_position <= memory_read.offset[3:0];
                 read_state <= STATE_RECEIVE_PROPS;
             end
 
@@ -104,22 +108,21 @@ module read_region
             begin
                 if (props_access.rvalid)
                 begin
-                    accessprops_offset <= props_access.rdata[accessprops_position*32+13 -: 14];
-                    accessprops_length <= props_access.rdata[accessprops_position*32+29 -: 14];
+                    accessprops_data <= props_access.rdata;
                     read_state <= STATE_READ_WITH_PROPS;
                 end
             end
 
             STATE_READ_WITH_PROPS:
             begin
-                if (num_requested_lines < accessprops_length && !outfrom_read.almostfull)
+                if (num_requested_lines < current_length && !outfrom_read.almostfull)
                 begin
                     region_access.re <= 1'b1;
                     region_access.rfifobram <= 2'b01;
-                    region_access.raddr <= accessprops_offset + num_requested_lines;
+                    region_access.raddr <= current_offset + num_requested_lines;
                     num_requested_lines <= num_requested_lines + 1;
 
-                    if (num_requested_lines == accessprops_length-1)
+                    if (num_requested_lines == current_length-1)
                     begin
                         num_performed_iterations <= num_performed_iterations + 1;
                         if (num_performed_iterations == num_iterations-1)
@@ -133,7 +136,10 @@ module read_region
                             begin
                                 memory_read.offset <= memory_read.offset + memory_read.length;
                             end
-                            read_state <= STATE_FETCH_PROPS;
+                            if (num_performed_iterations[3:0] == 4'd15)
+                            begin
+                                read_state <= STATE_FETCH_PROPS;
+                            end
                         end
                     end
                 end

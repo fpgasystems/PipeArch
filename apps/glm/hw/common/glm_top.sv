@@ -477,7 +477,8 @@ module glm_top
     logic [31:0] dot_regs [4];
     logic [31:0] delta_regs [4];
     logic [31:0] modify_regs [6];
-    logic [31:0] update_regs [5];
+    logic [31:0] update1_regs [5];
+    logic [31:0] update2_regs [5];
     logic [31:0] copy_regs [2];
 
     always_ff @(posedge clk)
@@ -629,14 +630,24 @@ module glm_top
                             modify_regs[5] <= instruction[7];
                         end
 
-                        4'h6: // update
+                        4'h6: // update1
                         begin
                             op_start[5] <= 1'b1;
-                            update_regs[0] <= instruction[3];
-                            update_regs[1] <= instruction[4];
-                            update_regs[2] <= instruction[5];
-                            update_regs[3] <= instruction[6];
-                            update_regs[4] <= instruction[7];
+                            update1_regs[0] <= instruction[3];
+                            update1_regs[1] <= instruction[4];
+                            update1_regs[2] <= instruction[5];
+                            update1_regs[3] <= instruction[6];
+                            update1_regs[4] <= instruction[7];
+                        end
+
+                        4'ha: // update2
+                        begin
+                            op_start[9] <= 1'b1;
+                            update2_regs[0] <= instruction[3];
+                            update2_regs[1] <= instruction[4];
+                            update2_regs[2] <= instruction[5];
+                            update2_regs[3] <= instruction[6];
+                            update2_regs[4] <= instruction[7];
                         end
 
                         4'h7: // copy
@@ -769,9 +780,9 @@ module glm_top
     //   Local Memories
     //
     // *************************************************************************
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_interface[2]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_interface[3]();
     region
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(2))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(3))
     REGION_input (
         .clk, .reset,
         .access(REGION_input_interface.source)
@@ -809,22 +820,34 @@ module glm_top
         .access(REGION_dot_interface.source)
     );
 
-    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) REGION_gradient_interface[1]();
-    region
-    #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE), .NUM_CHANNELS(1))
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) REGION_gradient_write();
+    fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) REGION_gradient_read[2]();
+    region_replicate
+    #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE), .NUM_READ_CHANNELS(2))
     REGION_gradient (
         .clk, .reset,
-        .access(REGION_gradient_interface.source)
+        .write_access(REGION_gradient_write.write_source),
+        .read_access(REGION_gradient_read.read_source)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_write();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_read[5]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_read[1]();
     region_replicate
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_READ_CHANNELS(5))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_READ_CHANNELS(1))
     MEM_accessprops (
         .clk, .reset,
         .write_access(MEM_accessprops_write.write_source),
         .read_access(MEM_accessprops_read.read_source)
+    );
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_localprops_write();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_localprops_read[6]();
+    region_replicate
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_READ_CHANNELS(6))
+    MEM_localprops (
+        .clk, .reset,
+        .write_access(MEM_localprops_write.write_source),
+        .read_access(MEM_localprops_read.read_source)
     );
 
     // =========================================================================
@@ -847,6 +870,7 @@ module glm_top
         .REGION0_write(REGION_input_interface[0].write),
         .REGION1_write(REGION_model2_interface[0].write),
         .REGION2_write(REGION_labels_interface[0].write),
+        .MEM_localprops_write(MEM_localprops_write.write),
         .MEM_accessprops_write(MEM_accessprops_write.write),
         .MEM_accessprops_read(MEM_accessprops_read[0].read)
     );
@@ -892,8 +916,8 @@ module glm_top
         .op_start(op_start[3]),
         .op_done(op_done[3]),
         .regs(dot_regs),
-        .MEM_props_left(MEM_accessprops_read[1].read),
-        .MEM_props_right(MEM_accessprops_read[2].read),
+        .MEM_props_left(MEM_localprops_read[0].read),
+        .MEM_props_right(MEM_localprops_read[1].read),
         .REGION_left_read(REGION_input_interface[0].read),
         .REGION_right_read(REGION_model1_interface[0].read),
         .REGION_dot_write(REGION_dot_interface[0].write)
@@ -910,21 +934,39 @@ module glm_top
         .MEM_labels_read(REGION_labels_interface[0].read),
         .FIFO_dot_read(REGION_dot_interface[0].read),
         .MEM_labels_write(REGION_labels_interface[1].write),
-        .REGION_gradient_write(REGION_gradient_interface[0].write)
+        .REGION_gradient_write(REGION_gradient_write.write)
     );
 
     glm_update
-    execute_update
+    execute_update1
     (
         .clk,
         .reset,
         .op_start(op_start[5]),
         .op_done(op_done[5]),
-        .regs(update_regs),
+        .regs(update1_regs),
+        .MEM_props_samples(MEM_localprops_read[2]),
+        .MEM_props_model(MEM_localprops_read[3]),
         .REGION_samples_read(REGION_input_interface[1].read),
-        .REGION_gradient_read(REGION_gradient_interface[0].read),
+        .REGION_gradient_read(REGION_gradient_read[0].read),
         .MEM_model_read(REGION_model2_interface[0].read),
         .REGION_model_write(REGION_model2_interface[1].write)
+    );
+
+    glm_update
+    execute_update2
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[9]),
+        .op_done(op_done[9]),
+        .regs(update2_regs),
+        .MEM_props_samples(MEM_localprops_read[4]),
+        .MEM_props_model(MEM_localprops_read[5]),
+        .REGION_samples_read(REGION_model1_interface[1].read),
+        .REGION_gradient_read(REGION_gradient_read[1].read),
+        .MEM_model_read(REGION_input_interface[2].read),
+        .REGION_model_write(REGION_input_interface[1].write)
     );
 
     pipearch_copy

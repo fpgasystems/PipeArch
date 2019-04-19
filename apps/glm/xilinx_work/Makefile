@@ -9,7 +9,7 @@ include $(COMMON_REPO)/libs/xcl2/xcl2.mk
 include $(COMMON_REPO)/libs/opencl/opencl.mk
 
 # Host Application
-TEST=multi
+TEST=scratch
 
 LOCAL_SRCS=$(wildcard $(sw_path)/src/*.cpp)
 LOCAL_TESTS=$(sw_path)/tests/$(TEST).cpp
@@ -44,7 +44,7 @@ check_EXE=host
 check_XCLBINS=mytop
 check_NTARGETS=$(mytop_NTARGETS)
 
-TARGETS=hw_emu
+TARGETS=hw
 CHECKS=check
 
 #Reporting warning if targeting for sw_emu

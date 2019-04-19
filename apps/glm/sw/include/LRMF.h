@@ -102,7 +102,6 @@ protected:
 
 public:
 	LRMF(uint32_t numFeatures) {
-		srand(7);
 		m_numFeatures = numFeatures;
 		m_Mdim = 0;
 		m_Udim = 0;
@@ -112,6 +111,39 @@ public:
 
 	~LRMF() {
 		deallocData();
+	}
+
+	void RandInitMU() {
+		srand(3);
+		RandInit(m_M, m_Mdim*m_numFeatures);
+		RandInit(m_U, m_Udim*m_numFeatures);
+	}
+
+	void PrintLB() {
+		for (uint32_t i = 0; i < m_LB.size(); i++) {
+			cout << "m_LB[" << i << "]: " << m_LB[i].m_Mindex << "\t";
+			cout << m_LB[i].m_Uindex << "\t" << m_LB[i].m_value << endl;
+		}
+	}
+
+	void PrintM(){
+		cout << "m_M:" << endl;
+		for (uint32_t m = 0; m < m_Mdim; m++) {
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
+				cout << m_M[m*m_numFeatures + j] << " ";
+			}
+			cout << endl;
+		}
+	}
+
+	void PrintU(){
+		cout << "m_U:" << endl;
+		for (uint32_t u = 0; u < m_Udim; u++) {
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
+				cout << m_U[u*m_numFeatures + j] << " ";
+			}
+			cout << endl;
+		}
 	}
 
 	void ReadNetflixData(char* pathToFile, int Mdim) {
@@ -171,15 +203,12 @@ public:
 		cout << "m_Udim: " << m_Udim << endl;
 
 		m_M = (float*)aligned_alloc(64, m_Mdim*m_numFeatures*sizeof(float));
-		RandInit(m_M, m_Mdim*m_numFeatures);
 		m_U = (float*)aligned_alloc(64, m_Udim*m_numFeatures*sizeof(float));
-		RandInit(m_U, m_Udim*m_numFeatures);
-
+		RandInitMU();
 		m_LBTiled.clear();
 	}
 
 	void GenerateSyntheticData(int Mdim, uint32_t Udim) {
-
 		srand(3);
 
 		m_Mdim = Mdim;
@@ -214,18 +243,9 @@ public:
 		cout << "m_Udim: " << m_Udim << endl;
 
 		m_M = (float*)aligned_alloc(64, m_Mdim*m_numFeatures*sizeof(float));
-		RandInit(m_M, m_Mdim*m_numFeatures);
 		m_U = (float*)aligned_alloc(64, m_Udim*m_numFeatures*sizeof(float));
-		RandInit(m_U, m_Udim*m_numFeatures);
-
+		RandInitMU();
 		m_LBTiled.clear();
-	}
-
-	void PrintLB() {
-		for (uint32_t i = 0; i < m_LB.size(); i++) {
-			cout << "m_LB[" << i << "]: " << m_LB[i].m_Mindex << "\t";
-			cout << m_LB[i].m_Uindex << "\t" << m_LB[i].m_value << endl;
-		}
 	}
 
 	void DivideLBIntoTiles(uint32_t tileSize) {
@@ -282,6 +302,14 @@ public:
 		for (uint32_t j = 0; j < m_numFeatures; j++) {
 			dot += vector1[j]*vector2[j];
 		}
+		// cout << "----------------------------------------" << endl;
+		// for (uint32_t j = 0; j < m_numFeatures; j++) {
+		// 	cout << "vector1[" << j << "]: " << vector1[j] << endl;
+		// }
+		// for (uint32_t j = 0; j < m_numFeatures; j++) {
+		// 	cout << "vector2[" << j << "]: " << vector2[j] << endl;
+		// }
+		// cout << "dot: " << dot << endl;
 		return dot;
 	}
 
@@ -408,6 +436,8 @@ public:
 						float error = dot - LTile[i].m_value;
 
 						cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " dot: " << dot << endl;
+						cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " value: " << LTile[i].m_value << endl;
+						cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " error: " << error << endl;
 
 						for (uint32_t j = 0; j < m_numFeatures; j++) {
 							float M_temp = M_vector[j];

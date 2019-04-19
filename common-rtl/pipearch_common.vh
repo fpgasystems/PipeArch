@@ -17,12 +17,12 @@ parameter CL_BYTE_IDX_BITS = 6; // 64 bytes
 parameter LOG2_ACCESS_SIZE = 14;
 
 typedef struct packed {
-    logic write_bram;
     logic write_fifo;
-    logic[LOG2_ACCESS_SIZE-1:0] offset;
+    logic write_bram;
     logic[LOG2_ACCESS_SIZE-1:0] length;
     logic keep_count_along_iterations;
     logic use_local_props;
+    logic[LOG2_ACCESS_SIZE-1:0] offset;
 } access_properties;
 
 typedef struct packed {

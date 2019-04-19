@@ -19,6 +19,7 @@ module glm_load
     fifobram_interface.write REGION0_write,
     fifobram_interface.write REGION1_write,
     fifobram_interface.write REGION2_write,
+    fifobram_interface.write MEM_localprops_write,
     fifobram_interface.write MEM_accessprops_write,
     fifobram_interface.read MEM_accessprops_read
 );
@@ -65,6 +66,7 @@ module glm_load
     logic [31:0] REGION1_accessproperties;
     logic [31:0] REGION2_accessproperties;
     logic [31:0] MEM_accessprops_accessproperties;
+    logic [31:0] MEM_localprops_accessproperties;
 
     // *************************************************************************
     //
@@ -73,7 +75,7 @@ module glm_load
     // *************************************************************************
     logic write_trigger;
     internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read[4]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_props_access[5]();
 
     internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION0();
     write_region
@@ -83,7 +85,7 @@ module glm_load
         .configreg(REGION0_accessproperties),
         .iterations(16'd1),
         .into_write(from_load_to_REGION0.commonwrite_source),
-        .props_access(dummy_accessprops_read[0].read),
+        .props_access(dummy_props_access[0].read),
         .region_access(REGION0_write)
     );
 
@@ -95,7 +97,7 @@ module glm_load
         .configreg(REGION1_accessproperties),
         .iterations(16'd1),
         .into_write(from_load_to_REGION1.commonwrite_source),
-        .props_access(dummy_accessprops_read[1].read),
+        .props_access(dummy_props_access[1].read),
         .region_access(REGION1_write)
     );
 
@@ -107,7 +109,7 @@ module glm_load
         .configreg(REGION2_accessproperties),
         .iterations(16'd1),
         .into_write(from_load_to_REGION2.commonwrite_source),
-        .props_access(dummy_accessprops_read[2].read),
+        .props_access(dummy_props_access[2].read),
         .region_access(REGION2_write)
     );
 
@@ -119,8 +121,20 @@ module glm_load
         .configreg(MEM_accessprops_accessproperties),
         .iterations(16'd1),
         .into_write(from_load_to_MEM_accessprops.commonwrite_source),
-        .props_access(dummy_accessprops_read[3].read),
+        .props_access(dummy_props_access[3].read),
         .region_access(MEM_accessprops_write)
+    );
+
+    internal_interface #(.WIDTH(512)) from_load_to_MEM_localprops();
+    write_region
+    write_MEM_localprops_inst (
+        .clk, .reset(internal_reset),
+        .op_start(write_trigger),
+        .configreg(MEM_localprops_accessproperties),
+        .iterations(16'd1),
+        .into_write(from_load_to_MEM_localprops.commonwrite_source),
+        .props_access(dummy_props_access[4].read),
+        .region_access(MEM_localprops_write)
     );
 
     always_ff @(posedge clk)
@@ -133,10 +147,13 @@ module glm_load
         from_load_to_REGION2.wdata <= from_load.wdata;
         from_load_to_MEM_accessprops.we <= from_load.we;
         from_load_to_MEM_accessprops.wdata <= from_load.wdata;
+        from_load_to_MEM_localprops.we <= from_load.we;
+        from_load_to_MEM_localprops.wdata <= from_load.wdata;
         from_load.almostfull <= from_load_to_REGION0.almostfull |
                                 from_load_to_REGION1.almostfull |
                                 from_load_to_REGION2.almostfull |
-                                from_load_to_MEM_accessprops.almostfull;
+                                from_load_to_MEM_accessprops.almostfull |
+                                from_load_to_MEM_localprops.almostfull;
     end 
 
     // *************************************************************************
@@ -234,6 +251,7 @@ module glm_load
                     REGION1_accessproperties <= regs[6];
                     REGION2_accessproperties <= regs[7];
                     MEM_accessprops_accessproperties <= regs[8];
+                    MEM_localprops_accessproperties <= regs[9];
                     // *************************************************************************
                     accessprops_position <= 0;
                     offset_accumulate <= 2'b0;
