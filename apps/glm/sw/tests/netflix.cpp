@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define FPGA
+// #define FPGA
 
 int main(int argc, char* argv[]) {
 
@@ -41,17 +41,21 @@ int main(int argc, char* argv[]) {
 	}
 	lrmf.DivideLBIntoTiles(tileSize);
 
-	lrmf.PrintM();
-	lrmf.PrintU();
+	// lrmf.PrintM();
+	// lrmf.PrintU();
 
 	// lrmf.Optimize(stepSize, lambda, numEpochs);
+	lrmf.RandInitMU();
 	lrmf.OptimizeRound(stepSize, lambda, numEpochs);
+
+	lrmf.RandInitMU();
+	lrmf.OptimizeRoundStale(stepSize, lambda, numEpochs);
 
 #ifdef FPGA
 	lrmf.RandInitMU();
 
-	lrmf.PrintM();
-	lrmf.PrintU();
+	// lrmf.PrintM();
+	// lrmf.PrintU();
 
 	lrmf.CreateMemoryLayout();
 	lrmf.fOptimizeRound(stepSize, lambda, numEpochs);
@@ -60,6 +64,8 @@ int main(int argc, char* argv[]) {
 	fthread->WaitUntilFinished();
 
 	// Verify
+	lrmf.CopyModel();
+	cout << "FPGA loss: " << lrmf.RMSE() << endl;
 #endif
 
 	return 0;

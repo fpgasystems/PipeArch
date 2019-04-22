@@ -430,13 +430,13 @@ module glm_top
 
     // if opcode == 0x5N ---- modify
     // reg[0] = reg[0]                                  // index 0
-    // reg[1] = instruction[3]                          // labels input access properties
-    // reg[2] = instruction[4]                          // [1:0]: (0 linreg) (1 logreg) (2 SVM)
+    // reg[1] = instruction[3]                          // [31:16] num iterations
+    // reg[2] = instruction[4]                          // labels input access properties
+    // reg[3] = instruction[5]                          // [1:0]: (0 linreg) (1 logreg) (2 SVM)
                                                         // [2]: (0 SGD) (1 SCD)
-                                                        // [31:16] num iterations
-    // reg[3] = instruction[5]                          // step size
-    // reg[4] = instruction[6]                          // lambda
-    // reg[5] = instruction[7]                          // gradient output access properties
+    // reg[4] = instruction[6]                          // step size
+    // reg[5] = instruction[7]                          // lambda
+    // reg[6] = instruction[8]                          // gradient output access properties
 
     // if opcode == 0x6N ---- update
     // reg[0] = instruction[3]                          // [15:0] num lines to process
@@ -450,14 +450,28 @@ module glm_top
     // reg[0] = instruction[3]                          // source access properties
     // reg[1] = instruction[4]                          // destination access properties
 
-    // if opcode == 0x8N ---- delta
+    // if opcode == 0x8N ---- synchronize
+
+    // if opcode == 0x9N ---- delta
     // reg[0] = instruction[3]                          // [15:0] num lines to process
                                                         // [31:16] num iterations
     // reg[1] = instruction[4]                          // left input access properties
     // reg[2] = instruction[5]                          // right input access properties
     // reg[3] = instruction[6]                          // output access properties
 
-    // if opcode == 0x9N ---- synchronize
+    // if opcode == 0xaN ---- update
+    // reg[0] = instruction[3]                          // [15:0] num lines to process
+                                                        // [31:16] num iterations
+    // reg[1] = instruction[4]                          // model access properties
+    // reg[2] = instruction[5]                          // gradient access properties
+    // reg[3] = instruction[6]                          // samples read access properties
+    // reg[4] = instruction[7]                          // samples write access properties
+
+    // if opcode == 0xbN ---- load to reg
+    // loadreg_regs[0] = reg[0]                         // index 0
+    // loadreg_regs[1] = instruction[3]                 // which register to load the 32-bit value (actual range [3,NUM_REGS-1], because [0,2] are reserved)
+    // loadreg_regs[2] = instruction[4]                 // BRAM load offset in cachelines
+    // result from on-chip memory -> loadreg_outregs[x]
 
     logic [31:0] instruction [16];
     logic [LOG2_PROGRAM_SIZE-1:0] program_counter;
@@ -476,10 +490,12 @@ module glm_top
     logic [31:0] writeback_regs [6+NUM_WRITEBACK_CHANNELS];
     logic [31:0] dot_regs [4];
     logic [31:0] delta_regs [4];
-    logic [31:0] modify_regs [6];
+    logic [31:0] modify_regs [7];
     logic [31:0] update1_regs [5];
     logic [31:0] update2_regs [5];
     logic [31:0] copy_regs [2];
+    logic [31:0] loadreg_regs[3];
+    logic [31:0] loadreg_outregs [NUM_REGS];
 
     always_ff @(posedge clk)
     begin
@@ -613,7 +629,7 @@ module glm_top
                         4'h4: // dot
                         begin
                             op_start[3] <= 1'b1;
-                            dot_regs[0] <= instruction[3];
+                            dot_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             dot_regs[1] <= instruction[4];
                             dot_regs[2] <= instruction[5];
                             dot_regs[3] <= instruction[6];
@@ -623,17 +639,18 @@ module glm_top
                         begin
                             op_start[4] <= 1'b1;
                             modify_regs[0] <= temp_regs[0];
-                            modify_regs[1] <= instruction[3];
+                            modify_regs[1] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             modify_regs[2] <= instruction[4];
                             modify_regs[3] <= instruction[5];
                             modify_regs[4] <= instruction[6];
                             modify_regs[5] <= instruction[7];
+                            modify_regs[6] <= instruction[8];
                         end
 
                         4'h6: // update1
                         begin
                             op_start[5] <= 1'b1;
-                            update1_regs[0] <= instruction[3];
+                            update1_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             update1_regs[1] <= instruction[4];
                             update1_regs[2] <= instruction[5];
                             update1_regs[3] <= instruction[6];
@@ -643,7 +660,7 @@ module glm_top
                         4'ha: // update2
                         begin
                             op_start[9] <= 1'b1;
-                            update2_regs[0] <= instruction[3];
+                            update2_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             update2_regs[1] <= instruction[4];
                             update2_regs[2] <= instruction[5];
                             update2_regs[3] <= instruction[6];
@@ -669,6 +686,14 @@ module glm_top
                             delta_regs[1] <= instruction[4];
                             delta_regs[2] <= instruction[5];
                             delta_regs[3] <= instruction[6];
+                        end
+
+                        4'hb: // loadreg
+                        begin
+                            op_start[10] <= 1'b1;
+                            loadreg_regs[0] <= temp_regs[0];
+                            loadreg_regs[1] <= instruction[3];
+                            loadreg_regs[2] <= instruction[4];
                         end
 
                     endcase
@@ -744,6 +769,8 @@ module glm_top
                     regs[0] <= updateIndex(instruction[0], regs[0]);
                     regs[1] <= updateIndex(instruction[1], regs[1]);
                     regs[2] <= updateIndex(instruction[2], regs[2]);
+                    regs[3] <= loadreg_outregs[3];
+                    regs[4] <= loadreg_outregs[4];
 
                     if (enableswitch && context_switch)
                     begin
@@ -780,9 +807,9 @@ module glm_top
     //   Local Memories
     //
     // *************************************************************************
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_interface[3]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_interface[4]();
     region
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(3))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(4))
     REGION_input (
         .clk, .reset,
         .access(REGION_input_interface.source)
@@ -832,7 +859,7 @@ module glm_top
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_write();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_read[1]();
-    region_replicate
+    bram_replicate
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_READ_CHANNELS(1))
     MEM_accessprops (
         .clk, .reset,
@@ -841,9 +868,9 @@ module glm_top
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_localprops_write();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_localprops_read[6]();
-    region_replicate
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_READ_CHANNELS(6))
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_localprops_read[7]();
+    bram_replicate
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_READ_CHANNELS(7))
     MEM_localprops (
         .clk, .reset,
         .write_access(MEM_localprops_write.write_source),
@@ -887,6 +914,7 @@ module glm_top
         .out_addr(thread_information.out_addr),
         .REGION0_read(REGION_model2_interface[2].read),
         .REGION1_read(REGION_labels_interface[2].read),
+        .REGION2_read(REGION_input_interface[3].read),
         .DMA_write(DMA_rm_write.to_dma)
     );
 
@@ -979,6 +1007,18 @@ module glm_top
         .regs(copy_regs),
         .REGION_read(REGION_model2_interface[1].read),
         .REGION_write(REGION_model1_interface[0].write)
+    );
+
+    pipearch_loadreg
+    execute_loadreg
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[10]),
+        .op_done(op_done[10]),
+        .regs(loadreg_regs),
+        .outregs(loadreg_outregs),
+        .REGION_read(MEM_localprops_read[6])
     );
 
 endmodule

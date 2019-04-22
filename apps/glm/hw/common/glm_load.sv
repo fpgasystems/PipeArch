@@ -316,6 +316,7 @@ module glm_load
                 REGION1_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
                 REGION2_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
                 MEM_accessprops_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
+                MEM_localprops_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
                 request_state <= trigger_dma ? STATE_DMA_TRIGGER : STATE_WRITE_TRIGGER;
             end
 

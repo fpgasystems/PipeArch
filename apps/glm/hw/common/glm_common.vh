@@ -4,10 +4,10 @@
 parameter LOG2_MEMORY_SIZE = 10;
 parameter LOG2_PROGRAM_SIZE = 8;
 parameter PROGRAM_SIZE = 2**LOG2_PROGRAM_SIZE;
-parameter NUM_REGS = 3;
+parameter NUM_REGS = 5;
 parameter REGS_WIDTH = 32*NUM_REGS;
 parameter LOG2_INTERNAL_SIZE = 6;
-parameter NUM_OPS = 10;
+parameter NUM_OPS = 11;
 
 // *************************************************************************
 //
@@ -21,6 +21,6 @@ parameter NUM_LOAD_CHANNELS = 5;
 //   NUM_WRITEBACK_CHANNELS
 //
 // *************************************************************************
-parameter NUM_WRITEBACK_CHANNELS = 2;
+parameter NUM_WRITEBACK_CHANNELS = 3;
 
 `endif // GLM_COMMON

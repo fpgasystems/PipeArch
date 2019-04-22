@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -217,7 +218,7 @@ public:
 		m_L.reserve(m_Mdim);
 		for (uint32_t i = 0; i < m_Mdim; i++) {
 
-			uint32_t numEntries = RandRange(m_Udim);
+			uint32_t numEntries = RandRange(m_Udim*0.1);
 			// cout << "Mindex: " << i << endl;
 			// cout << "numEntries: " << numEntries << endl;
 
@@ -358,7 +359,9 @@ public:
 				float error = (m_L[m][u].m_value - dot);
 				temploss += error*error;
 			}
-			loss += temploss/m_L[m].size();
+			if (m_L[m].size() > 0) {
+				loss += temploss/m_L[m].size();
+			}
 		}
 		loss /= m_Mdim;
 		return sqrt(loss);
@@ -435,9 +438,9 @@ public:
 						float dot = Dot(M_vector, U_vector, m_numFeatures);
 						float error = dot - LTile[i].m_value;
 
-						cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " dot: " << dot << endl;
-						cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " value: " << LTile[i].m_value << endl;
-						cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " error: " << error << endl;
+						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " dot: " << dot << endl;
+						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " value: " << LTile[i].m_value << endl;
+						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " error: " << error << endl;
 
 						for (uint32_t j = 0; j < m_numFeatures; j++) {
 							float M_temp = M_vector[j];
@@ -455,5 +458,73 @@ public:
 			loss = RMSE();
 			cout << "Loss " << e << ": " << loss << endl;
 		}
+	}
+
+	void OptimizeRoundStale(float stepSize, float lambda, uint32_t numEpochs) {
+
+		if (m_LBTiled.size() == 0) {
+			cout << "m_LBTiled is empty" << endl;
+			return;
+		}
+
+		float loss = RMSE();
+		cout << "Initial Loss: " << loss << endl;
+
+		float* M_tile_new = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
+		float* U_tile_new = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
+
+		for (uint32_t e = 0; e < numEpochs; e++) {
+
+			double start = get_time();
+
+			for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
+				for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
+
+					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+tu];
+					float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
+					float* U_tile_offset = m_U + tu*m_tileSize*m_numFeatures;
+					uint32_t M_min = tm*m_tileSize;
+					uint32_t U_min = tu*m_tileSize;
+
+					memcpy(M_tile_new, M_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
+					memcpy(U_tile_new, U_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
+
+					for (uint32_t i = 0; i < LTile.size(); i++) {
+
+						float* M_vector = M_tile_offset + (LTile[i].m_Mindex-M_min)*m_numFeatures;
+						float* U_vector = U_tile_offset + (LTile[i].m_Uindex-U_min)*m_numFeatures;
+
+						float dot = Dot(M_vector, U_vector, m_numFeatures);
+						float error = dot - LTile[i].m_value;
+
+						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " dot: " << dot << endl;
+						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " value: " << LTile[i].m_value << endl;
+						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " error: " << error << endl;
+
+						float* M_vector_new = M_tile_new + (LTile[i].m_Mindex-M_min)*m_numFeatures;
+						float* U_vector_new = U_tile_new + (LTile[i].m_Uindex-U_min)*m_numFeatures;
+
+						for (uint32_t j = 0; j < m_numFeatures; j++) {
+							float M_temp = M_vector_new[j];
+							float U_temp = U_vector_new[j];
+							M_vector_new[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
+							U_vector_new[j] = U_temp - stepSize*(error*M_temp + lambda*U_temp);
+						}
+					}
+
+					memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));
+					memcpy(U_tile_offset, U_tile_new, m_tileSize*m_numFeatures*sizeof(float));
+				}
+			}
+
+			double end = get_time();
+			// cout << "Time per epoch: " << end-start << endl;
+
+			loss = RMSE();
+			cout << "Loss " << e << ": " << loss << endl;
+		}
+
+		free(M_tile_new);
+		free(U_tile_new);
 	}
 };

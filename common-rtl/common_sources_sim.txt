@@ -2,6 +2,7 @@ C:../opae/base/hw/rtl/base_sources.txt
 
 +incdir+.
 pipearch_copy.sv
+pipearch_loadreg.sv
 intel_dma/pipearch_dma_read.sv
 intel_dma/pipearch_dma_write.sv
 
@@ -11,6 +12,7 @@ memory/read_region.sv
 memory/read_region2fifo.sv
 memory/region.sv
 memory/region_replicate.sv
+memory/bram_replicate.sv
 memory/write_region.sv
 
 compute/dec23_to_float_convert.sv

@@ -108,16 +108,19 @@ public:
 	static const uint32_t NUM_BYTES = NUM_WORDS*4;
 	uint32_t m_data[NUM_WORDS];
 
-	static const uint32_t NUM_LOAD_CHANNELS = 4;
+	static const uint32_t NUM_LOAD_CHANNELS = 5;
 	static const uint32_t LOAD_REGION_INPUT_CHANNEL = 0;
 	static const uint32_t LOAD_REGION_MODEL_CHANNEL = 1;
 	static const uint32_t LOAD_REGION_LABELS_CHANNEL = 2;
 	static const uint32_t LOAD_MEM_ACCESSPROPS_CHANNEL = 3;
 	static const uint32_t LOAD_MEM_LOCALPROPS_CHANNEL = 4;
 
-	static const uint32_t NUM_WRITEBACK_CHANNELS = 2;
+	static const uint32_t NUM_WRITEBACK_CHANNELS = 3;
 	static const uint32_t WRITEBACK_MODEL_CHANNEL = 0;
 	static const uint32_t WRITEBACK_LABELS_CHANNEL = 1;
+	static const uint32_t WRITEBACK_INPUT_CHANNEL = 2;
+
+	static const uint32_t USE_REG = 0xFFFFFFFF;
 
 	Instruction() {
 		for (unsigned i = 0; i < 16; i++) {
@@ -333,11 +336,12 @@ public:
 		localaccess_t gradientOutputAccess)
 	{
 		m_data[15] |= (5 << 4);
-		m_data[3] = labelsInputAccess.GetReg();
-		m_data[4] = (numIterations << 16) | (algo << 2) | (type & 0x3);
-		m_data[5] = *((uint32_t*)&stepSize);
-		m_data[6] = *((uint32_t*)&lambda);
-		m_data[7] = gradientOutputAccess.GetReg();
+		m_data[3] = (numIterations << 16);
+		m_data[4] = labelsInputAccess.GetReg();
+		m_data[5] = (algo << 2) | (type & 0x3);
+		m_data[6] = *((uint32_t*)&stepSize);
+		m_data[7] = *((uint32_t*)&lambda);
+		m_data[8] = gradientOutputAccess.GetReg();
 	}
 
 	void Modify(
@@ -347,11 +351,12 @@ public:
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (5 << 4);
-		m_data[3] = labelsInputAccess.GetReg();
-		m_data[4] = (numIterations << 16) | (algo << 2) | (type & 0x3);
-		m_data[5] = *((uint32_t*)&stepSize);
-		m_data[6] = *((uint32_t*)&lambda);
-		m_data[7] = gradientOutputAccess.GetReg();
+		m_data[3] = (numIterations << 16);
+		m_data[4] = labelsInputAccess.GetReg();
+		m_data[5] = (algo << 2) | (type & 0x3);
+		m_data[6] = *((uint32_t*)&stepSize);
+		m_data[7] = *((uint32_t*)&lambda);
+		m_data[8] = gradientOutputAccess.GetReg();
 	}
 
 	void Update(
@@ -425,6 +430,15 @@ public:
 		m_data[15] |= (7 << 4);
 		m_data[3] = sourceInputAccess.GetReg();
 		m_data[4] = destinationOutputAccess.GetReg();
+	}
+
+	void LoadReg(
+		uint32_t whichReg,
+		uint32_t offsetInCL)
+	{
+		m_data[15] |= (11 << 4);
+		m_data[3] = whichReg;
+		m_data[4] = offsetInCL;
 	}
 
 	void Sync()

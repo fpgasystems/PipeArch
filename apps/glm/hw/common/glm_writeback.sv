@@ -15,6 +15,7 @@ module glm_writeback
 
     fifobram_interface.read REGION0_read,
     fifobram_interface.read REGION1_read,
+    fifobram_interface.read REGION2_read,
 
     dma_write_interface.to_dma DMA_write
 );
@@ -77,6 +78,18 @@ module glm_writeback
         .outfrom_read(to_writeback_from_REGION1.commonread_source)
     );
 
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) to_writeback_from_REGION2();
+    read_region
+    read_REGION2 (
+        .clk, .reset,
+        .op_start(DMA_write.control.start),
+        .configreg(regs[8]),
+        .iterations(16'd1),
+        .region_access(REGION2_read),
+        .props_access(dummy_accessprops_read[1].read),
+        .outfrom_read(to_writeback_from_REGION2.commonread_source)
+    );
+
     always_ff @(posedge clk)
     begin
         if (select_channel == 0)
@@ -90,6 +103,12 @@ module glm_writeback
             to_writeback.rvalid <= to_writeback_from_REGION1.rvalid;
             to_writeback.rdata <= to_writeback_from_REGION1.rdata;
             to_writeback_from_REGION1.almostfull <= to_writeback.almostfull;
+        end
+        else if (select_channel == 2)
+        begin
+            to_writeback.rvalid <= to_writeback_from_REGION2.rvalid;
+            to_writeback.rdata <= to_writeback_from_REGION2.rdata;
+            to_writeback_from_REGION2.almostfull <= to_writeback.almostfull;
         end
         to_writeback.almostfull <= DMA_write.rx_write.walmostfull || !DMA_write.status.active || (send_state != STATE_WRITE);
     end

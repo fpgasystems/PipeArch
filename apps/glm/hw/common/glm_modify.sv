@@ -8,7 +8,7 @@ module glm_modify
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [6],
+    input logic [31:0] regs [7],
 
     fifobram_interface.read MEM_labels_read,
     fifobram_interface.read FIFO_dot_read,
@@ -101,7 +101,7 @@ module glm_modify
     write_REGION_dot_write (
         .clk, .reset,
         .op_start(op_start),
-        .configreg(regs[5]),
+        .configreg(regs[6]),
         .iterations(num_iterations),
         .into_write(from_modify_to_output.commonwrite_source),
         .props_access(dummy_accessprops_read.read),
@@ -132,16 +132,16 @@ module glm_modify
                     offset_by_index_write <= regs[0][15:0];
                     position_by_index <= regs[0][3:0];
                     write_position_by_index <= regs[0][3:0];
-                    num_iterations <= regs[2][31:16];
-                    MEM_labels_read_load_offset <= regs[1][15:0];
-                    model_type <= regs[2][1:0];
-                    algorithm_type <= regs[2][2];
-                    step_size <= regs[3];
-                    lambda <= regs[4];
+                    num_iterations <= regs[1][31:16];
+                    MEM_labels_read_load_offset <= regs[2][15:0];
+                    model_type <= regs[3][1:0];
+                    algorithm_type <= regs[3][2];
+                    step_size <= regs[4];
+                    lambda <= regs[5];
                     // *************************************************************************
                     num_performed_iterations <= 0;
                     write_num_performed_iterations <= 0;
-                    modify_state <= (regs[2][2] == 1'b0) ? STATE_SGD_MAIN : STATE_SCD_MAIN;
+                    modify_state <= (regs[3][2] == 1'b0) ? STATE_SGD_MAIN : STATE_SCD_MAIN;
                 end
             end
 

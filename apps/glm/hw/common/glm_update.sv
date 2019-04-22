@@ -252,18 +252,15 @@ module glm_update
                     MEM_model_read.rfifobram <= 2'b01;
                     MEM_model_read.raddr <= current_offset + num_lines_subtracted_requested;
                     num_lines_subtracted_requested <= num_lines_subtracted_requested + 1;
-                end
-
-                if (subtract_valid_1d)
-                begin
-                    if (num_lines_subtracted_1d == 0)
-                    begin
-                        num_subtract_iterations1 <= num_subtract_iterations1 + 1;
-                        if (num_subtract_iterations1 < num_iterations-1)
-                        begin
-                            num_lines_subtracted_requested <= 0;
-                        end
-                    end
+                    
+                    // if (num_lines_subtracted_requested == num_lines_to_process-1)
+                    // begin
+                    //     num_subtract_iterations1 <= num_subtract_iterations1 + 1;
+                    //     if (num_subtract_iterations1 < num_iterations-1)
+                    //     begin
+                    //         num_lines_subtracted_requested <= 0;
+                    //     end
+                    // end
                 end
 
                 if (subtract_valid)
@@ -307,17 +304,17 @@ module glm_update
                     num_lines_subtracted_requested <= num_lines_subtracted_requested + 1;
                 end
 
-                if (subtract_valid_1d)
-                begin
-                    if (num_lines_subtracted_1d == 0)
-                    begin
-                        num_subtract_iterations1 <= num_subtract_iterations1 + 1;
-                        if (num_subtract_iterations1 < num_iterations-1)
-                        begin
-                            num_lines_subtracted_requested <= 0;
-                        end
-                    end
-                end
+                // if (subtract_valid_1d)
+                // begin
+                //     if (num_lines_subtracted_1d == num_lines_to_process-1)
+                //     begin
+                //         num_subtract_iterations1 <= num_subtract_iterations1 + 1;
+                //         if (num_subtract_iterations1 < num_iterations-1)
+                //         begin
+                //             num_lines_subtracted_requested <= 0;
+                //         end
+                //     end
+                // end
 
                 if (subtract_valid)
                 begin
@@ -342,6 +339,18 @@ module glm_update
                 end
             end
         endcase
+
+        if (subtract_valid_1d)
+        begin
+            if (num_lines_subtracted_1d == num_lines_to_process-1)
+            begin
+                num_subtract_iterations1 <= num_subtract_iterations1 + 1;
+                if (num_subtract_iterations1 < num_iterations-1)
+                begin
+                    num_lines_subtracted_requested <= 0;
+                end
+            end
+        end
 
         if (reset)
         begin
