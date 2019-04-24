@@ -83,6 +83,25 @@ module glm_dot
 
     // *************************************************************************
     //
+    //   Write Channels
+    //
+    // *************************************************************************
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read();
+
+    internal_interface #(.WIDTH(32)) from_dot_to_output();
+    write_region
+    write_REGION_dot_write (
+        .clk, .reset,
+        .op_start(read_trigger),
+        .configreg(output_accessproperties),
+        .iterations(num_iterations),
+        .into_write(from_dot_to_output.commonwrite_source),
+        .props_access(dummy_accessprops_read.read),
+        .region_access(REGION_dot_write)
+    );
+
+    // *************************************************************************
+    //
     //   Computation
     //
     // *************************************************************************
@@ -106,7 +125,7 @@ module glm_dot
     begin
         FIFO_REGION_left_read.re <= 1'b0;
         FIFO_REGION_right_read.re <= 1'b0;
-        if (!FIFO_REGION_left_read.empty && !FIFO_REGION_right_read.empty)
+        if (!FIFO_REGION_left_read.empty && !FIFO_REGION_right_read.empty && !from_dot_to_output.almostfull)
         begin
             FIFO_REGION_left_read.re <= 1'b1;
             FIFO_REGION_right_read.re <= 1'b1;
@@ -114,24 +133,6 @@ module glm_dot
     end
     assign dot_trigger = FIFO_REGION_left_read.rvalid && FIFO_REGION_right_read.rvalid;
 
-    // *************************************************************************
-    //
-    //   Write Channels
-    //
-    // *************************************************************************
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read();
-
-    internal_interface #(.WIDTH(32)) from_dot_to_output();
-    write_region
-    write_REGION_dot_write (
-        .clk, .reset,
-        .op_start(read_trigger),
-        .configreg(output_accessproperties),
-        .iterations(num_iterations),
-        .into_write(from_dot_to_output.commonwrite_source),
-        .props_access(dummy_accessprops_read.read),
-        .region_access(REGION_dot_write)
-    );
     assign from_dot_to_output.we = dot_done;
     assign from_dot_to_output.wdata = dot_result;
 

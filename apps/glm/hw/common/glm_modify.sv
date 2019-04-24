@@ -43,7 +43,8 @@ module glm_modify
     logic algorithm_type;
     logic [31:0] step_size;
     logic [31:0] lambda;
-    logic [511:0] lineFromLabelsMem;
+    logic [CLDATA_WIDTH-1:0] lineFromLabelsMem;
+    logic [31:0] REGION_gradient_write_accessproperties;
 
     // *************************************************************************
     //
@@ -52,6 +53,7 @@ module glm_modify
     // *************************************************************************
     logic [15:0] num_performed_iterations;
     logic [15:0] write_num_performed_iterations;
+    logic write_trigger;
 
     // *************************************************************************
     //
@@ -94,14 +96,14 @@ module glm_modify
     //   Write Channels
     //
     // *************************************************************************
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_accessprops_read();
+    fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(1)) dummy_accessprops_read();
 
     internal_interface #(.WIDTH(32)) from_modify_to_output();
     write_region
     write_REGION_dot_write (
         .clk, .reset,
-        .op_start(op_start),
-        .configreg(regs[6]),
+        .op_start(write_trigger),
+        .configreg(REGION_gradient_write_accessproperties),
         .iterations(num_iterations),
         .into_write(from_modify_to_output.commonwrite_source),
         .props_access(dummy_accessprops_read.read),
@@ -110,6 +112,7 @@ module glm_modify
 
     always_ff @(posedge clk)
     begin
+        write_trigger <= 1'b0;
         sub_regs.trigger <= 1'b0;
         mult_regs.trigger <= 1'b0;
         mult_regs_trigger_1d <= mult_regs.trigger;
@@ -128,26 +131,28 @@ module glm_modify
                 if (op_start)
                 begin
                     // *************************************************************************
-                    offset_by_index <= regs[0][15:0];
-                    offset_by_index_write <= regs[0][15:0];
-                    position_by_index <= regs[0][3:0];
-                    write_position_by_index <= regs[0][3:0];
+                    offset_by_index <= regs[3][3] ? regs[0][15:0] : 0;
+                    offset_by_index_write <= regs[3][3] ? regs[0][15:0] : 0;
+                    position_by_index <= regs[3][3] ? regs[0][3:0] : 0;
+                    write_position_by_index <= regs[3][3] ? regs[0][3:0] : 0;
                     num_iterations <= regs[1][31:16];
                     MEM_labels_read_load_offset <= regs[2][15:0];
                     model_type <= regs[3][1:0];
                     algorithm_type <= regs[3][2];
                     step_size <= regs[4];
                     lambda <= regs[5];
+                    REGION_gradient_write_accessproperties <= regs[6];
                     // *************************************************************************
                     num_performed_iterations <= 0;
                     write_num_performed_iterations <= 0;
                     modify_state <= (regs[3][2] == 1'b0) ? STATE_SGD_MAIN : STATE_SCD_MAIN;
+                    write_trigger <= 1'b1;
                 end
             end
 
             STATE_SGD_MAIN:
             begin
-                if (!FIFO_dot_read.empty && num_performed_iterations < num_iterations)
+                if (!FIFO_dot_read.empty && num_performed_iterations < num_iterations && !from_modify_to_output.almostfull)
                 begin
                     FIFO_dot_read.re <= 1'b1;
                     MEM_labels_read.re <= 1'b1;
@@ -186,7 +191,7 @@ module glm_modify
 
             STATE_SCD_MAIN:
             begin
-                if (!FIFO_dot_read.empty && num_performed_iterations < num_iterations)
+                if (!FIFO_dot_read.empty && num_performed_iterations < num_iterations && !from_modify_to_output.almostfull)
                 begin
                     FIFO_dot_read.re <= 1'b1;
                     num_performed_iterations <= num_performed_iterations + 1;

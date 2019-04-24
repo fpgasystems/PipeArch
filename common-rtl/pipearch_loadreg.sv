@@ -47,7 +47,7 @@ module pipearch_loadreg
             begin
                 if (op_start)
                 begin
-                    offset_by_index <= {regs[0][15:4], 4'b0000};
+                    offset_by_index <= regs[0][15:0];
                     position_by_index <= regs[0][3:0];
                     which_register <= regs[1][2:0];
                     line_offset <= regs[2][15:0];
@@ -58,7 +58,7 @@ module pipearch_loadreg
             STATE_READ:
             begin
                 REGION_read.re <= 1'b1;
-                REGION_read.raddr <= line_offset + offset_by_index;
+                REGION_read.raddr <= line_offset + offset_by_index[15:4];
                 loadreg_state <= STATE_RECEIVE;
             end
 

@@ -69,7 +69,7 @@ bool FPGA_ColumnML::fSGD(
 	localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL);
 	localaccess_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	localaccess_t updateModelWrite(FIFOBRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+	m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 	m_inst[pc].MakeNonBlocking();
 	m_inst[pc].IncrementIndex(0);
 	pc++;
@@ -94,7 +94,7 @@ bool FPGA_ColumnML::fSGD(
 	pc++;
 
 	updateModelWrite.Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+	m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 	m_inst[pc].Jump(1, m_numPartitions-1, beginEpoch, pc+1);
 	m_inst[pc].ResetIndex(0);
 	m_inst[pc].IncrementIndex(1);
@@ -130,7 +130,7 @@ bool FPGA_ColumnML::fSGD(
 		pc++;
 
 		updateModelWrite.Set(FIFOBRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-		m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+		m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 		m_inst[pc].MakeNonBlocking();
 		m_inst[pc].IncrementIndex(0);
 		pc++;
@@ -154,7 +154,7 @@ bool FPGA_ColumnML::fSGD(
 		pc++;
 
 		updateModelWrite.Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-		m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+		m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 		pc++;
 	}
 
@@ -284,7 +284,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL, true);
 	localaccess_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	localaccess_t updateModelWrite(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	m_inst[pc].Update(minibatchSize, m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+	m_inst[pc].Update(minibatchSize, m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 	m_inst[pc].IncrementIndex(0, minibatchSize);
 	m_inst[pc].Jump(0, m_partitionSize-minibatchSize, pcSamples, pc+1);
 	pc++;
@@ -321,7 +321,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 		m_inst[pc].MakeNonBlocking();
 		pc++;
 
-		m_inst[pc].Update(m_rest, m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+		m_inst[pc].Update(m_rest, m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 		pc++;
 		// End---Innermost loop
 	}
@@ -457,7 +457,7 @@ bool FPGA_ColumnML::fSCD(
 	localaccess_t updateSamplesRead(BRAM, 0, m_partitionSizeInCL);
 	localaccess_t updateModelRead(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
 	localaccess_t updateModelWrite(FIFOBRAM, residualOffsetInBRAM, m_partitionSizeInCL);
-	m_inst[pc].Update(m_partitionSizeInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+	m_inst[pc].Update(m_partitionSizeInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 	m_inst[pc].MakeNonBlocking();
 	m_inst[pc].IncrementIndex(0);
 	pc++;
@@ -481,7 +481,7 @@ bool FPGA_ColumnML::fSCD(
 	pc++;
 
 	updateModelWrite.Set(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
-	m_inst[pc].Update(m_partitionSizeInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite);
+	m_inst[pc].Update(m_partitionSizeInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
 	pc++;
 
 	vector<localaccess_t> writebackResidualRead(Instruction::NUM_WRITEBACK_CHANNELS);

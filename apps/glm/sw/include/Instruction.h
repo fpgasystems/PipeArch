@@ -330,6 +330,7 @@ public:
 	}
 
 	void Modify(
+		bool useIndex0,
 		uint32_t numIterations,
 		uint32_t type, uint32_t algo, float stepSize, float lambda,
 		localaccess_t labelsInputAccess,
@@ -338,7 +339,23 @@ public:
 		m_data[15] |= (5 << 4);
 		m_data[3] = (numIterations << 16);
 		m_data[4] = labelsInputAccess.GetReg();
-		m_data[5] = (algo << 2) | (type & 0x3);
+		m_data[5] = ((useIndex0?1:0) << 3) | (algo << 2) | (type & 0x3);
+		m_data[6] = *((uint32_t*)&stepSize);
+		m_data[7] = *((uint32_t*)&lambda);
+		m_data[8] = gradientOutputAccess.GetReg();
+	}
+
+	void Modify(
+		uint32_t numIterations,
+		uint32_t type, uint32_t algo, float stepSize, float lambda,
+		localaccess_t labelsInputAccess,
+		localaccess_t gradientOutputAccess)
+	{
+		bool useIndex0 = true;
+		m_data[15] |= (5 << 4);
+		m_data[3] = (numIterations << 16);
+		m_data[4] = labelsInputAccess.GetReg();
+		m_data[5] = ((useIndex0?1:0) << 3) | (algo << 2) | (type & 0x3);
 		m_data[6] = *((uint32_t*)&stepSize);
 		m_data[7] = *((uint32_t*)&lambda);
 		m_data[8] = gradientOutputAccess.GetReg();
@@ -350,10 +367,11 @@ public:
 		localaccess_t gradientOutputAccess)
 	{
 		uint32_t numIterations = 1;
+		bool useIndex0 = true;
 		m_data[15] |= (5 << 4);
 		m_data[3] = (numIterations << 16);
 		m_data[4] = labelsInputAccess.GetReg();
-		m_data[5] = (algo << 2) | (type & 0x3);
+		m_data[5] = ((useIndex0?1:0) << 3) | (algo << 2) | (type & 0x3);
 		m_data[6] = *((uint32_t*)&stepSize);
 		m_data[7] = *((uint32_t*)&lambda);
 		m_data[8] = gradientOutputAccess.GetReg();
@@ -365,7 +383,8 @@ public:
 		localaccess_t samplesInputAccess,
 		localaccess_t gradientInputAccess,
 		localaccess_t modelReadAccess,
-		localaccess_t modelWriteAccess)
+		localaccess_t modelWriteAccess,
+		bool enableAsync)
 	{
 		m_data[15] |= (6 << 4);
 		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
@@ -373,6 +392,7 @@ public:
 		m_data[5] = gradientInputAccess.GetReg();
 		m_data[6] = modelReadAccess.GetReg();
 		m_data[7] = modelWriteAccess.GetReg();
+		m_data[8] = enableAsync ? 1 : 0;
 	}
 
 	void Update(
@@ -380,7 +400,8 @@ public:
 		localaccess_t samplesInputAccess,
 		localaccess_t gradientInputAccess,
 		localaccess_t modelReadAccess,
-		localaccess_t modelWriteAccess)
+		localaccess_t modelWriteAccess,
+		bool enableAsync)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (6 << 4);
@@ -389,6 +410,7 @@ public:
 		m_data[5] = gradientInputAccess.GetReg();
 		m_data[6] = modelReadAccess.GetReg();
 		m_data[7] = modelWriteAccess.GetReg();
+		m_data[8] = enableAsync ? 1 : 0;
 	}
 
 	void Update2(
@@ -397,7 +419,8 @@ public:
 		localaccess_t samplesInputAccess,
 		localaccess_t gradientInputAccess,
 		localaccess_t modelReadAccess,
-		localaccess_t modelWriteAccess)
+		localaccess_t modelWriteAccess,
+		bool enableAsync)
 	{
 		m_data[15] |= (10 << 4);
 		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
@@ -405,6 +428,7 @@ public:
 		m_data[5] = gradientInputAccess.GetReg();
 		m_data[6] = modelReadAccess.GetReg();
 		m_data[7] = modelWriteAccess.GetReg();
+		m_data[8] = enableAsync ? 1 : 0;
 	}
 
 	void Update2(
@@ -412,7 +436,8 @@ public:
 		localaccess_t samplesInputAccess,
 		localaccess_t gradientInputAccess,
 		localaccess_t modelReadAccess,
-		localaccess_t modelWriteAccess)
+		localaccess_t modelWriteAccess,
+		bool enableAsync)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (10 << 4);
@@ -421,6 +446,7 @@ public:
 		m_data[5] = gradientInputAccess.GetReg();
 		m_data[6] = modelReadAccess.GetReg();
 		m_data[7] = modelWriteAccess.GetReg();
+		m_data[8] = enableAsync ? 1 : 0;
 	}
 
 	void Copy(

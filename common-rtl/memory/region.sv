@@ -31,6 +31,24 @@ module region
 
     genvar index;
 
+    function automatic int ReadCheck(logic access_re[NUM_CHANNELS], logic [1:0] access_rfifobram[NUM_CHANNELS], logic[1:0] rfifobram_check);
+        int result = 0;
+        for (int i = 0; i < NUM_CHANNELS; i=i+1) begin
+            if (access_re[i] && access_rfifobram[i] == rfifobram_check)
+                result = result + 1;
+        end
+        return result;
+    endfunction
+
+    function automatic int WriteCheck(logic access_we[NUM_CHANNELS], logic access_wfifobram[NUM_CHANNELS]);
+        int result = 0;
+        for (int i = 0; i < NUM_CHANNELS; i=i+1) begin
+            if (access_we[i] && access_wfifobram[i] == 1'b1)
+                result = result + 1;
+        end
+        return result;
+    endfunction
+
     // *************************************************************************
     //
     //   Read Channels
@@ -114,6 +132,15 @@ module region
                 else begin
                     FIFO_region_interface.re = 1'b0;
                 end
+                
+                if (access[0].re || access[1].re) begin
+                    assert ( ReadCheck( {access[0].re, access[1].re},
+                                        {access[0].rfifobram, access[1].rfifobram}, 2'b01 ) <=1 )
+                    else $fatal("NUM_CHANNELS == 2, access channels are reading from MEM_region");
+                    assert ( ReadCheck( {access[0].re, access[1].re},
+                                        {access[0].rfifobram, access[1].rfifobram}, 2'b10 ) <=1 )
+                    else $fatal("NUM_CHANNELS == 2, access channels are reading from FIFO_region");
+                end
             end
         end
         else if (NUM_CHANNELS == 3) begin
@@ -147,6 +174,15 @@ module region
                 end
                 else begin
                     FIFO_region_interface.re = 1'b0;
+                end
+
+                if (access[0].re || access[1].re || access[2].re) begin
+                    assert ( ReadCheck( {access[0].re, access[1].re, access[2].re},
+                                        {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram}, 2'b01 ) <=1 )
+                    else $fatal("NUM_CHANNELS == 3, access channels are reading from MEM_region");
+                    assert ( ReadCheck( {access[0].re, access[1].re, access[2].re},
+                                        {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram}, 2'b10 ) <=1 )
+                    else $fatal("NUM_CHANNELS == 3, access channels are reading from FIFO_region");
                 end
             end
         end
@@ -188,6 +224,15 @@ module region
                 end
                 else begin
                     FIFO_region_interface.re = 1'b0;
+                end
+
+                if (access[0].re || access[1].re || access[2].re || access[3].re) begin
+                    assert ( ReadCheck( {access[0].re, access[1].re, access[2].re, access[3].re},
+                                        {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram, access[3].rfifobram}, 2'b01 ) <=1 )
+                    else $fatal("NUM_CHANNELS == 4, access channels are reading from MEM_region");
+                    assert ( ReadCheck( {access[0].re, access[1].re, access[2].re, access[3].re},
+                                        {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram, access[3].rfifobram}, 2'b10 ) <=1 )
+                    else $fatal("NUM_CHANNELS == 4, access channels are reading from FIFO_region");
                 end
             end
         end
@@ -250,6 +295,15 @@ module region
                     FIFO_region_interface.we <= 1'b1;
                     FIFO_region_interface.wdata <= access[1].wdata;
                 end
+
+                if (access[0].we || access[1].we) begin
+                    assert( WriteCheck( {access[0].we, access[1].we},
+                                        {access[0].wfifobram[0], access[1].wfifobram[0]} ) <= 1)
+                    else $fatal("NUM_CHANNELS == 2, access channels are writing to MEM_region");
+                    assert( WriteCheck( {access[0].we, access[1].we},
+                                        {access[0].wfifobram[1], access[1].wfifobram[1]} ) <= 1)
+                    else $fatal("NUM_CHANNELS == 2, access channels are writing to FIFO_region");
+                end
             end
         end
         else if (NUM_CHANNELS == 3) begin
@@ -286,6 +340,15 @@ module region
                 else if (access[2].we && access[2].wfifobram[1] == 1'b1) begin
                     FIFO_region_interface.we <= 1'b1;
                     FIFO_region_interface.wdata <= access[2].wdata;
+                end
+
+                if (access[0].we || access[1].we || access[2].we) begin
+                    assert( WriteCheck( {access[0].we, access[1].we, access[2].we},
+                                        {access[0].wfifobram[0], access[1].wfifobram[0], access[2].wfifobram[0]} ) <= 1)
+                    else $fatal("NUM_CHANNELS == 3, access channels are writing to MEM_region");
+                    assert( WriteCheck( {access[0].we, access[1].we, access[2].we},
+                                        {access[0].wfifobram[1], access[1].wfifobram[1], access[2].wfifobram[1]} ) <= 1)
+                    else $fatal("NUM_CHANNELS == 3, access channels are writing to FIFO_region");
                 end
             end
         end
@@ -332,6 +395,17 @@ module region
                 else if (access[3].we && access[3].wfifobram[1] == 1'b1) begin
                     FIFO_region_interface.we <= 1'b1;
                     FIFO_region_interface.wdata <= access[3].wdata;
+                end
+
+                if (access[0].we || access[1].we || access[2].we || access[3].we) begin
+
+                    assert( WriteCheck( {access[0].we, access[1].we, access[2].we, access[3].we},
+                                        {access[0].wfifobram[0], access[1].wfifobram[0], access[2].wfifobram[0], access[3].wfifobram[0]} ) <= 1)
+                    else $fatal("NUM_CHANNELS == 4, access channels are writing to MEM_region");
+                    assert( WriteCheck( {access[0].we, access[1].we, access[2].we, access[3].we},
+                                        {access[0].wfifobram[1], access[1].wfifobram[1], access[2].wfifobram[1], access[3].wfifobram[1]} ) <= 1)
+                    else $fatal("NUM_CHANNELS == 4, access channels are writing to FIFO_region");
+
                 end
             end
         end

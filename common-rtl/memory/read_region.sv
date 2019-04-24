@@ -39,7 +39,7 @@ module read_region
     logic [CLDATA_WIDTH-1:0] accessprops_data;
     logic [LOG2_ACCESS_SIZE-1:0] current_offset;
     logic [LOG2_ACCESS_SIZE-1:0] current_length;
-    logic [3:0] accessprops_position;
+    logic [17:0] accessprops_raddr;
 
     // *************************************************************************
     //
@@ -48,8 +48,9 @@ module read_region
     // *************************************************************************
     logic [LOG2_ACCESS_SIZE-1:0] num_requested_lines;
     logic [15:0] num_performed_iterations;
+    logic [3:0] accessprops_position;
 
-    assign accessprops_position = memory_read.offset[3:0];
+    assign accessprops_position = accessprops_raddr[3:0];
     assign current_offset = accessprops_data[accessprops_position*32+13 -: 14];
     assign current_length = accessprops_data[accessprops_position*32+29 -: 14];
 
@@ -74,6 +75,7 @@ module read_region
                     num_iterations <= iterations;
                     memory_read.use_local_props <= configreg[14];
                     memory_read.keep_count_along_iterations <= configreg[15];
+                    accessprops_raddr <= {configreg[13:0], 4'b0000};
                     // *************************************************************************
                     num_requested_lines <= 0;
                     num_performed_iterations <= 0;
@@ -100,7 +102,7 @@ module read_region
             begin
                 props_access.re <= 1'b1;
                 props_access.rfifobram <= 2'b01;
-                props_access.raddr <= memory_read.offset >> 4;
+                props_access.raddr <= accessprops_raddr >> 4;
                 read_state <= STATE_RECEIVE_PROPS;
             end
 
@@ -134,7 +136,7 @@ module read_region
                             num_requested_lines <= 0;
                             if (memory_read.keep_count_along_iterations)
                             begin
-                                memory_read.offset <= memory_read.offset + memory_read.length;
+                                accessprops_raddr <= accessprops_raddr + memory_read.length;
                             end
                             if (num_performed_iterations[3:0] == 4'd15)
                             begin

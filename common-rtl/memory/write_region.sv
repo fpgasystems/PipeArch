@@ -39,7 +39,7 @@ module write_region
     access_properties memory_store;
     logic [LOG2_ACCESS_SIZE-1:0] accessprops_offset;
     logic [LOG2_ACCESS_SIZE-1:0] accessprops_length;
-    logic [3:0] accessprops_position;
+    logic [17:0] accessprops_raddr;
 
     // *************************************************************************
     //
@@ -48,6 +48,7 @@ module write_region
     // *************************************************************************
     logic [LOG2_ACCESS_SIZE-1:0] num_received_lines;
     logic [15:0] num_performed_iterations;
+    logic [3:0] accessprops_position;
 
     always_ff @(posedge clk)
     begin
@@ -69,6 +70,7 @@ module write_region
                     num_iterations <= iterations;
                     memory_store.use_local_props <= configreg[14];
                     memory_store.keep_count_along_iterations <= configreg[15];
+                    accessprops_raddr <= {configreg[13:0], 4'b0000};
                     // *************************************************************************
                     num_received_lines <= 0;
                     num_performed_iterations <= 0;
@@ -91,8 +93,8 @@ module write_region
             begin
                 props_access.re <= 1'b1;
                 props_access.rfifobram <= 2'b01;
-                props_access.raddr <= memory_store.offset >> 4;
-                accessprops_position <= memory_store.offset[3:0];
+                props_access.raddr <= accessprops_raddr >> 4;
+                accessprops_position <= accessprops_raddr[3:0];
                 receive_state <= STATE_RECEIVE_PROPS;
             end
 
@@ -125,7 +127,7 @@ module write_region
                             num_received_lines <= 0;
                             if (memory_store.keep_count_along_iterations)
                             begin
-                                memory_store.offset <= memory_store.offset + memory_store.length;
+                                accessprops_raddr <= accessprops_raddr + memory_store.length;
                             end
                             receive_state <= STATE_FETCH_PROPS;
                         end

@@ -275,11 +275,19 @@ public:
 				uint32_t U_min = tu*m_tileSize;
 				uint32_t U_max = (tu+1)*m_tileSize-1;
 
+				temp.reserve(m_LB.size());
+				// vector<uint32_t> toRemove;
+				// cout << "m_LB.size():" << m_LB.size() << endl;
 				for (uint32_t i = 0; i < m_LB.size(); i++) {
 					if (m_LB[i].m_Mindex >= M_min && m_LB[i].m_Mindex <= M_max && m_LB[i].m_Uindex >= U_min && m_LB[i].m_Uindex <= U_max) {
 						temp.push_back(m_LB[i]);
+						// toRemove.push_back(i);
 					}
 				}
+
+				// for (uint32_t i: toRemove) {
+				// 	m_LB.erase(m_LB.begin() + i);
+				// }
 
 				random_shuffle(temp.begin(), temp.end());
 				m_LBTiled.push_back(temp);
@@ -489,10 +497,20 @@ public:
 					memcpy(M_tile_new, M_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 					memcpy(U_tile_new, U_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 
+					// cout << "------------------------------------------------------------------------------------------" << endl;
+					// cout << tm << " " << tu << " LTile.size(): " << LTile.size() << endl;
+
 					for (uint32_t i = 0; i < LTile.size(); i++) {
 
 						float* M_vector = M_tile_offset + (LTile[i].m_Mindex-M_min)*m_numFeatures;
 						float* U_vector = U_tile_offset + (LTile[i].m_Uindex-U_min)*m_numFeatures;
+
+						// for (uint32_t j = 0; j < m_numFeatures; j++) {
+						// 	cout << "M_vector[" << j << "]: " << M_vector[j] << endl;
+						// }
+						// for (uint32_t j = 0; j < m_numFeatures; j++) {
+						// 	cout << "U_vector[" << j << "]: " << U_vector[j] << endl;
+						// }
 
 						float dot = Dot(M_vector, U_vector, m_numFeatures);
 						float error = dot - LTile[i].m_value;
@@ -505,11 +523,20 @@ public:
 						float* U_vector_new = U_tile_new + (LTile[i].m_Uindex-U_min)*m_numFeatures;
 
 						for (uint32_t j = 0; j < m_numFeatures; j++) {
-							float M_temp = M_vector_new[j];
-							float U_temp = U_vector_new[j];
-							M_vector_new[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
-							U_vector_new[j] = U_temp - stepSize*(error*M_temp + lambda*U_temp);
+							// float M_temp = M_vector_new[j];
+							// float U_temp = U_vector_new[j];
+
+							// cout << "error*U_vector[" << j << "]: " << stepSize*error*U_vector[j] << endl;
+
+							M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector_new[j]);
+							U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector_new[j]);
 						}
+						// for (uint32_t j = 0; j < m_numFeatures; j++) {
+						// 	cout << "M_vector_new[" << j << "]: " << M_vector_new[j] << endl;
+						// }
+						// for (uint32_t j = 0; j < m_numFeatures; j++) {
+						// 	cout << "U_vector_new[" << j << "]: " << U_vector_new[j] << endl;
+						// }
 					}
 
 					memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));

@@ -4,7 +4,7 @@
 
 using namespace std;
 
-// #define FPGA
+#define FPGA
 
 int main(int argc, char* argv[]) {
 
@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
 	tileSize = atoi(argv[4]);
 	numEpochs = atoi(argv[5]);
 
-	float stepSize = 0.01;
+	float stepSize = 0.001;
 	float lambda = 0;
 
 #ifdef FPGA
@@ -44,9 +44,11 @@ int main(int argc, char* argv[]) {
 	// lrmf.PrintM();
 	// lrmf.PrintU();
 
+	// lrmf.RandInitMU();
 	// lrmf.Optimize(stepSize, lambda, numEpochs);
-	lrmf.RandInitMU();
-	lrmf.OptimizeRound(stepSize, lambda, numEpochs);
+
+	// lrmf.RandInitMU();
+	// lrmf.OptimizeRound(stepSize, lambda, numEpochs);
 
 	lrmf.RandInitMU();
 	lrmf.OptimizeRoundStale(stepSize, lambda, numEpochs);

@@ -61,7 +61,7 @@ module glm_load
     logic [31:0] DRAM_load_length;
     logic enable_multiline;
     logic use_accessprops;
-    logic [LOG2_MEMORY_SIZE-1:0] accessprops_raddr;
+    logic [3+LOG2_MEMORY_SIZE-1:0] accessprops_raddr;
     logic [31:0] REGION0_accessproperties;
     logic [31:0] REGION1_accessproperties;
     logic [31:0] REGION2_accessproperties;
@@ -246,7 +246,7 @@ module glm_load
                     DRAM_load_length <= regs[4][30:0];
                     enable_multiline <= regs[4][31];
                     use_accessprops <= regs[3][31];
-                    accessprops_raddr <= regs[3][29:0];
+                    accessprops_raddr <= {regs[3][LOG2_MEMORY_SIZE-1:0], 3'b000};
                     REGION0_accessproperties <= regs[5];
                     REGION1_accessproperties <= regs[6];
                     REGION2_accessproperties <= regs[7];

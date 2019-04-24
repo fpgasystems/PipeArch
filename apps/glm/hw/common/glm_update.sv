@@ -8,7 +8,7 @@ module glm_update
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [5],
+    input logic [31:0] regs [6],
 
     fifobram_interface.read MEM_props_samples,
     fifobram_interface.read MEM_props_model,
@@ -28,6 +28,7 @@ module glm_update
         STATE_FETCH_PROPS,
         STATE_RECEIVE_PROPS,
         STATE_MAIN_WITH_PROPS,
+        STATE_MAIN_WITH_PROPS_ASYNC,
         STATE_MAIN
     } t_updatestate;
     t_updatestate update_state;
@@ -37,20 +38,29 @@ module glm_update
     //   Instruction Information
     //
     // *************************************************************************
+    logic enable_async;
     logic [15:0] num_lines_to_process;
     logic [15:0] num_iterations;
     logic [31:0] REGION_samples_read_accessproperties;
     logic [31:0] REGION_gradient_read_accessproperties;
     access_properties MEM_model_read_accessproperties;
     access_properties REGION_model_write_accessproperties;
+    logic [17:0] accessprops_raddr;
+    logic [17:0] accessprops_waddr;
     logic [CLDATA_WIDTH-1:0] accessprops_data;
-    logic [LOG2_ACCESS_SIZE-1:0] current_offset;
-    logic [LOG2_ACCESS_SIZE-1:0] current_length;
-    logic [3:0] accessprops_position;
+    logic [3:0] accessprops_read_position;
+    logic [LOG2_ACCESS_SIZE-1:0] current_read_offset;
+    logic [LOG2_ACCESS_SIZE-1:0] current_read_length;
+    logic [3:0] accessprops_write_position;
+    logic [LOG2_ACCESS_SIZE-1:0] current_write_offset;
+    logic [LOG2_ACCESS_SIZE-1:0] current_write_length;
 
-    assign accessprops_position = MEM_model_read_accessproperties.offset[3:0];
-    assign current_offset = accessprops_data[accessprops_position*32+13 -: 14];
-    assign current_length = accessprops_data[accessprops_position*32+29 -: 14];
+    assign accessprops_read_position = accessprops_raddr[3:0];
+    assign current_read_offset = accessprops_data[accessprops_read_position*32+13 -: 14];
+    assign current_read_length = accessprops_data[accessprops_read_position*32+29 -: 14];
+    assign accessprops_write_position = accessprops_waddr[3:0];
+    assign current_write_offset = accessprops_data[accessprops_write_position*32+13 -: 14];
+    assign current_write_length = accessprops_data[accessprops_write_position*32+29 -: 14];
 
     // *************************************************************************
     //
@@ -137,14 +147,13 @@ module glm_update
         FIFO_REGION_gradient_read.re <= 1'b0;
         FIFO_REGION_samples_read.re <= 1'b0;
 
-        if (gradient_read == 1'b0 && !FIFO_REGION_gradient_read.empty && !FIFO_multiply.almostfull)
+        if (num_lines_multiplied_requested < num_lines_to_process && (!FIFO_REGION_gradient_read.empty || gradient_read == 1'b1) &&!FIFO_REGION_samples_read.empty && !FIFO_multiply.almostfull)
         begin
-            FIFO_REGION_gradient_read.re <= 1'b1;
-            gradient_read <= 1'b1;
-        end
-
-        if (gradient_read == 1'b1 && num_lines_multiplied_requested < num_lines_to_process && !FIFO_REGION_samples_read.empty && !FIFO_multiply.almostfull)
-        begin
+            if (num_lines_multiplied_requested == 0)
+            begin
+                FIFO_REGION_gradient_read.re <= 1'b1;
+                gradient_read <= 1'b1;
+            end
             FIFO_REGION_samples_read.re <= 1'b1;
             num_lines_multiplied_requested <= num_lines_multiplied_requested + 1;
             if (num_lines_multiplied_requested == num_lines_to_process-1)
@@ -184,6 +193,17 @@ module glm_update
         .result(subtract_result)
     );
 
+    logic [31:0] monitor_multiply_result [16];
+    logic [31:0] monitor_subtract_result [16];
+    always_ff @(posedge clk)
+    begin
+        for (int i = 0; i < 16; i++)
+        begin
+            monitor_multiply_result[i] <= multiply_result[i*32+31 -: 32];
+            monitor_subtract_result[i] <= subtract_result[i*32+31 -: 32];
+        end
+    end
+
     always_ff @(posedge clk)
     begin
         subtract_valid_1d <= subtract_valid;
@@ -209,6 +229,9 @@ module glm_update
                     REGION_gradient_read_accessproperties <= regs[2];
                     MEM_model_read_accessproperties <= regs[3];
                     REGION_model_write_accessproperties <= regs[4];
+                    enable_async <= regs[5][0];
+                    accessprops_raddr <= {regs[3][13:0], 4'b0000};
+                    accessprops_waddr <= {regs[4][13:0], 4'b0000};
                     // *************************************************************************
                     read_trigger <= 1'b1;
                     num_lines_subtracted_requested <= 0;
@@ -230,7 +253,7 @@ module glm_update
             begin
                 MEM_props_model.re <= 1'b1;
                 MEM_props_model.rfifobram <= 2'b01;
-                MEM_props_model.raddr <= MEM_model_read_accessproperties.offset >> 4;
+                MEM_props_model.raddr <= accessprops_raddr >> 4;
                 update_state <= STATE_RECEIVE_PROPS;
             end
 
@@ -239,7 +262,8 @@ module glm_update
                 if (MEM_props_model.rvalid)
                 begin
                     accessprops_data <= MEM_props_model.rdata;
-                    update_state <= STATE_MAIN_WITH_PROPS;
+                    update_state <= enable_async ? STATE_MAIN_WITH_PROPS_ASYNC : STATE_MAIN_WITH_PROPS;
+                    num_lines_subtracted_requested <= 0;
                 end
             end
 
@@ -250,23 +274,26 @@ module glm_update
                     FIFO_multiply.re <= 1'b1;
                     MEM_model_read.re <= 1'b1;
                     MEM_model_read.rfifobram <= 2'b01;
-                    MEM_model_read.raddr <= current_offset + num_lines_subtracted_requested;
+                    MEM_model_read.raddr <= current_read_offset + num_lines_subtracted_requested;
                     num_lines_subtracted_requested <= num_lines_subtracted_requested + 1;
-                    
-                    // if (num_lines_subtracted_requested == num_lines_to_process-1)
-                    // begin
-                    //     num_subtract_iterations1 <= num_subtract_iterations1 + 1;
-                    //     if (num_subtract_iterations1 < num_iterations-1)
-                    //     begin
-                    //         num_lines_subtracted_requested <= 0;
-                    //     end
-                    // end
+                end
+
+                if (subtract_valid_1d)
+                begin
+                    if (num_lines_subtracted_1d == num_lines_to_process-1)
+                    begin
+                        num_subtract_iterations1 <= num_subtract_iterations1 + 1;
+                        if (num_subtract_iterations1 < num_iterations-1)
+                        begin
+                            num_lines_subtracted_requested <= 0;
+                        end
+                    end
                 end
 
                 if (subtract_valid)
                 begin
                     REGION_model_write.we <= 1'b1;
-                    REGION_model_write.waddr <= current_offset + num_lines_subtracted;
+                    REGION_model_write.waddr <= current_read_offset + num_lines_subtracted;
                     REGION_model_write.wdata <= subtract_result;
                     num_lines_subtracted <= num_lines_subtracted + 1;
                     if (num_lines_subtracted == num_lines_to_process-1)
@@ -282,7 +309,60 @@ module glm_update
                             num_lines_subtracted <= 0;
                             if (MEM_model_read_accessproperties.keep_count_along_iterations)
                             begin
-                                MEM_model_read_accessproperties.offset <= MEM_model_read_accessproperties.offset + MEM_model_read_accessproperties.length;
+                                accessprops_raddr <= accessprops_raddr + MEM_model_read_accessproperties.length;
+                            end
+                            if (num_subtract_iterations2[3:0] == 4'd15)
+                            begin
+                                update_state <= STATE_FETCH_PROPS;
+                            end
+                        end
+                    end
+                end
+            end
+
+            STATE_MAIN_WITH_PROPS_ASYNC:
+            begin
+                if (num_lines_subtracted_requested < num_lines_to_process && !FIFO_multiply.empty && !REGION_model_write.almostfull)
+                begin
+                    FIFO_multiply.re <= 1'b1;
+                    MEM_model_read.re <= 1'b1;
+                    MEM_model_read.rfifobram <= 2'b01;
+                    MEM_model_read.raddr <= current_read_offset + num_lines_subtracted_requested;
+                    num_lines_subtracted_requested <= num_lines_subtracted_requested + 1;
+                    if (num_lines_subtracted_requested == num_lines_to_process-1)
+                    begin
+                        num_subtract_iterations1 <= num_subtract_iterations1 + 1;
+                        if (num_subtract_iterations1 < num_iterations-1 && num_subtract_iterations1[3:0] < 4'd15)
+                        begin
+                            num_lines_subtracted_requested <= 0;
+                            if (MEM_model_read_accessproperties.keep_count_along_iterations)
+                            begin
+                                accessprops_raddr <= accessprops_raddr + MEM_model_read_accessproperties.length;
+                            end
+                        end
+                    end
+                end
+
+                if (subtract_valid)
+                begin
+                    REGION_model_write.we <= 1'b1;
+                    REGION_model_write.waddr <= current_write_offset + num_lines_subtracted;
+                    REGION_model_write.wdata <= subtract_result;
+                    num_lines_subtracted <= num_lines_subtracted + 1;
+                    if (num_lines_subtracted == num_lines_to_process-1)
+                    begin
+                        num_subtract_iterations2 <= num_subtract_iterations2 + 1;
+                        if (num_subtract_iterations2 == num_iterations-1)
+                        begin
+                            op_done <= 1'b1;
+                            update_state <= STATE_IDLE;
+                        end
+                        else
+                        begin
+                            num_lines_subtracted <= 0;
+                            if (REGION_model_write_accessproperties.keep_count_along_iterations)
+                            begin
+                                accessprops_waddr <= accessprops_waddr + REGION_model_write_accessproperties.length;
                             end
                             if (num_subtract_iterations2[3:0] == 4'd15)
                             begin
@@ -304,17 +384,17 @@ module glm_update
                     num_lines_subtracted_requested <= num_lines_subtracted_requested + 1;
                 end
 
-                // if (subtract_valid_1d)
-                // begin
-                //     if (num_lines_subtracted_1d == num_lines_to_process-1)
-                //     begin
-                //         num_subtract_iterations1 <= num_subtract_iterations1 + 1;
-                //         if (num_subtract_iterations1 < num_iterations-1)
-                //         begin
-                //             num_lines_subtracted_requested <= 0;
-                //         end
-                //     end
-                // end
+                if (subtract_valid_1d)
+                begin
+                    if (num_lines_subtracted_1d == num_lines_to_process-1)
+                    begin
+                        num_subtract_iterations1 <= num_subtract_iterations1 + 1;
+                        if (num_subtract_iterations1 < num_iterations-1)
+                        begin
+                            num_lines_subtracted_requested <= 0;
+                        end
+                    end
+                end
 
                 if (subtract_valid)
                 begin
@@ -339,18 +419,6 @@ module glm_update
                 end
             end
         endcase
-
-        if (subtract_valid_1d)
-        begin
-            if (num_lines_subtracted_1d == num_lines_to_process-1)
-            begin
-                num_subtract_iterations1 <= num_subtract_iterations1 + 1;
-                if (num_subtract_iterations1 < num_iterations-1)
-                begin
-                    num_lines_subtracted_requested <= 0;
-                end
-            end
-        end
 
         if (reset)
         begin

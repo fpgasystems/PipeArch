@@ -24,7 +24,7 @@ logic [LOG2_DEPTH-1:0] count;
 logic empty;
 logic internal_empty;
 
-assign access.almostfull = (count > 2**LOG2_DEPTH-16) ? 1'b1 : 1'b0;
+assign access.almostfull = (count > 2**LOG2_DEPTH-20) ? 1'b1 : 1'b0;
 assign access.count = count;
 assign access.empty = empty | internal_empty;
 
