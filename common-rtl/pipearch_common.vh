@@ -39,6 +39,8 @@ typedef struct packed {
 } t_dma_reg;
 
 typedef struct packed {
+    logic share;
+    logic consume;
     logic start;
     logic async;
     t_dma_reg regs;

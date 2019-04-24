@@ -278,10 +278,11 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	localaccess_t labelsRead(BRAM, 0, 1);
 	localaccess_t modifyWrite(FIFO, 1);
 	m_inst[pc].Modify(minibatchSize, type, 0, scaledStepSize, lambda, labelsRead, modifyWrite);
-	// m_inst[pc].MakeNonBlocking();
+	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL, true);
+	// localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL, true);
+	localaccess_t updateSamplesRead(FIFO, m_numFeaturesInCL);
 	localaccess_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	localaccess_t updateModelWrite(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Update(minibatchSize, m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);

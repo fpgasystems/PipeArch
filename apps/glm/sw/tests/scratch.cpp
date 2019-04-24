@@ -1,8 +1,11 @@
 #include <iostream>
+#include "ColumnML.h"
 #include "FPGA_ColumnML.h"
 #include "Server.h"
 
 #define VALUE_TO_INT_SCALER 10
+
+#define FPGA
 
 int main(int argc, char* argv[]) {
 
@@ -23,9 +26,12 @@ int main(int argc, char* argv[]) {
 
 	uint32_t partitionSize = 1024;
 
+#ifdef FPGA
 	Server server(false, true);
-
 	FPGA_ColumnML columnML(&server);
+#else
+	ColumnML columnML;
+#endif
 
 	float stepSize;
 	float lambda = 0;
@@ -48,30 +54,34 @@ int main(int argc, char* argv[]) {
 	args.m_numSamples = columnML.m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
 
-
 	// Set memory format / decide on SGD or SCD
 	MemoryFormat format = RowStore;
 
 	if (format == RowStore) {
-		columnML.CreateMemoryLayout(format, partitionSize);
 		stepSize = 0.01;
 		columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 
+#ifdef FPGA
+		columnML.CreateMemoryLayout(format, partitionSize);
 		if (minibatchSize == 1) {
 			columnML.fSGD(type, numEpochs, stepSize, lambda);
 		}
 		else {
 			columnML.fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda);
 		}
+#endif
 	}
 	else {
-		columnML.CreateMemoryLayout(format, partitionSize, numEpochs);
 		stepSize = 1;
 		columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
 
+#ifdef FPGA
+		columnML.CreateMemoryLayout(format, partitionSize, numEpochs);
 		columnML.fSCD(type, numEpochs, stepSize, lambda);
+#endif
 	}
 
+#ifdef FPGA
 	FThread* fthread = server.Request(&columnML);
 	fthread->WaitUntilFinished();
 
@@ -90,6 +100,7 @@ int main(int argc, char* argv[]) {
 			cout << "loss " << e << ": " << loss << endl;
 		}
 	}
+#endif
 
 	return 0;
 }
