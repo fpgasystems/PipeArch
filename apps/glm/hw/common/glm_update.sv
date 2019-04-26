@@ -98,7 +98,7 @@ module glm_update
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(1)) dummy_accessprops_read[1]();
     fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(6)) FIFO_REGION_gradient_read();
     read_region2fifo
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
+    #(.WIDTH(32), .LOG2_DEPTH(6))
     read_REGION_gradient_read (
         .clk, .reset,
         .op_start(read_trigger),

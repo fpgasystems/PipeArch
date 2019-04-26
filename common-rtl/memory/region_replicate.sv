@@ -55,27 +55,11 @@ module region_replicate
 
             assign MEM_region_interface[index].re = read_access[index].rfifobram[0] ? read_access[index].re : 1'b0;
             assign MEM_region_interface[index].raddr = read_access[index].raddr;
-
             assign FIFO_region_interface[index].re = read_access[index].rfifobram[1] ? read_access[index].re : 1'b0;
 
-            always_comb
-            begin
-                // MEM/FIFO_region receive arbitration
-                if (MEM_region_interface[index].rvalid && rfifobram[index] == 2'b01 && re[index]) begin
-                    read_access[index].rvalid = 1'b1;
-                    read_access[index].rdata = MEM_region_interface[index].rdata;
-                end
-                else if (FIFO_region_interface[index].rvalid && rfifobram[index] == 2'b10 && re[index]) begin
-                    read_access[index].rvalid = 1'b1;
-                    read_access[index].rdata = FIFO_region_interface[index].rdata;
-                end
-                else begin
-                    read_access[index].rvalid = 1'b0;
-                end
-
-                read_access[index].empty = FIFO_region_interface[index].empty;
-            end
-
+            assign read_access[index].empty = FIFO_region_interface[index].empty;
+            assign read_access[index].rvalid = (MEM_region_interface[index].rvalid && rfifobram[index] == 2'b01 && re[index]) | (FIFO_region_interface[index].rvalid && rfifobram[index] == 2'b10 && re[index]);
+            assign read_access[index].rdata = (MEM_region_interface[index].rvalid && rfifobram[index] == 2'b01 && re[index]) ? MEM_region_interface[index].rdata : FIFO_region_interface[index].rdata;
 
             if (NUM_WRITE_CHANNELS == 1) begin
                 always_ff @(posedge clk)

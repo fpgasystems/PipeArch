@@ -65,24 +65,10 @@ module region
                 re[index] <= access[index].re;
                 rfifobram[index] <= access[index].rfifobram;
             end
+            assign access[index].empty = FIFO_region_interface.empty;
+            assign access[index].rvalid = (MEM_region_interface.rvalid && rfifobram[index] == 2'b01 && re[index]) | (FIFO_region_interface.rvalid && rfifobram[index] == 2'b10 && re[index]);
+            assign access[index].rdata = (MEM_region_interface.rvalid && rfifobram[index] == 2'b01 && re[index]) ? MEM_region_interface.rdata : FIFO_region_interface.rdata;
 
-            always_comb
-            begin
-                // MEM/FIFO_region receive arbitration
-                if (MEM_region_interface.rvalid && rfifobram[index] == 2'b01 && re[index]) begin
-                    access[index].rvalid = 1'b1;
-                    access[index].rdata = MEM_region_interface.rdata;
-                end
-                else if (FIFO_region_interface.rvalid && rfifobram[index] == 2'b10 && re[index]) begin
-                    access[index].rvalid = 1'b1;
-                    access[index].rdata = FIFO_region_interface.rdata;
-                end
-                else begin
-                    access[index].rvalid = 1'b0;
-                end
-
-                access[index].empty = FIFO_region_interface.empty;
-            end
         end
     endgenerate
 
@@ -247,7 +233,7 @@ module region
         for (index = 0; index < NUM_CHANNELS; index=index+1)
         begin: gen_write
             assign access[index].almostfull = FIFO_region_interface.almostfull;
-            assign access[index].count = FIFO_region_interface.count;
+            // assign access[index].count = FIFO_region_interface.count;
         end
 
         if (NUM_CHANNELS == 1) begin

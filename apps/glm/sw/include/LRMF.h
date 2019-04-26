@@ -147,6 +147,10 @@ public:
 		}
 	}
 
+	size_t GetDataSize() {
+		return m_LB.size()*sizeof(LabelB);
+	}
+
 	void ReadNetflixData(char* pathToFile, int Mdim) {
 		FILE* f = fopen(pathToFile, "r");
 		if (f == NULL) {
@@ -165,6 +169,8 @@ public:
 		cout << "m_Mdim: " << m_Mdim << endl;
 		m_L.reserve(m_Mdim);
 
+		uint32_t totalNumEntries = 0;
+
 		for (uint32_t i = 0; i < m_Mdim; i++) {
 			// cout << "-------------------------------------------------" << endl;
 
@@ -176,6 +182,7 @@ public:
 
 			// cout << "Mindex: " << Mindex << endl;
 			// cout << "numEntries: " << numEntries << endl;
+			totalNumEntries += numEntries;
 
 			Label* temp = (Label*)malloc(sizeof(Label)*numEntries);
 			readsize = fread(temp, sizeof(Label), numEntries, f);
@@ -202,6 +209,7 @@ public:
 			m_L.push_back(tempV);
 		}
 		cout << "m_Udim: " << m_Udim << endl;
+		cout << "totalNumEntries: " << totalNumEntries << endl;
 
 		m_M = (float*)aligned_alloc(64, m_Mdim*m_numFeatures*sizeof(float));
 		m_U = (float*)aligned_alloc(64, m_Udim*m_numFeatures*sizeof(float));
@@ -265,45 +273,16 @@ public:
 		cout << "m_restM: " << m_restM << endl;
 		cout << "m_restU: " << m_restU << endl;
 
-		uint32_t count = 0;
-		for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
-			for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
-				vector<LabelB> temp;
+		m_LBTiled.resize(m_numTilesM*m_numTilesU);
 
-				uint32_t M_min = tm*m_tileSize;
-				uint32_t M_max = (tm+1)*m_tileSize-1;
-				uint32_t U_min = tu*m_tileSize;
-				uint32_t U_max = (tu+1)*m_tileSize-1;
+		for (uint32_t i = 0; i < m_LB.size(); i++) {
+			uint32_t tile_m = m_LB[i].m_Mindex/m_tileSize;
+			uint32_t tile_u = m_LB[i].m_Uindex/m_tileSize;
 
-				temp.reserve(m_LB.size());
-				// vector<uint32_t> toRemove;
-				// cout << "m_LB.size():" << m_LB.size() << endl;
-				for (uint32_t i = 0; i < m_LB.size(); i++) {
-					if (m_LB[i].m_Mindex >= M_min && m_LB[i].m_Mindex <= M_max && m_LB[i].m_Uindex >= U_min && m_LB[i].m_Uindex <= U_max) {
-						temp.push_back(m_LB[i]);
-						// toRemove.push_back(i);
-					}
-				}
-
-				// for (uint32_t i: toRemove) {
-				// 	m_LB.erase(m_LB.begin() + i);
-				// }
-
-				random_shuffle(temp.begin(), temp.end());
-				m_LBTiled.push_back(temp);
-				// cout << tm << ", " << tu << " m_LBTiled.size(): " << temp.size() << endl;
-				count += temp.size();
+			if (tile_m < m_numTilesM && tile_u < m_numTilesU) { // Do this check because we have rest
+				m_LBTiled[tile_m*m_numTilesU + tile_u].push_back(m_LB[i]);
 			}
 		}
-
-		// cout << "count: " << count << endl;
-		// cout << "m_LB.size(): " << m_LB.size() << endl;
-
-		// for (uint32_t i = 0; i < m_LBTiled[0].size(); i++) {
-		// 	cout << m_LBTiled[0][i].m_Mindex << "\t";
-		// 	cout << m_LBTiled[0][i].m_Uindex << "\t";
-		// 	cout << m_LBTiled[0][i].m_value << endl;
-		// }
 	}
 
 	float Dot(float* vector1, float* vector2, uint32_t numFeatures) {
@@ -311,14 +290,6 @@ public:
 		for (uint32_t j = 0; j < m_numFeatures; j++) {
 			dot += vector1[j]*vector2[j];
 		}
-		// cout << "----------------------------------------" << endl;
-		// for (uint32_t j = 0; j < m_numFeatures; j++) {
-		// 	cout << "vector1[" << j << "]: " << vector1[j] << endl;
-		// }
-		// for (uint32_t j = 0; j < m_numFeatures; j++) {
-		// 	cout << "vector2[" << j << "]: " << vector2[j] << endl;
-		// }
-		// cout << "dot: " << dot << endl;
 		return dot;
 	}
 
@@ -328,7 +299,6 @@ public:
 			float temploss = 0.0;
 			for (uint32_t u = 0; u < m_L[m].size(); u++) {
 				// cout << "m_L[" << m << "][" << u << "]: " << m_L[m][u].m_Uindex << " " << m_L[m][u].m_value << endl;
-
 				float* M_vector = m_M + m*m_numFeatures;
 				float* U_vector = m_U + m_L[m][u].m_Uindex*m_numFeatures;
 
@@ -377,9 +347,10 @@ public:
 
 	void Optimize(float stepSize, float lambda, uint32_t numEpochs) {
 
-		// float loss = Loss(lambda);
 		float loss = RMSE();
 		cout << "Initial Loss: " << loss << endl;
+
+		double total = 0.0;
 
 		for (uint32_t e = 0; e < numEpochs; e++) {
 			double start = get_time();
@@ -405,14 +376,18 @@ public:
 					}
 				}
 			}
-			// loss = Loss(lambda);
 
 			double end = get_time();
-			// cout << "Time per epoch: " << end-start << endl;
+			total += (end-start);
 
 			loss = RMSE();
 			cout << "Loss " << e << ": " << loss << endl;
 		}
+
+		cout << "m_LB.size(): " << m_LB.size() << endl;
+		cout << "GetDataSize()/1e9: " << GetDataSize()/1e9 << endl;
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*GetDataSize())/total/1e9 << " GB/s" << endl;
 	}
 
 	void OptimizeRound(float stepSize, float lambda, uint32_t numEpochs) {
@@ -424,6 +399,8 @@ public:
 
 		float loss = RMSE();
 		cout << "Initial Loss: " << loss << endl;
+
+		double total = 0.0;
 
 		for (uint32_t e = 0; e < numEpochs; e++) {
 
@@ -461,11 +438,14 @@ public:
 			}
 
 			double end = get_time();
-			// cout << "Time per epoch: " << end-start << endl;
+			total += (end-start);
 
 			loss = RMSE();
 			cout << "Loss " << e << ": " << loss << endl;
 		}
+
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*GetDataSize())/total/1e9 << " GB/s" << endl;
 	}
 
 	void OptimizeRoundStale(float stepSize, float lambda, uint32_t numEpochs) {
@@ -480,6 +460,8 @@ public:
 
 		float* M_tile_new = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
 		float* U_tile_new = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
+
+		double total = 0.0;
 
 		for (uint32_t e = 0; e < numEpochs; e++) {
 
@@ -539,16 +521,16 @@ public:
 						// }
 					}
 					// L2 Regularization
-					for (uint32_t i = 0; i < m_tileSize; i++) {
-						float* M_vector = M_tile_offset + i*m_numFeatures;
-						float* U_vector = U_tile_offset + i*m_numFeatures;
-						float* M_vector_new = M_tile_new + i*m_numFeatures;
-						float* U_vector_new = U_tile_new + i*m_numFeatures;
-						for (uint32_t j = 0; j < m_numFeatures; j++) {
-							M_vector_new[j] = M_vector_new[j] - stepSize*lambda*M_vector[j];
-							// U_vector_new[j] = U_vector_new[j] - stepSize*lambda*U_vector[j];
-						}
-					}
+					// for (uint32_t i = 0; i < m_tileSize; i++) {
+					// 	float* M_vector = M_tile_offset + i*m_numFeatures;
+					// 	float* U_vector = U_tile_offset + i*m_numFeatures;
+					// 	float* M_vector_new = M_tile_new + i*m_numFeatures;
+					// 	float* U_vector_new = U_tile_new + i*m_numFeatures;
+					// 	for (uint32_t j = 0; j < m_numFeatures; j++) {
+					// 		M_vector_new[j] = M_vector_new[j] - stepSize*lambda*M_vector[j];
+					// 		// U_vector_new[j] = U_vector_new[j] - stepSize*lambda*U_vector[j];
+					// 	}
+					// }
 
 					memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));
 					memcpy(U_tile_offset, U_tile_new, m_tileSize*m_numFeatures*sizeof(float));
@@ -556,11 +538,14 @@ public:
 			}
 
 			double end = get_time();
-			// cout << "Time per epoch: " << end-start << endl;
+			total += (end-start);
 
 			loss = RMSE();
 			cout << "Loss " << e << ": " << loss << endl;
 		}
+
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*GetDataSize())/total/1e9 << " GB/s" << endl;
 
 		free(M_tile_new);
 		free(U_tile_new);

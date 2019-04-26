@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define FPGA
+// #define FPGA
 
 int main(int argc, char* argv[]) {
 
@@ -41,16 +41,17 @@ int main(int argc, char* argv[]) {
 	else {
 		lrmf.ReadNetflixData(pathToDataset, Mdim);
 	}
-	lrmf.DivideLBIntoTiles(tileSize);
 
 	// lrmf.PrintM();
 	// lrmf.PrintU();
 
-	// lrmf.RandInitMU();
-	// lrmf.Optimize(stepSize, lambda, numEpochs);
+	lrmf.RandInitMU();
+	lrmf.Optimize(stepSize, lambda, numEpochs);
 
-	// lrmf.RandInitMU();
-	// lrmf.OptimizeRound(stepSize, lambda, numEpochs);
+	lrmf.DivideLBIntoTiles(tileSize);
+
+	lrmf.RandInitMU();
+	lrmf.OptimizeRound(stepSize, lambda, numEpochs);
 
 	lrmf.RandInitMU();
 	lrmf.OptimizeRoundStale(stepSize, lambda, numEpochs);
