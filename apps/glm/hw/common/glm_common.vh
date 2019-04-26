@@ -7,7 +7,7 @@ parameter PROGRAM_SIZE = 2**LOG2_PROGRAM_SIZE;
 parameter NUM_REGS = 5;
 parameter REGS_WIDTH = 32*NUM_REGS;
 parameter LOG2_INTERNAL_SIZE = 6;
-parameter NUM_OPS = 11;
+parameter NUM_OPS = 12;
 
 // *************************************************************************
 //

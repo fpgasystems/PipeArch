@@ -43,7 +43,7 @@ module glm_modify
     logic algorithm_type;
     logic [31:0] step_size;
     logic [31:0] lambda;
-    logic [CLDATA_WIDTH-1:0] lineFromLabelsMem;
+    logic [CLDATA_WIDTH-1:0] line_from_MEM_labels;
     logic [31:0] REGION_gradient_write_accessproperties;
 
     // *************************************************************************
@@ -91,6 +91,18 @@ module glm_modify
         .q(mult_regs.result),
         .q_valid(mult_regs.done));
 
+    fp_compute_regs l1reg_regs;
+    float_l1reg
+    l1reg (
+        .clk(clk),
+        .reset(reset),
+        .in_model(l1reg_regs.leftoperand),
+        .in_step(l1reg_regs.rightoperand),
+        .in_lambda(lambda),
+        .in_valid(l1reg_regs.trigger),
+        .out_step(l1reg_regs.result),
+        .out_valid(l1reg_regs.done));
+
     // *************************************************************************
     //
     //   Write Channels
@@ -114,6 +126,7 @@ module glm_modify
     begin
         write_trigger <= 1'b0;
         sub_regs.trigger <= 1'b0;
+        l1reg_regs.trigger <= 1'b0;
         mult_regs.trigger <= 1'b0;
         mult_regs_trigger_1d <= mult_regs.trigger;
         FIFO_dot_read.re <= 1'b0;
@@ -213,14 +226,32 @@ module glm_modify
 
                 if (mult_regs.done)
                 begin
-                    sub_regs.trigger <= 1'b1;
-                    sub_regs.leftoperand <= MEM_labels_read.rdata[position_by_index*32+31 -: 32];
-                    sub_regs.rightoperand <= mult_regs.result;
-                    lineFromLabelsMem <= MEM_labels_read.rdata;
-                    from_modify_to_output.we <= 1'b1;
-                    from_modify_to_output.wdata <= mult_regs.result;
+                    l1reg_regs.trigger <= 1'b1;
+                    l1reg_regs.leftoperand <= MEM_labels_read.rdata[position_by_index*32+31 -: 32];
+                    l1reg_regs.rightoperand <= mult_regs.result;
+                    line_from_MEM_labels <= MEM_labels_read.rdata;
                     position_by_index <= position_by_index + 1;
                 end
+
+                if (l1reg_regs.done)
+                begin
+                    sub_regs.trigger <= 1'b1;
+                    sub_regs.leftoperand <= l1reg_regs.leftoperand;
+                    sub_regs.rightoperand <= l1reg_regs.result;
+                    from_modify_to_output.we <= 1'b1;
+                    from_modify_to_output.wdata <= l1reg_regs.result;
+                end
+
+                // if (mult_regs.done)
+                // begin
+                //     sub_regs.trigger <= 1'b1;
+                //     sub_regs.leftoperand <= MEM_labels_read.rdata[position_by_index*32+31 -: 32];
+                //     sub_regs.rightoperand <= mult_regs.result;
+                //     line_from_MEM_labels <= MEM_labels_read.rdata;
+                //     from_modify_to_output.we <= 1'b1;
+                //     from_modify_to_output.wdata <= mult_regs.result;
+                //     position_by_index <= position_by_index + 1;
+                // end
 
                 if (sub_regs.done)
                 begin
@@ -230,7 +261,7 @@ module glm_modify
 
                     for (int i = 0; i < 16; i++)
                     begin
-                        MEM_labels_write.wdata[i*32+31 -: 32] <= (i == write_position_by_index) ? sub_regs.result : lineFromLabelsMem[i*32+31 -: 32];
+                        MEM_labels_write.wdata[i*32+31 -: 32] <= (i == write_position_by_index) ? sub_regs.result : line_from_MEM_labels[i*32+31 -: 32];
                     end
                     write_position_by_index <= write_position_by_index + 1;
 

@@ -528,8 +528,8 @@ public:
 
 							// cout << "error*U_vector[" << j << "]: " << stepSize*error*U_vector[j] << endl;
 
-							M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector_new[j]);
-							U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector_new[j]);
+							M_vector_new[j] = M_vector_new[j] - stepSize*error*U_vector[j];
+							U_vector_new[j] = U_vector_new[j] - stepSize*error*M_vector[j];
 						}
 						// for (uint32_t j = 0; j < m_numFeatures; j++) {
 						// 	cout << "M_vector_new[" << j << "]: " << M_vector_new[j] << endl;
@@ -537,6 +537,17 @@ public:
 						// for (uint32_t j = 0; j < m_numFeatures; j++) {
 						// 	cout << "U_vector_new[" << j << "]: " << U_vector_new[j] << endl;
 						// }
+					}
+					// L2 Regularization
+					for (uint32_t i = 0; i < m_tileSize; i++) {
+						float* M_vector = M_tile_offset + i*m_numFeatures;
+						float* U_vector = U_tile_offset + i*m_numFeatures;
+						float* M_vector_new = M_tile_new + i*m_numFeatures;
+						float* U_vector_new = U_tile_new + i*m_numFeatures;
+						for (uint32_t j = 0; j < m_numFeatures; j++) {
+							M_vector_new[j] = M_vector_new[j] - stepSize*lambda*M_vector[j];
+							// U_vector_new[j] = U_vector_new[j] - stepSize*lambda*U_vector[j];
+						}
 					}
 
 					memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));

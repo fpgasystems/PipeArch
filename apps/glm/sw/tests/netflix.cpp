@@ -13,15 +13,17 @@ int main(int argc, char* argv[]) {
 	uint32_t numFeatures = 0;
 	uint32_t tileSize = 0;
 	uint32_t numEpochs = 10;
-	if (!(argc == 6)) {
-		cout << "Usage: ./app <pathToDataset> <Mdim> <numFeatures> <tileSize> <numEpochs>" << endl;
+	bool asyncUpdate = false;
+	if (!(argc == 7)) {
+		cout << "Usage: ./app <pathToDataset> <Mdim> <numFeatures> <tileSize> <asyncUpdate> <numEpochs>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
 	Mdim = atoi(argv[2]);
 	numFeatures = atoi(argv[3]);
 	tileSize = atoi(argv[4]);
-	numEpochs = atoi(argv[5]);
+	asyncUpdate = (strcmp(argv[5], "y") == 0);
+	numEpochs = atoi(argv[6]);
 
 	float stepSize = 0.001;
 	float lambda = 0;
@@ -60,7 +62,7 @@ int main(int argc, char* argv[]) {
 	// lrmf.PrintU();
 
 	lrmf.CreateMemoryLayout();
-	lrmf.fOptimizeRound(stepSize, lambda, numEpochs);
+	lrmf.fOptimizeRound(stepSize, lambda, asyncUpdate, numEpochs);
 
 	FThread* fthread = server.Request(&lrmf);
 	fthread->WaitUntilFinished();

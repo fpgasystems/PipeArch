@@ -200,13 +200,11 @@ void ColumnML::SGD(
 				updateGradient(type, gradient, x, m*minibatchSize + i, args);
 			}
 			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				float regularizer = (x[j] < 0) ? -scaledLambda : scaledLambda;
 				if (args->m_constantStepSize) {
-					x[j] -= scaledStepSize*gradient[j] + regularizer;
+					x[j] -= (scaledStepSize*gradient[j] + scaledLambda*x[j]);
 				}
 				else {
-					regularizer /= (float)(epoch+1);
-					x[j] -= scaledStepSize/(float)(epoch+1)*gradient[j] + regularizer;
+					x[j] -= scaledStepSize/(float)(epoch+1)*gradient[j] + scaledLambda/(float)(epoch+1)*x[j];
 				}
 				// cout << "x[" << j << "]: " << x[j] << endl;
 				

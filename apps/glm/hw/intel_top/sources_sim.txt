@@ -1,5 +1,6 @@
 C:../../../../common-rtl/common_sources_sim.txt
 
+../common/glm_l2reg.sv
 ../common/glm_delta.sv
 ../common/glm_dot.sv
 ../common/glm_load.sv

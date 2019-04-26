@@ -255,6 +255,7 @@ public:
 	bool fOptimizeRound(
 		float stepSize,
 		float lambda,
+		bool asyncUpdate,
 		uint32_t numEpochs)
 	{
 		if (m_base == nullptr) {
@@ -387,7 +388,7 @@ public:
 		localaccess_t dotLeftRead(BRAM, UindexesOffsetInBRAM, 1, true, true);
 		localaccess_t dotRightRead(BRAM, MindexesOffsetInBRAM, 1, true, true);
 		localaccess_t dotWrite(FIFO, 1);
-		m_inst[pc].Dot(Instruction::USE_REG, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
+		m_inst[pc].Dot(Instruction::USE_REG, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, false);
 		m_inst[pc].MakeNonBlocking();
 		pc++;
 
@@ -402,11 +403,11 @@ public:
 		localaccess_t updateMRead(BRAM, MindexesOffsetInBRAM, 1, true, true);
 		localaccess_t updateMWrite(BRAM, MindexesOffsetInBRAM, 1, true, true);
 
-		m_inst[pc].Update(Instruction::USE_REG, m_numFeaturesInCL, updateURead, modifyWrite, updateMRead, updateMWrite, true);
+		m_inst[pc].Update(Instruction::USE_REG, m_numFeaturesInCL, updateURead, modifyWrite, updateMRead, updateMWrite, asyncUpdate);
 		m_inst[pc].MakeNonBlocking();
 		pc++;
 
-		m_inst[pc].Update2(Instruction::USE_REG, m_numFeaturesInCL, updateMRead, modifyWrite, updateURead, updateUWrite, true);
+		m_inst[pc].Update2(Instruction::USE_REG, m_numFeaturesInCL, updateMRead, modifyWrite, updateURead, updateUWrite, asyncUpdate);
 		pc++;
 
 		vector<localaccess_t> writebackURead(Instruction::NUM_WRITEBACK_CHANNELS);

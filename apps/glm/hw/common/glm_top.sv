@@ -427,6 +427,7 @@ module glm_top
     // reg[1] = instruction[4]                          // left input access properties
     // reg[2] = instruction[5]                          // right input access properties
     // reg[3] = instruction[6]                          // output access properties
+    // reg[4] = instruction[7]                          // [0] do sigmoid on dot
 
     // if opcode == 0x5N ---- modify
     // reg[0] = reg[0]                                  // index 0
@@ -459,6 +460,7 @@ module glm_top
     // reg[1] = instruction[4]                          // left input access properties
     // reg[2] = instruction[5]                          // right input access properties
     // reg[3] = instruction[6]                          // output access properties
+    // reg[4] = instruction[7]                          // [0] do sigmoid on model input
 
     // if opcode == 0xaN ---- update
     // reg[0] = instruction[3]                          // [15:0] num lines to process
@@ -475,6 +477,14 @@ module glm_top
     // loadreg_regs[2] = instruction[4]                 // BRAM load offset in cachelines
     // result from on-chip memory -> loadreg_outregs[x]
 
+    // if opcode == 0xcN ---- l2reg
+    // reg[0] = instruction[3]                          // [15:0] num lines to process
+    // reg[1] = instruction[4]                          // modelold read access properties
+    // reg[2] = instruction[5]                          // modelnew read access properties
+    // reg[3] = instruction[6]                          // modelforward write access properties
+    // reg[4] = instruction[7]                          // modelnew write access properties
+    // reg[5] = instruction[8]                          // lambda
+
     logic [31:0] instruction [16];
     logic [LOG2_PROGRAM_SIZE-1:0] program_counter;
     t_reg [NUM_REGS-1:0] regs;
@@ -490,14 +500,15 @@ module glm_top
     t_dma_reg prefetch_regs;
     logic [31:0] load_regs [5+NUM_LOAD_CHANNELS];
     logic [31:0] writeback_regs [6+NUM_WRITEBACK_CHANNELS];
-    logic [31:0] dot_regs [4];
-    logic [31:0] delta_regs [4];
+    logic [31:0] dot_regs [5];
+    logic [31:0] delta_regs [5];
     logic [31:0] modify_regs [7];
     logic [31:0] update1_regs [6];
     logic [31:0] update2_regs [6];
-    logic [31:0] copy_regs [2];
+    // logic [31:0] copy_regs [2];
     logic [31:0] loadreg_regs[3];
     logic [31:0] loadreg_outregs [NUM_REGS];
+    logic [31:0] l2reg_regs[6];
 
     always_ff @(posedge clk)
     begin
@@ -635,6 +646,7 @@ module glm_top
                             dot_regs[1] <= instruction[4];
                             dot_regs[2] <= instruction[5];
                             dot_regs[3] <= instruction[6];
+                            dot_regs[4] <= instruction[7];
                         end
 
                         4'h5: // modify
@@ -671,12 +683,12 @@ module glm_top
                             update2_regs[5] <= instruction[8];
                         end
 
-                        4'h7: // copy
-                        begin
-                            op_start[6] <= 1'b1;
-                            copy_regs[0] <= instruction[3];
-                            copy_regs[1] <= instruction[4];
-                        end
+                        // 4'h7: // copy
+                        // begin
+                        //     op_start[6] <= 1'b1;
+                        //     copy_regs[0] <= instruction[3];
+                        //     copy_regs[1] <= instruction[4];
+                        // end
 
                         4'h8: // synchronize
                         begin
@@ -690,6 +702,7 @@ module glm_top
                             delta_regs[1] <= instruction[4];
                             delta_regs[2] <= instruction[5];
                             delta_regs[3] <= instruction[6];
+                            delta_regs[4] <= instruction[7];
                         end
 
                         4'hb: // loadreg
@@ -698,6 +711,17 @@ module glm_top
                             loadreg_regs[0] <= temp_regs[0];
                             loadreg_regs[1] <= instruction[3];
                             loadreg_regs[2] <= instruction[4];
+                        end
+
+                        4'hc:
+                        begin
+                            op_start[11] <= 1'b1;
+                            l2reg_regs[0] <= instruction[3];
+                            l2reg_regs[1] <= instruction[4];
+                            l2reg_regs[2] <= instruction[5];
+                            l2reg_regs[3] <= instruction[6];
+                            l2reg_regs[4] <= instruction[7];
+                            l2reg_regs[5] <= instruction[8];
                         end
 
                     endcase
@@ -830,9 +854,9 @@ module glm_top
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model1_write[2]();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model1_read[2]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model1_read[3]();
     region_replicate
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(2), .NUM_READ_CHANNELS(2))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(2), .NUM_READ_CHANNELS(3))
     REGION_model1 (
         .clk, .reset,
         .write_access(REGION_model1_write.write_source),
@@ -1020,17 +1044,31 @@ module glm_top
         .REGION_model_write(REGION_inputcopy_interface[1].write)
     );
 
-    pipearch_copy
-    MEM_model_copy1
+    glm_l2reg
+    execute_l2reg
     (
         .clk,
         .reset,
-        .op_start(op_start[6]),
-        .op_done(op_done[6]),
-        .regs(copy_regs),
-        .REGION_read(REGION_model2_interface[1].read),
-        .REGION_write(REGION_model1_write[0].write)
+        .op_start(op_start[11]),
+        .op_done(op_done[11]),
+        .regs(l2reg_regs),
+        .REGION_modelold_read(REGION_model1_read[2].read),
+        .REGION_modelnew_read(REGION_model2_interface[1].read),
+        .REGION_modelforward_write(REGION_model1_write[0].write),
+        .REGION_modelnew_write(REGION_model2_interface[2].write)
     );
+
+    // pipearch_copy
+    // MEM_model_copy
+    // (
+    //     .clk,
+    //     .reset,
+    //     .op_start(op_start[6]),
+    //     .op_done(op_done[6]),
+    //     .regs(copy_regs),
+    //     .REGION_read(REGION_model2_interface[1].read),
+    //     .REGION_write(REGION_model1_write[0].write)
+    // );
 
     pipearch_loadreg
     execute_loadreg

@@ -14,6 +14,8 @@ bool FPGA_ColumnML::fSGD(
 	uint32_t modelOffsetInBRAM = 0;
 	uint32_t labelOffsetInBRAM = 0;
 
+	float scaledLambda = stepSize*lambda;
+
 	// *************************************************************************
 	//
 	//   START Program
@@ -55,13 +57,13 @@ bool FPGA_ColumnML::fSGD(
 	localaccess_t dotLeftRead(FIFO, 0, m_numFeaturesInCL);
 	localaccess_t dotRightRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	localaccess_t dotWrite(FIFO, 1);
-	m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
+	m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, (type == logreg));
 	pc++;
 
 	// Start---Innermost loop
 	localaccess_t labelsRead(BRAM, 0, 1);
 	localaccess_t modifyWrite(FIFO, 1);
-	m_inst[pc].Modify(type, 0, stepSize, lambda, labelsRead, modifyWrite);
+	m_inst[pc].Modify(type, 0, stepSize, 0, labelsRead, modifyWrite);
 	m_inst[pc].MakeNonBlocking();
 	uint32_t pcModify = pc;
 	pc++;
@@ -75,7 +77,7 @@ bool FPGA_ColumnML::fSGD(
 	pc++;
 
 	localaccess_t copyModelRead(FIFO, m_numFeaturesInCL);
-	m_inst[pc].Copy(copyModelRead, copyModelRead);
+	m_inst[pc].L2Reg(m_numFeaturesInCL, modelCopy, copyModelRead, copyModelRead, modelCopy, scaledLambda);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
@@ -84,17 +86,20 @@ bool FPGA_ColumnML::fSGD(
 	pc++;
 
 	dotRightRead.Set(FIFO, m_numFeaturesInCL);
-	m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
+	m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, (type == logreg));
 	m_inst[pc].Jump(0, m_partitionSize-1, pcModify, pc+1);
 	pc++;
 	// End---Innermost loop
 
-	m_inst[pc].Modify(type, 0, stepSize, lambda, labelsRead, modifyWrite);
+	m_inst[pc].Modify(type, 0, stepSize, 0, labelsRead, modifyWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
 	updateModelWrite.Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
+	pc++;
+
+	m_inst[pc].L2Reg(m_numFeaturesInCL, modelCopy, modelCopy, modelCopy, modelCopy, scaledLambda);
 	m_inst[pc].Jump(1, m_numPartitions-1, beginEpoch, pc+1);
 	m_inst[pc].ResetIndex(0);
 	m_inst[pc].IncrementIndex(1);
@@ -120,11 +125,11 @@ bool FPGA_ColumnML::fSGD(
 		pc++;
 
 		dotRightRead.Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-		m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
+		m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, (type == logreg));
 		pc++;
 
 		// Start---Innermost loop
-		m_inst[pc].Modify(type, 0, stepSize, lambda, labelsRead, modifyWrite);
+		m_inst[pc].Modify(type, 0, stepSize, 0, labelsRead, modifyWrite);
 		m_inst[pc].MakeNonBlocking();
 		uint32_t pcRestSamples = pc;
 		pc++;
@@ -135,7 +140,7 @@ bool FPGA_ColumnML::fSGD(
 		m_inst[pc].IncrementIndex(0);
 		pc++;
 
-		m_inst[pc].Copy(copyModelRead, copyModelRead);
+		m_inst[pc].L2Reg(m_numFeaturesInCL, modelCopy, copyModelRead, copyModelRead, modelCopy, scaledLambda);
 		m_inst[pc].MakeNonBlocking();
 		pc++;
 
@@ -144,17 +149,20 @@ bool FPGA_ColumnML::fSGD(
 		pc++;
 
 		dotRightRead.Set(FIFO, m_numFeaturesInCL);
-		m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
+		m_inst[pc].Dot(m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, (type == logreg));
 		m_inst[pc].Jump(0, m_rest-1, pcRestSamples, pc+1);
 		pc++;
 		// End---Innermost loop
 
-		m_inst[pc].Modify(type, 0, stepSize, lambda, labelsRead, modifyWrite);
+		m_inst[pc].Modify(type, 0, stepSize, 0, labelsRead, modifyWrite);
 		m_inst[pc].MakeNonBlocking();
 		pc++;
 
 		updateModelWrite.Set(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 		m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
+		pc++;
+
+		m_inst[pc].L2Reg(m_numFeaturesInCL, modelCopy, modelCopy, modelCopy, modelCopy, scaledLambda);
 		pc++;
 	}
 
@@ -225,6 +233,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	}
 
 	float scaledStepSize = stepSize/minibatchSize;
+	float scaledLambda = stepSize*lambda;
 
 	uint32_t modelOffsetInBRAM = 0;
 	uint32_t labelOffsetInBRAM = 0;
@@ -243,6 +252,10 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	m_inst[pc].ResetIndex(0);
 	m_inst[pc].ResetIndex(1);
 	m_inst[pc].ResetIndex(2);
+	pc++;
+
+	localaccess_t modelCopy(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
+	m_inst[pc].Copy(modelCopy, modelCopy);
 	pc++;
 
 	// Load labels in partition
@@ -264,20 +277,19 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	localaccess_t modelCopy(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	m_inst[pc].Copy(modelCopy, modelCopy);
+	m_inst[pc].L2Reg(m_numFeaturesInCL, modelCopy, modelCopy, modelCopy, modelCopy, scaledLambda);
 	pc++;
 
 	localaccess_t dotLeftRead(FIFO, 0, m_numFeaturesInCL);
 	localaccess_t dotRightRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	localaccess_t dotWrite(FIFO, 1);
-	m_inst[pc].Dot(minibatchSize, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
+	m_inst[pc].Dot(minibatchSize, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, (type == logreg));
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
 	localaccess_t labelsRead(BRAM, 0, 1);
 	localaccess_t modifyWrite(FIFO, 1);
-	m_inst[pc].Modify(minibatchSize, type, 0, scaledStepSize, lambda, labelsRead, modifyWrite);
+	m_inst[pc].Modify(minibatchSize, type, 0, scaledStepSize, 0, labelsRead, modifyWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
@@ -311,10 +323,10 @@ bool FPGA_ColumnML::fSGD_minibatch(
 		m_inst[pc].MakeNonBlocking();
 		pc++;
 
-		m_inst[pc].Copy(modelCopy, modelCopy);
+		m_inst[pc].L2Reg(m_numFeaturesInCL, modelCopy, modelCopy, modelCopy, modelCopy, scaledLambda);
 		pc++;
 
-		m_inst[pc].Dot(m_rest, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite);
+		m_inst[pc].Dot(m_rest, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, (type == logreg));
 		m_inst[pc].MakeNonBlocking();
 		pc++;
 
@@ -437,14 +449,14 @@ bool FPGA_ColumnML::fSCD(
 	localaccess_t deltaLeftRead(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
 	localaccess_t deltaRightRead(BRAM, labelOffsetInBRAM, m_partitionSizeInCL);
 	localaccess_t deltaWrite(FIFO, m_partitionSizeInCL);
-	m_inst[pc].Delta(m_partitionSizeInCL, deltaLeftRead, deltaRightRead, deltaWrite);
+	m_inst[pc].Delta(m_partitionSizeInCL, deltaLeftRead, deltaRightRead, deltaWrite, (type == logreg));
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
 	localaccess_t dotLeftRead(FIFO, 0, m_partitionSizeInCL);
 	localaccess_t dotRightRead(FIFO, 0, m_partitionSizeInCL);
 	localaccess_t dotWrite(FIFO, m_partitionSizeInCL);
-	m_inst[pc].Dot(m_partitionSizeInCL, dotLeftRead, dotRightRead, dotWrite);
+	m_inst[pc].Dot(m_partitionSizeInCL, dotLeftRead, dotRightRead, dotWrite, false);
 	pc++;
 
 	// Start---Innermost loop
@@ -468,11 +480,11 @@ bool FPGA_ColumnML::fSCD(
 	pc++;
 
 	deltaLeftRead.Set(FIFO, m_partitionSizeInCL);
-	m_inst[pc].Delta(m_partitionSizeInCL, deltaLeftRead, deltaRightRead, deltaWrite);
+	m_inst[pc].Delta(m_partitionSizeInCL, deltaLeftRead, deltaRightRead, deltaWrite, (type == logreg));
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	m_inst[pc].Dot(m_partitionSizeInCL, dotLeftRead, dotRightRead, dotWrite);
+	m_inst[pc].Dot(m_partitionSizeInCL, dotLeftRead, dotRightRead, dotWrite, false);
 	m_inst[pc].Jump(0, m_cstore->m_numFeatures-1, pcModify, pc+1);
 	pc++;
 	// End---Innermost loop

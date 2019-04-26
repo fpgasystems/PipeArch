@@ -8,7 +8,7 @@ module glm_delta
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [4],
+    input logic [31:0] regs [5],
 
     fifobram_interface.read REGION_left_read,
     fifobram_interface.read REGION_right_read,
@@ -38,6 +38,7 @@ module glm_delta
     logic [31:0] REGION_left_read_accessproperties;
     logic [31:0] REGION_right_read_accessproperties;
     logic [31:0] output_accessproperties;
+    logic do_sigmoid;
 
     // *************************************************************************
     //
@@ -86,6 +87,41 @@ module glm_delta
     //   Computation
     //
     // *************************************************************************
+    logic sigmoid_trigger;
+    logic sigmoid_valid;
+    logic [CLDATA_WIDTH-1:0] sigmoid_result;
+    float_vector_sigmoid
+    #(
+        .VALUES_PER_LINE(16)
+    )
+    sigmoid
+    (
+        .clk, .reset,
+        .trigger(sigmoid_trigger),
+        .vector(FIFO_REGION_left_read.rdata),
+        .result_valid(sigmoid_valid),
+        .result(sigmoid_result)
+    );
+    always_ff @(posedge clk)
+    begin
+        FIFO_REGION_left_read.re <= 1'b0;
+        if (!FIFO_REGION_left_read.empty && !FIFO_sigmoid_interface.almostfull)
+        begin
+            FIFO_REGION_left_read.re <= 1'b1;
+        end
+    end
+    assign sigmoid_trigger = do_sigmoid ? FIFO_REGION_left_read.rvalid : 1'b0;
+
+    fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_sigmoid_interface();
+    fifo
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
+    FIFO_region (
+        .clk, .reset,
+        .access(FIFO_sigmoid_interface.fifo_source)
+    );
+    assign FIFO_sigmoid_interface.we = do_sigmoid ? sigmoid_valid : FIFO_REGION_left_read.rvalid;
+    assign FIFO_sigmoid_interface.wdata = do_sigmoid ? sigmoid_result : FIFO_REGION_left_read.rdata;
+
     logic subtract_trigger;
     logic subtract_valid;
     logic [CLDATA_WIDTH-1:0] subtract_result;
@@ -95,25 +131,24 @@ module glm_delta
     )
     subtract
     (
-        .clk,
-        .reset(reset),
+        .clk, .reset,
         .trigger(subtract_trigger),
-        .vector1(FIFO_REGION_left_read.rdata),
+        .vector1(FIFO_sigmoid_interface.rdata),
         .vector2(FIFO_REGION_right_read.rdata),
         .result_valid(subtract_valid),
         .result(subtract_result)
     );
     always_ff @(posedge clk)
     begin
-        FIFO_REGION_left_read.re <= 1'b0;
+        FIFO_sigmoid_interface.re <= 1'b0;
         FIFO_REGION_right_read.re <= 1'b0;
-        if (!FIFO_REGION_left_read.empty && !FIFO_REGION_right_read.empty)
+        if (!FIFO_sigmoid_interface.empty && !FIFO_REGION_right_read.empty && !from_subtract_to_output.almostfull)
         begin
-            FIFO_REGION_left_read.re <= 1'b1;
+            FIFO_sigmoid_interface.re <= 1'b1;
             FIFO_REGION_right_read.re <= 1'b1;
         end
     end
-    assign subtract_trigger = FIFO_REGION_left_read.rvalid && FIFO_REGION_right_read.rvalid;
+    assign subtract_trigger = FIFO_sigmoid_interface.rvalid && FIFO_REGION_right_read.rvalid;
 
     // *************************************************************************
     //
@@ -150,6 +185,7 @@ module glm_delta
                     REGION_left_read_accessproperties <= regs[1];
                     REGION_right_read_accessproperties <= regs[2];
                     output_accessproperties <= regs[3];
+                    do_sigmoid <= regs[4][0];
                     // *************************************************************************
                     num_processed_lines <= 0;
                     num_performed_iterations <= 0;
@@ -160,22 +196,18 @@ module glm_delta
 
             STATE_PROCESS:
             begin
-                if (subtract_trigger)
+                if (subtract_valid)
                 begin
                     num_processed_lines <= num_processed_lines + 1;
                     if (num_processed_lines == num_lines_to_process-1)
                     begin
                         num_processed_lines <= 0;
-                    end
-                end
-
-                if (subtract_valid)
-                begin
-                    num_performed_iterations <= num_performed_iterations + 1;
-                    if (num_performed_iterations == num_iterations-1)
-                    begin
-                        op_done <= 1'b1;
-                        delta_state <= STATE_IDLE;
+                        num_performed_iterations <= num_performed_iterations + 1;
+                        if (num_performed_iterations == num_iterations-1)
+                        begin
+                            op_done <= 1'b1;
+                            delta_state <= STATE_IDLE;
+                        end
                     end
                 end
             end

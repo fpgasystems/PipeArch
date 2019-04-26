@@ -17,10 +17,15 @@ memory/write_region.sv
 
 compute/dec23_to_float_convert.sv
 compute/fixed_adder_tree.vhd
+compute/float_greaterthan.sv
+compute/float_l1reg.sv
+compute/float_lessthan.sv
 compute/float_mult.sv
 compute/float_scalar_vector_mult.sv
+compute/float_sigmoid.sv
 compute/float_subtract.sv
 compute/float_vector_mult.sv
+compute/float_vector_sigmoid.sv
 compute/float_vector_subtract.sv
 compute/hybrid_dot_product.vhd
 
@@ -44,6 +49,9 @@ IP/intel_IP/fp_exp_arria10/altera_fp_functions_160/sim/fp_exp_arria10_altera_fp_
 IP/intel_IP/fp_exp_arria10/altera_fp_functions_160/sim/fp_exp_arria10_altera_fp_functions_160_lvppkfy_floatTable_kPPreZLow_uid67_fpExpETest_lutmem.hex
 IP/intel_IP/fp_exp_arria10/altera_fp_functions_160/sim/fp_exp_arria10_altera_fp_functions_160_lvppkfy.vhd
 IP/intel_IP/fp_exp_arria10/sim/fp_exp_arria10.v
+
+IP/intel_IP/fp_exp_arria10_nohard/altera_fp_functions_160/sim/fp_exp_arria10_nohard_altera_fp_functions_160_724m2py.vhd
+IP/intel_IP/fp_exp_arria10_nohard/sim/fp_exp_arria10_nohard.v
 
 IP/intel_IP/fp_gt_arria10/altera_fp_functions_160/sim/fp_gt_arria10_altera_fp_functions_160_jgnu7ly.vhd
 IP/intel_IP/fp_gt_arria10/sim/fp_gt_arria10.v

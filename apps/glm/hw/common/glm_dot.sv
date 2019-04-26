@@ -8,7 +8,7 @@ module glm_dot
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [4],
+    input logic [31:0] regs [5],
 
     fifobram_interface.read MEM_props_left,
     fifobram_interface.read MEM_props_right,
@@ -40,6 +40,7 @@ module glm_dot
     logic [31:0] REGION_left_read_accessproperties;
     logic [31:0] REGION_right_read_accessproperties;
     logic [31:0] output_accessproperties;
+    logic do_sigmoid;
 
     // *************************************************************************
     //
@@ -133,8 +134,21 @@ module glm_dot
     end
     assign dot_trigger = FIFO_REGION_left_read.rvalid && FIFO_REGION_right_read.rvalid;
 
-    assign from_dot_to_output.we = dot_done;
-    assign from_dot_to_output.wdata = dot_result;
+    logic sigmoid_trigger;
+    logic sigmoid_done;
+    logic [31:0] sigmoid_result;
+    float_sigmoid
+    sigmoid (
+        .clk(clk),
+        .reset(reset),
+        .in(dot_result),
+        .in_valid(sigmoid_trigger),
+        .q(sigmoid_result),
+        .q_valid(sigmoid_done));
+
+    assign sigmoid_trigger = do_sigmoid ? dot_done : 1'b0;
+    assign from_dot_to_output.we = do_sigmoid ? sigmoid_done : dot_done;
+    assign from_dot_to_output.wdata = do_sigmoid ? sigmoid_result : dot_result;
 
     always_ff @(posedge clk)
     begin
@@ -152,6 +166,7 @@ module glm_dot
                     REGION_left_read_accessproperties <= regs[1];
                     REGION_right_read_accessproperties <= regs[2];
                     output_accessproperties <= regs[3];
+                    do_sigmoid <= regs[4][0];
                     // *************************************************************************
                     num_processed_lines <= 0;
                     num_performed_iterations <= 0;
@@ -171,7 +186,7 @@ module glm_dot
                     end
                 end
 
-                if (dot_done)
+                if ( (do_sigmoid == 1'b0 && dot_done) || (do_sigmoid == 1'b1 && sigmoid_done) )
                 begin
                     num_performed_iterations <= num_performed_iterations + 1;
                     if (num_performed_iterations == num_iterations-1)

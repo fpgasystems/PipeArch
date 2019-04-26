@@ -278,20 +278,23 @@ public:
 		uint32_t numLinesToProcess,
 		localaccess_t leftInputAccess,
 		localaccess_t rightInputAccess,
-		localaccess_t outputAccess)
+		localaccess_t outputAccess,
+		bool doSigmoid)
 	{
 		m_data[15] |= (4 << 4);
 		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
 		m_data[4] = leftInputAccess.GetReg();
 		m_data[5] = rightInputAccess.GetReg();
 		m_data[6] = outputAccess.GetReg();
+		m_data[7] = doSigmoid ? 1 : 0;
 	}
 
 	void Dot(
 		uint32_t numLinesToProcess,
 		localaccess_t leftInputAccess,
 		localaccess_t rightInputAccess,
-		localaccess_t outputAccess)
+		localaccess_t outputAccess,
+		bool doSigmoid)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (4 << 4);
@@ -299,6 +302,7 @@ public:
 		m_data[4] = leftInputAccess.GetReg();
 		m_data[5] = rightInputAccess.GetReg();
 		m_data[6] = outputAccess.GetReg();
+		m_data[7] = doSigmoid ? 1 : 0;
 	}
 
 	void Delta(
@@ -306,20 +310,23 @@ public:
 		uint32_t numLinesToProcess,
 		localaccess_t leftInputAccess,
 		localaccess_t rightInputAccess,
-		localaccess_t outputAccess)
+		localaccess_t outputAccess,
+		bool doSigmoid)
 	{
 		m_data[15] |= (9 << 4);
 		m_data[3] = ((numIterations & 0xFFFF) << 16) | (numLinesToProcess & 0xFFFF);
 		m_data[4] = leftInputAccess.GetReg();
 		m_data[5] = rightInputAccess.GetReg();
 		m_data[6] = outputAccess.GetReg();
+		m_data[7] = doSigmoid ? 1 : 0;
 	}
 
 	void Delta(
 		uint32_t numLinesToProcess,
 		localaccess_t leftInputAccess,
 		localaccess_t rightInputAccess,
-		localaccess_t outputAccess)
+		localaccess_t outputAccess,
+		bool doSigmoid)
 	{
 		uint32_t numIterations = 1;
 		m_data[15] |= (9 << 4);
@@ -327,6 +334,7 @@ public:
 		m_data[4] = leftInputAccess.GetReg();
 		m_data[5] = rightInputAccess.GetReg();
 		m_data[6] = outputAccess.GetReg();
+		m_data[7] = doSigmoid ? 1 : 0;
 	}
 
 	void Modify(
@@ -449,14 +457,44 @@ public:
 		m_data[8] = enableAsync ? 1 : 0;
 	}
 
+	void L2Reg(
+		uint32_t numLinesToProcess,
+		localaccess_t modeloldInputAccess,
+		localaccess_t modelnewInputAccess,
+		localaccess_t modelforwardOutputAccess,
+		localaccess_t modelnewOutputAccess,
+		float lambda)
+	{
+		m_data[15] |= (12 << 4);
+		m_data[3] = numLinesToProcess & 0xFFFF;
+		m_data[4] = modeloldInputAccess.GetReg();
+		m_data[5] = modelnewInputAccess.GetReg();
+		m_data[6] = modelforwardOutputAccess.GetReg();
+		m_data[7] = modelnewOutputAccess.GetReg();
+		m_data[8] = *((uint32_t*)&lambda);
+	}
+
 	void Copy(
 		localaccess_t sourceInputAccess,
 		localaccess_t destinationOutputAccess)
 	{
-		m_data[15] |= (7 << 4);
-		m_data[3] = sourceInputAccess.GetReg();
-		m_data[4] = destinationOutputAccess.GetReg();
+		m_data[15] |= (12 << 4);
+		m_data[3] = sourceInputAccess.m_lengthInCL & 0xFFFF;
+		m_data[4] = 0;
+		m_data[5] = sourceInputAccess.GetReg();
+		m_data[6] = destinationOutputAccess.GetReg();
+		m_data[7] = 0;
+		m_data[8] = 0;
 	}
+
+	// void Copy(
+	// 	localaccess_t sourceInputAccess,
+	// 	localaccess_t destinationOutputAccess)
+	// {
+	// 	m_data[15] |= (7 << 4);
+	// 	m_data[3] = sourceInputAccess.GetReg();
+	// 	m_data[4] = destinationOutputAccess.GetReg();
+	// }
 
 	void LoadReg(
 		uint32_t whichReg,

@@ -17,10 +17,15 @@ memory/write_region.sv
 
 compute/dec23_to_float_convert.sv
 compute/fixed_adder_tree.vhd
+compute/float_greaterthan.sv
+compute/float_l1reg.sv
+compute/float_lessthan.sv
 compute/float_mult.sv
 compute/float_scalar_vector_mult.sv
+compute/float_sigmoid.sv
 compute/float_subtract.sv
 compute/float_vector_mult.sv
+compute/float_vector_sigmoid.sv
 compute/float_vector_subtract.sv
 compute/hybrid_dot_product.vhd
 

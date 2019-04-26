@@ -141,10 +141,9 @@ module pipearch_dma_read_xilinx
     //
     // *************************************************************************
     logic request_async;
-    logic [31:0] temp_reg [5];
-    t_claddr temp_addr;
+    t_dma_control temp_control;
 
-    parameter TX_FIFO_WIDTH = 1+32*5+$bits(t_claddr);
+    parameter TX_FIFO_WIDTH = $bits(t_dma_control);
     fifobram_interface #(.WIDTH(TX_FIFO_WIDTH), .LOG2_DEPTH(6)) tx_fifo_access();
     fifo
     #(.WIDTH(TX_FIFO_WIDTH), .LOG2_DEPTH(6))
@@ -158,13 +157,7 @@ module pipearch_dma_read_xilinx
     always_ff @(posedge clk)
     begin
         tx_fifo_access.we <= DMA_read.control.start;
-        tx_fifo_access.wdata <= {   DMA_read.control.async,
-                                    DMA_read.control.regs.reg4,
-                                    DMA_read.control.regs.reg3,
-                                    DMA_read.control.regs.reg2,
-                                    DMA_read.control.regs.reg1,
-                                    DMA_read.control.regs.reg0,
-                                    DMA_read.control.addr};
+        tx_fifo_access.wdata <= DMA_read.control;
         tx_fifo_access.re <= 1'b0;
         if (!tx_fifo_access.empty && started_request == 1'b0)
         begin
@@ -176,6 +169,8 @@ module pipearch_dma_read_xilinx
             started_request <= 1'b0;
         end
     end
+
+    assign temp_control = tx_fifo_access.rdata;
 
     // *************************************************************************
     //
@@ -234,21 +229,14 @@ module pipearch_dma_read_xilinx
                 if (tx_fifo_access.rvalid)
                 begin
                     // *************************************************************************
-                    request_async <= tx_fifo_access.rdata[$bits(t_claddr)+5*32];
-                    temp_reg[4] = tx_fifo_access.rdata[$bits(t_claddr)+128 +: 32];
-                    temp_reg[3] = tx_fifo_access.rdata[$bits(t_claddr)+96 +: 32];
-                    temp_reg[2] = tx_fifo_access.rdata[$bits(t_claddr)+64 +: 32];
-                    temp_reg[1] = tx_fifo_access.rdata[$bits(t_claddr)+32 +: 32];
-                    temp_reg[0] = tx_fifo_access.rdata[$bits(t_claddr) +: 32];
-                    temp_addr = tx_fifo_access.rdata[0 +: $bits(t_claddr)];
-
-                    offset_by_index[0] <= temp_reg[0];
-                    offset_by_index[1] <= temp_reg[1];
-                    offset_by_index[2] <= temp_reg[2];
-                    DRAM_load_offset <= temp_addr + temp_reg[3];
-                    DRAM_load_length <= temp_reg[4][30:0];
-                    enable_multiline <= temp_reg[4][31];
-                    num_wait_fifo_lines <= tx_fifo_access.rdata[$bits(t_claddr)+5*32] ? temp_reg[4][30:0] : 32'b0;
+                    request_async <= temp_control.async;
+                    offset_by_index[0] <= temp_control.regs.reg0;
+                    offset_by_index[1] <= temp_control.regs.reg1;
+                    offset_by_index[2] <= temp_control.regs.reg2;
+                    DRAM_load_offset <= temp_control.addr + temp_control.regs.reg3;
+                    DRAM_load_length <= temp_control.regs.reg4[30:0];
+                    enable_multiline <= temp_control.regs.reg4[31];
+                    num_wait_fifo_lines <= temp_control.async ? temp_control.regs.reg4[30:0] : 32'b0;
                     // *************************************************************************
                     offset_accumulate <= 2'b0;
                     num_requested_lines <= 0;
