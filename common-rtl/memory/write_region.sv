@@ -165,6 +165,7 @@ module write_region
         if (reset)
         begin
             receive_state <= STATE_IDLE;
+            memory_store <= 0;
         end
     end
 endmodule // write_region

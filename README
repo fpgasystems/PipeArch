@@ -19,9 +19,10 @@
 
 ### Synthesis
 - cd ./apps/glm
-- afu_synth_setup --source ./hw/output.sources.txt ./intel_work/build_synth
+- afu_synth_setup --source ./hw/intel_top/sources.txt ./intel_work/build_synth
 - cd ./intel_work/build_synth
 - chmod a+x ./build/generate_pr_bitstream.sh
+- Change line endings in ./build/generate_pr_bitstream.sh from Windows to Unix
 - ${OPAE_PLATFORM_ROOT}/bin/run.sh
 
 ## Xilinx

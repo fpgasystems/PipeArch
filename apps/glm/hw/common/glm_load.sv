@@ -222,6 +222,7 @@ module glm_load
 
         from_load.we <= 1'b0;
         MEM_accessprops_read.re <= 1'b0;
+        MEM_accessprops_read.rfifobram <= 2'b01;
         op_done <= 1'b0;
 
         // =================================

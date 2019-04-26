@@ -168,14 +168,14 @@ interface fifobram_interface
     // wfifobram 01 -> bram
     // wfifobram 10 -> fifo
     // wfifobram 11 -> both
-    logic [1:0]             wfifobram = 2'b01;
+    logic [1:0]             wfifobram;
 
     // Request
     logic                   re;
     logic [LOG2_DEPTH-1:0]  raddr;
     // rfifobram 01 -> bram
     // rfifobram 10 -> fifo
-    logic [1:0]             rfifobram = 2'b01;
+    logic [1:0]             rfifobram;
 
     // Read
     logic [WIDTH-1:0]       rdata;

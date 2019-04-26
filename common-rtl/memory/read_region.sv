@@ -58,6 +58,7 @@ module read_region
     begin
         props_access.re <= 1'b0;
         region_access.re <= 1'b0;
+        region_access.rfifobram <= 2'b00;
 
         outfrom_read.rvalid <= region_access.rvalid;
         outfrom_read.rdata <= region_access.rdata;

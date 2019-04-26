@@ -40,6 +40,7 @@ module pipearch_loadreg
     always_ff @(posedge clk)
     begin
         REGION_read.re <= 1'b0;
+        REGION_read.rfifobram <= 2'b01;
         op_done <= 1'b0;
 
         case (loadreg_state)

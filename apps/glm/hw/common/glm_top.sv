@@ -841,8 +841,8 @@ module glm_top
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(2))
     REGION_input (
         .clk, .reset,
-        .write_access(REGION_input_write.write_source),
-        .read_access(REGION_input_read.read_source)
+        .write_access(REGION_input_write),
+        .read_access(REGION_input_read)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_inputcopy_interface[2]();
@@ -850,7 +850,7 @@ module glm_top
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(2))
     REGION_model3 (
         .clk, .reset,
-        .access(REGION_inputcopy_interface.source)
+        .access(REGION_inputcopy_interface)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model1_write[2]();
@@ -859,8 +859,8 @@ module glm_top
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(2), .NUM_READ_CHANNELS(3))
     REGION_model1 (
         .clk, .reset,
-        .write_access(REGION_model1_write.write_source),
-        .read_access(REGION_model1_read.read_source)
+        .write_access(REGION_model1_write),
+        .read_access(REGION_model1_read)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model2_interface[4]();
@@ -868,7 +868,7 @@ module glm_top
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(4))
     REGION_model2 (
         .clk, .reset,
-        .access(REGION_model2_interface.source)
+        .access(REGION_model2_interface)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_labels_interface[3]();
@@ -876,7 +876,7 @@ module glm_top
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(3))
     REGION_labels (
         .clk, .reset,
-        .access(REGION_labels_interface.source)
+        .access(REGION_labels_interface)
     );
 
     fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) REGION_dot_interface[1]();
@@ -884,7 +884,7 @@ module glm_top
     #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE), .NUM_CHANNELS(1))
     REGION_dot (
         .clk, .reset,
-        .access(REGION_dot_interface.source)
+        .access(REGION_dot_interface)
     );
 
     fifobram_interface #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE)) REGION_gradient_write[1]();
@@ -893,8 +893,8 @@ module glm_top
     #(.WIDTH(32), .LOG2_DEPTH(LOG2_INTERNAL_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(2))
     REGION_gradient (
         .clk, .reset,
-        .write_access(REGION_gradient_write.write_source),
-        .read_access(REGION_gradient_read.read_source)
+        .write_access(REGION_gradient_write),
+        .read_access(REGION_gradient_read)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_accessprops_write[1]();
@@ -903,8 +903,8 @@ module glm_top
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(1))
     MEM_accessprops (
         .clk, .reset,
-        .write_access(MEM_accessprops_write.write_source),
-        .read_access(MEM_accessprops_read.read_source)
+        .write_access(MEM_accessprops_write),
+        .read_access(MEM_accessprops_read)
     );
 
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) MEM_localprops_write[1]();
@@ -913,8 +913,8 @@ module glm_top
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(7))
     MEM_localprops (
         .clk, .reset,
-        .write_access(MEM_localprops_write.write_source),
-        .read_access(MEM_localprops_read.read_source)
+        .write_access(MEM_localprops_write),
+        .read_access(MEM_localprops_read)
     );
 
     // =========================================================================
