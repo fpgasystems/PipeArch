@@ -46,15 +46,23 @@ for line in f_in:
 		# else:
 		# 	print("Duplicate user: " + str(user_id))
 
-		movies[movie_id].append([users[user_id], rating])
+		movies[movie_id].append([int(users[user_id]), int(rating)])
 
-for movie_id in movies:
-	print("movie_id: " + str(movie_id))
-	result = np.array(movies[movie_id]).flatten()
-	result = np.insert(result, 0, len(movies[movie_id]))
-	print("result.shape: " + str(result.shape))
-	print(result)
+print("user_counter: " + str(user_counter))
 
-	f_out = open(args.dir + '/rawfiles/movie' + str(movie_id) + '.raw', 'w');
-	result.tofile(f_out)
-	f_out.close()
+movies_array = [np.array(len(movies), dtype=np.uint32)]
+
+for item in movies.items():
+	temp_array = np.array(item[1], dtype=np.uint32).flatten()
+	temp_array = np.insert(temp_array, 0, len(item[1]))
+	temp_array = np.insert(temp_array, 0, item[0])
+	movies_array.append(temp_array)
+
+# print("-----------------------------")
+# print(type(movies_array))
+# print(movies_array)
+
+f_out = open(args.dir + '/rawfiles/' + args.file.replace('txt', 'raw'), 'w');
+for i in movies_array:
+	i.tofile(f_out)
+f_out.close()
