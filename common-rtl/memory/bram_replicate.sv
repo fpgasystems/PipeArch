@@ -45,7 +45,7 @@ module bram_replicate
                 rfifobram[index] <= read_access[index].rfifobram;
             end
 
-            assign MEM_region_interface[index].re = read_access[index].rfifobram[0] ? read_access[index].re : 1'b0;
+            assign MEM_region_interface[index].re = read_access[index].rfifobram[0] && read_access[index].re;
             assign MEM_region_interface[index].raddr = read_access[index].raddr;
 
             assign read_access[index].rvalid = (MEM_region_interface[index].rvalid && rfifobram[index] == 2'b01 && re[index]);

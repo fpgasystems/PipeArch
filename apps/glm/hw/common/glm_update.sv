@@ -116,6 +116,8 @@ module glm_update
     // *************************************************************************
     logic gradient_read;
     logic multiply_valid;
+    logic [31:0] gradient;
+    logic [31:0] multiply_scalar;
     logic [CLDATA_WIDTH-1:0] multiply_result;
     float_scalar_vector_mult
     #(
@@ -126,11 +128,12 @@ module glm_update
         .clk,
         .reset(reset),
         .trigger(FIFO_REGION_samples_read.rvalid),
-        .scalar(FIFO_REGION_gradient_read.rdata),
+        .scalar(multiply_scalar),
         .vector(FIFO_REGION_samples_read.rdata),
         .result_valid(multiply_valid),
         .result(multiply_result)
     );
+    assign multiply_scalar = FIFO_REGION_gradient_read.rvalid ? FIFO_REGION_gradient_read.rdata : gradient;
 
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_multiply();
     fifo
@@ -165,6 +168,11 @@ module glm_update
                     num_lines_multiplied_requested <= 0;
                 end
             end
+        end
+
+        if (FIFO_REGION_gradient_read.rvalid)
+        begin
+            gradient <= FIFO_REGION_gradient_read.rdata;
         end
 
         if (update_state == STATE_IDLE)

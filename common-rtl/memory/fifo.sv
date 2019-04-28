@@ -58,6 +58,7 @@ always_ff @(posedge clk)
 begin
 	internal_empty <= empty;
 	access.rvalid <= 1'b0;
+	access.rdata <= memory[raddr];
 
 	// Write
 	if (access.we)
@@ -70,7 +71,6 @@ begin
 	if (access.re && internal_empty == 1'b0)
 	begin
 		access.rvalid <= 1'b1;
-		access.rdata <= memory[raddr];
 		raddr <= raddr+1;
 	end
 
