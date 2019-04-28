@@ -47,7 +47,6 @@ module glm_load
         STATE_DONE
     } t_readstate;
     t_readstate request_state;
-    t_readstate receive_state;
 
     // *************************************************************************
     //
@@ -197,7 +196,7 @@ module glm_load
         begin
             num_received_lines <= 32'b0;
         end
-        if (DMA_read.rx_read.rvalid && receive_state == STATE_READ)
+        if (DMA_read.rx_read.rvalid && request_state == STATE_READ)
         begin
             num_received_lines <= num_received_lines + 1;
             prefetch_fifo_access.we <= 1'b1;
@@ -259,6 +258,7 @@ module glm_load
                     num_requested_lines <= 32'b0;
                     num_requested_lines_plus4 <= 32'd4;
                     num_requested_lines_plus2 <= 32'd2;
+                    num_forward_request_lines <= 32'b0;
                     if (regs[4][30:0] == 0 && regs[3][31] == 0)
                     begin
                         request_state <= STATE_DONE;
@@ -371,7 +371,14 @@ module glm_load
                     end
                 end
 
-                if (num_requested_lines == DRAM_load_length)
+                if (prefetch_fifo_access.rvalid)
+                begin
+                    from_load.we <= 1'b1;
+                    from_load.wdata <= prefetch_fifo_access.rdata;
+                    num_forward_request_lines <= num_forward_request_lines + 1;
+                end
+
+                if (num_forward_request_lines == DRAM_load_length)
                 begin
                     request_state <= STATE_DONE;
                 end
@@ -379,57 +386,14 @@ module glm_load
 
             STATE_DONE:
             begin
-                request_state <= STATE_IDLE;
-            end
-        endcase
-
-        // =================================
-        //
-        //   Receive State Machine
-        //
-        // =================================
-        case (receive_state)
-            STATE_IDLE:
-            begin
-                if (op_start)
-                begin
-                    num_forward_request_lines <= 32'b0;
-                    if (regs[4][30:0] == 0 && regs[3][31] == 0)
-                    begin
-                        receive_state <= STATE_DONE;
-                    end
-                    else
-                    begin
-                        receive_state <= STATE_READ;
-                    end
-                end
-            end
-
-            STATE_READ:
-            begin
-                if (prefetch_fifo_access.rvalid)
-                begin
-                    from_load.we <= 1'b1;
-                    from_load.wdata <= prefetch_fifo_access.rdata;
-                    num_forward_request_lines <= num_forward_request_lines + 1;
-                    if (num_forward_request_lines == DRAM_load_length-1)
-                    begin
-                        receive_state <= STATE_DONE;
-                    end
-                end
-            end
-
-            STATE_DONE:
-            begin
                 op_done <= 1'b1;
-                receive_state <= STATE_IDLE;
+                request_state <= STATE_IDLE;
             end
         endcase
 
         if (internal_reset)
         begin
             request_state <= STATE_IDLE;
-            receive_state <= STATE_IDLE;
         end
 
     end

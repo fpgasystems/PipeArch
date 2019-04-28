@@ -746,6 +746,11 @@ module glm_top
                         begin
                             program_counter <= conditional(temp_regs[2], instruction[13], instruction[14][31:16], instruction[14][15:0]);
                         end
+
+                        4'h4:
+                        begin
+                            program_counter <= conditional(temp_regs[3], instruction[13], instruction[14][31:16], instruction[14][15:0]);
+                        end
                     endcase
 
                     machine_state <= MACHINE_STATE_EXECUTE;

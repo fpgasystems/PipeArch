@@ -479,8 +479,8 @@ public:
 					memcpy(M_tile_new, M_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 					memcpy(U_tile_new, U_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 
-					// cout << "------------------------------------------------------------------------------------------" << endl;
-					// cout << tm << " " << tu << " LTile.size(): " << LTile.size() << endl;
+					cout << "------------------------------------------------------------------------------------------" << endl;
+					cout << tm << " " << tu << " LTile.size(): " << LTile.size() << endl;
 
 					for (uint32_t i = 0; i < LTile.size(); i++) {
 

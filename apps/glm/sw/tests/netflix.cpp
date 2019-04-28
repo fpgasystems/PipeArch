@@ -4,7 +4,7 @@
 
 using namespace std;
 
-// #define FPGA
+#define FPGA
 
 int main(int argc, char* argv[]) {
 
