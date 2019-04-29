@@ -86,6 +86,7 @@ public:
 
 		cout << "m_tileSize: " << m_tileSize << endl;
 		cout << "m_numTilesM: " << m_numTilesM << endl;
+		cout << "m_numTilesU: " << m_numTilesU << endl;
 		cout << "m_restM: " << m_restM << endl;
 		cout << "m_numTilesUInCL: " << m_numTilesUInCL << endl;
 		cout << "m_restU: " << m_restU << endl;
@@ -174,20 +175,20 @@ public:
 		for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
 			for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
 
-				m_accessMindexes[tm*m_numTilesUInCL*8+tu].m_offsetInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
-				m_accessMindexes[tm*m_numTilesUInCL*8+tu].m_lengthInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
+				m_accessMindexes[tm*m_numTilesU+tu].m_offsetInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
+				m_accessMindexes[tm*m_numTilesU+tu].m_lengthInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
 
-				m_accessUindexes[tm*m_numTilesUInCL*8+tu].m_offsetInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
-				m_accessUindexes[tm*m_numTilesUInCL*8+tu].m_lengthInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
+				m_accessUindexes[tm*m_numTilesU+tu].m_offsetInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
+				m_accessUindexes[tm*m_numTilesU+tu].m_lengthInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
 
-				m_accessValues[tm*m_numTilesUInCL*8+tu].m_offsetInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_offsetInCL;
-				m_accessValues[tm*m_numTilesUInCL*8+tu].m_lengthInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_lengthInCL;
+				m_accessValues[tm*m_numTilesU+tu].m_offsetInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_offsetInCL;
+				m_accessValues[tm*m_numTilesU+tu].m_lengthInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_lengthInCL;
 
 				if (m_LBTiled[tm*m_numTilesU+tu].size() > 0) {
-					m_minibatchSizes[tm*m_numTilesUInCL*16+tu] = (m_LBTiled[tm*m_numTilesU+tu].size() << 16) | m_numFeaturesInCL;
+					m_minibatchSizes[tm*m_numTilesU+tu] = (m_LBTiled[tm*m_numTilesU+tu].size() << 16) | m_numFeaturesInCL;
 				}
 				else {
-					m_minibatchSizes[tm*m_numTilesUInCL*16+tu] = 0;
+					m_minibatchSizes[tm*m_numTilesU+tu] = 0;
 				}
 
 				uint32_t M_min = tm*m_tileSize;
@@ -195,12 +196,15 @@ public:
 
 				// cout << "M_min: " << M_min << endl;
 				// cout << "U_min: " << U_min << endl;
+				// cout << "----m_LBTiled[" << tm << "][" << tu << "].size(): " << m_LBTiled[tm*m_numTilesU+tu].size() << endl;
+				// cout << "----m_MindexesChunks[" << tm << "][" << tu << "].m_offsetInCL: " << m_MindexesChunks[tm*m_numTilesU+tu].m_offsetInCL << endl;
+				// cout << "----m_MindexesChunks[" << tm << "][" << tu << "].m_lengthInCL: " << m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL << endl;
 
 				for (uint32_t i = 0; i < m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL*16; i++) {
 					if (i < m_LBTiled[tm*m_numTilesU+tu].size()) {
-						// cout << "(m_LBTiled[" << tm << "][" << tu << "][i].m_Mindex: " << m_LBTiled[tm*m_numTilesU+tu][i].m_Mindex << endl;
-						// cout << "(m_LBTiled[" << tm << "][" << tu << "][i].m_Uindex: " << m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex << endl;
-						// cout << "(m_LBTiled[" << tm << "][" << tu << "][i].m_value: " << m_LBTiled[tm*m_numTilesU+tu][i].m_value << endl;
+						// cout << "(m_LBTiled[" << tm << "][" << tu << "][" << i << "].m_Mindex: " << m_LBTiled[tm*m_numTilesU+tu][i].m_Mindex << endl;
+						// cout << "(m_LBTiled[" << tm << "][" << tu << "][" << i << "].m_Uindex: " << m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex << endl;
+						// cout << "(m_LBTiled[" << tm << "][" << tu << "][" << i << "].m_value: " << m_LBTiled[tm*m_numTilesU+tu][i].m_value << endl;
 
 						m_MindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Mindex-M_min)*m_numFeaturesInCL & 0x3FFF);
 						m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
@@ -272,9 +276,9 @@ public:
 
 		// MEM_ACCESSPROPS
 		uint32_t accessMindexesOffsetInBRAM = 0;
-		uint32_t accessUindexesOffsetInBRAM = accessMindexesOffsetInBRAM + m_numTilesUInCL;
-		uint32_t accessValuesOffsetInBRAM = accessUindexesOffsetInBRAM + m_numTilesUInCL;
-		uint32_t MEM_ACCESSPROPS_size = accessValuesOffsetInBRAM + m_numTilesUInCL;
+		uint32_t accessUindexesOffsetInBRAM = accessMindexesOffsetInBRAM + m_numTilesUInCL*2;
+		uint32_t accessValuesOffsetInBRAM = accessUindexesOffsetInBRAM + m_numTilesUInCL*2;
+		uint32_t MEM_ACCESSPROPS_size = accessValuesOffsetInBRAM + m_numTilesUInCL*2;
 		fit &= CheckMemoryFit(MEM_ACCESSPROPS_size, "MEM_ACCESSPROPS");
 
 		// MEM_LOCALPROPS
@@ -325,21 +329,21 @@ public:
 		// Per M tile
 		uint32_t loadMtile = pc;
 		vector<localaccess_t> loadAccessMIndexWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadAccessMIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessMindexesOffsetInBRAM, m_numTilesUInCL);
-		m_inst[pc].Load(m_accessMindexesChunk.m_offsetInCL, m_numTilesUInCL,
-			0, m_numTilesUInCL, 0, loadAccessMIndexWrite);
+		loadAccessMIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessMindexesOffsetInBRAM, m_numTilesUInCL*2);
+		m_inst[pc].Load(m_accessMindexesChunk.m_offsetInCL, m_numTilesUInCL*2,
+			0, m_numTilesUInCL*2, 0, loadAccessMIndexWrite);
 		pc++;
 
 		vector<localaccess_t> loadAccessUIndexWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadAccessUIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessUindexesOffsetInBRAM, m_numTilesUInCL);
-		m_inst[pc].Load(m_accessUindexesChunk.m_offsetInCL, m_numTilesUInCL,
-			0, m_numTilesUInCL, 0, loadAccessUIndexWrite);
+		loadAccessUIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessUindexesOffsetInBRAM, m_numTilesUInCL*2);
+		m_inst[pc].Load(m_accessUindexesChunk.m_offsetInCL, m_numTilesUInCL*2,
+			0, m_numTilesUInCL*2, 0, loadAccessUIndexWrite);
 		pc++;
 
 		vector<localaccess_t> loadAccessValuesWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadAccessValuesWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessValuesOffsetInBRAM, m_numTilesUInCL);
-		m_inst[pc].Load(m_accessValuesChunk.m_offsetInCL, m_numTilesUInCL,
-			0, m_numTilesUInCL, 0, loadAccessValuesWrite);
+		loadAccessValuesWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessValuesOffsetInBRAM, m_numTilesUInCL*2);
+		m_inst[pc].Load(m_accessValuesChunk.m_offsetInCL, m_numTilesUInCL*2,
+			0, m_numTilesUInCL*2, 0, loadAccessValuesWrite);
 		pc++;
 
 		vector<localaccess_t> loadMinibatchSizesWrite(Instruction::NUM_LOAD_CHANNELS);

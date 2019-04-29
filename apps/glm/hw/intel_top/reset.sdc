@@ -1,1 +1,1 @@
-set_max_delay -from inst_ccip_interface_reg|inst_green_top|platform_shim_ccip_std_afu|ccip_std_afu|app|pipearch_top_inst|internal_reset[0] -to inst_ccip_interface_reg|inst_green_top|platform_shim_ccip_std_afu|ccip_std_afu|app|pipearch_top_inst|internal_reset[1] 100.000
+set_max_delay -from inst_ccip_interface_reg|inst_green_top|platform_shim_ccip_std_afu|ccip_std_afu|app|intel_arbiter_inst|internal_reset[0] -to inst_ccip_interface_reg|inst_green_top|platform_shim_ccip_std_afu|ccip_std_afu|app|intel_arbiter_inst|internal_reset[1] 100.000
