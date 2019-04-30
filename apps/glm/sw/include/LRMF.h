@@ -283,6 +283,10 @@ public:
 				m_LBTiled[tile_m*m_numTilesU + tile_u].push_back(m_LB[i]);
 			}
 		}
+
+		for (uint32_t t = 0; t < m_numTilesM*m_numTilesU; t++) {
+			random_shuffle(m_LBTiled[t].begin(), m_LBTiled[t].end());
+		}
 	}
 
 	float Dot(float* vector1, float* vector2, uint32_t numFeatures) {
@@ -479,8 +483,8 @@ public:
 					memcpy(M_tile_new, M_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 					memcpy(U_tile_new, U_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 
-					cout << "------------------------------------------------------------------------------------------" << endl;
-					cout << tm << " " << tu << " LTile.size(): " << LTile.size() << endl;
+					// cout << "------------------------------------------------------------------------------------------" << endl;
+					// cout << tm << " " << tu << " LTile.size(): " << LTile.size() << endl;
 
 					for (uint32_t i = 0; i < LTile.size(); i++) {
 

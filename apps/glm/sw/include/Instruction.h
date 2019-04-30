@@ -267,6 +267,27 @@ public:
 		}
 	}
 
+	void BlockOnInstruction(string name) {
+		m_data[15] |= (1 << 10) | (1 << 8);
+		
+		if (name.compare("Dot") == 0)
+			m_data[15] |= (4 << 4);
+		else if (name.compare("Delta") == 0)
+			m_data[15] |= (9 << 4);
+		else if (name.compare("Modify") == 0)
+			m_data[15] |= (5 << 4);
+		else if (name.compare("Update") == 0)
+			m_data[15] |= (6 << 4);
+		else if (name.compare("Update2") == 0)
+			m_data[15] |= (10 << 4);
+		else if (name.compare("L2Reg") == 0)
+			m_data[15] |= (12 << 4);
+		else if (name.compare("Copy") == 0)
+			m_data[15] |= (12 << 4);
+		else if (name.compare("Copy2") == 0)
+			m_data[15] |= (7 << 4);
+	}
+
 	// *************************************************************************
 	//
 	//   Instructions
@@ -487,14 +508,14 @@ public:
 		m_data[8] = 0;
 	}
 
-	// void Copy(
-	// 	localaccess_t sourceInputAccess,
-	// 	localaccess_t destinationOutputAccess)
-	// {
-	// 	m_data[15] |= (7 << 4);
-	// 	m_data[3] = sourceInputAccess.GetReg();
-	// 	m_data[4] = destinationOutputAccess.GetReg();
-	// }
+	void Copy2(
+		localaccess_t sourceInputAccess,
+		localaccess_t destinationOutputAccess)
+	{
+		m_data[15] |= (7 << 4);
+		m_data[3] = sourceInputAccess.GetReg();
+		m_data[4] = destinationOutputAccess.GetReg();
+	}
 
 	void LoadReg(
 		uint32_t whichReg,

@@ -373,6 +373,7 @@ module glm_top
     // opcode = instruction[15][7:0]
     // nonblocking = instruction[15][8]
     // enableswitch = instruction[15][9]
+    // just block on opcode = instruction[15][10]
 
     // if opcode == 0xN0 ---- Increment PC
     //  programCounter++
@@ -505,7 +506,7 @@ module glm_top
     logic [31:0] modify_regs [7];
     logic [31:0] update1_regs [6];
     logic [31:0] update2_regs [6];
-    // logic [31:0] copy_regs [2];
+    logic [31:0] copy_regs [2];
     logic [31:0] loadreg_regs[3];
     logic [31:0] loadreg_outregs [NUM_REGS];
     logic [31:0] l2reg_regs[6];
@@ -597,7 +598,7 @@ module glm_top
 
                         4'h1: // prefetch
                         begin
-                            op_start[0] <= 1'b1;
+                            op_start[0] <= !instruction[15][10];
                             prefetch_regs.reg0 <= DSP27Mult(temp_regs[0],instruction[10]);
                             prefetch_regs.reg1 <= DSP27Mult(temp_regs[1],instruction[11]);
                             prefetch_regs.reg2 <= DSP27Mult(temp_regs[2],instruction[12]);
@@ -607,7 +608,7 @@ module glm_top
 
                         4'h2: // load
                         begin
-                            op_start[1] <= 1'b1;
+                            op_start[1] <= !instruction[15][10];
                             load_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
                             load_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
                             load_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
@@ -621,7 +622,7 @@ module glm_top
 
                         4'h3: // writeback
                         begin
-                            op_start[2] <= 1'b1;
+                            op_start[2] <= !instruction[15][10];
                             writeback_regs[0] <= DSP27Mult(temp_regs[0],instruction[10]);
                             writeback_regs[1] <= DSP27Mult(temp_regs[1],instruction[11]);
                             writeback_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
@@ -641,7 +642,7 @@ module glm_top
                         // *************************************************************************
                         4'h4: // dot
                         begin
-                            op_start[3] <= 1'b1;
+                            op_start[3] <= !instruction[15][10];
                             dot_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             dot_regs[1] <= instruction[4];
                             dot_regs[2] <= instruction[5];
@@ -651,7 +652,7 @@ module glm_top
 
                         4'h5: // modify
                         begin
-                            op_start[4] <= 1'b1;
+                            op_start[4] <= !instruction[15][10];
                             modify_regs[0] <= temp_regs[0];
                             modify_regs[1] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             modify_regs[2] <= instruction[4];
@@ -663,7 +664,7 @@ module glm_top
 
                         4'h6: // update1
                         begin
-                            op_start[5] <= 1'b1;
+                            op_start[5] <= !instruction[15][10];
                             update1_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             update1_regs[1] <= instruction[4];
                             update1_regs[2] <= instruction[5];
@@ -674,7 +675,7 @@ module glm_top
 
                         4'ha: // update2
                         begin
-                            op_start[9] <= 1'b1;
+                            op_start[9] <= !instruction[15][10];
                             update2_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
                             update2_regs[1] <= instruction[4];
                             update2_regs[2] <= instruction[5];
@@ -683,21 +684,21 @@ module glm_top
                             update2_regs[5] <= instruction[8];
                         end
 
-                        // 4'h7: // copy
-                        // begin
-                        //     op_start[6] <= 1'b1;
-                        //     copy_regs[0] <= instruction[3];
-                        //     copy_regs[1] <= instruction[4];
-                        // end
+                        4'h7: // copy
+                        begin
+                            op_start[6] <= !instruction[15][10];
+                            copy_regs[0] <= instruction[3];
+                            copy_regs[1] <= instruction[4];
+                        end
 
                         4'h8: // synchronize
                         begin
-                            op_start[7] <= 1'b1;
+                            op_start[7] <= !instruction[15][10];
                         end
 
                         4'h9: // delta
                         begin
-                            op_start[8] <= 1'b1;
+                            op_start[8] <= !instruction[15][10];
                             delta_regs[0] <= instruction[3];
                             delta_regs[1] <= instruction[4];
                             delta_regs[2] <= instruction[5];
@@ -707,7 +708,7 @@ module glm_top
 
                         4'hb: // loadreg
                         begin
-                            op_start[10] <= 1'b1;
+                            op_start[10] <= !instruction[15][10];
                             loadreg_regs[0] <= temp_regs[0];
                             loadreg_regs[1] <= instruction[3];
                             loadreg_regs[2] <= instruction[4];
@@ -715,7 +716,7 @@ module glm_top
 
                         4'hc:
                         begin
-                            op_start[11] <= 1'b1;
+                            op_start[11] <= !instruction[15][10];
                             l2reg_regs[0] <= instruction[3];
                             l2reg_regs[1] <= instruction[4];
                             l2reg_regs[2] <= instruction[5];
@@ -841,9 +842,9 @@ module glm_top
     //
     // *************************************************************************
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_write[1]();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_read[2]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_read[3]();
     region_replicate
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(2))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(3))
     REGION_input (
         .clk, .reset,
         .write_access(REGION_input_write),
@@ -853,7 +854,7 @@ module glm_top
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_inputcopy_interface[2]();
     region
     #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_CHANNELS(2))
-    REGION_model3 (
+    REGION_inputcopy (
         .clk, .reset,
         .access(REGION_inputcopy_interface)
     );
@@ -946,13 +947,13 @@ module glm_top
         .MEM_accessprops_write(MEM_accessprops_write[0].write),
         .MEM_accessprops_read(MEM_accessprops_read[0].read)
     );
-    always_ff @(posedge clk)
-    begin
-        REGION_inputcopy_interface[0].we <= REGION_input_write[0].we;
-        REGION_inputcopy_interface[0].waddr <= REGION_input_write[0].waddr;
-        REGION_inputcopy_interface[0].wdata <= REGION_input_write[0].wdata;
-        REGION_inputcopy_interface[0].wfifobram <= REGION_input_write[0].wfifobram;
-    end
+    // always_ff @(posedge clk)
+    // begin
+    //     REGION_inputcopy_interface[0].we <= REGION_input_write[0].we;
+    //     REGION_inputcopy_interface[0].waddr <= REGION_input_write[0].waddr;
+    //     REGION_inputcopy_interface[0].wdata <= REGION_input_write[0].wdata;
+    //     REGION_inputcopy_interface[0].wfifobram <= REGION_input_write[0].wfifobram;
+    // end
 
     glm_writeback
     execute_writeback
@@ -1063,17 +1064,17 @@ module glm_top
         .REGION_modelnew_write(REGION_model2_interface[2].write)
     );
 
-    // pipearch_copy
-    // MEM_model_copy
-    // (
-    //     .clk,
-    //     .reset,
-    //     .op_start(op_start[6]),
-    //     .op_done(op_done[6]),
-    //     .regs(copy_regs),
-    //     .REGION_read(REGION_model2_interface[1].read),
-    //     .REGION_write(REGION_model1_write[0].write)
-    // );
+    pipearch_copy
+    MEM_model_copy
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[6]),
+        .op_done(op_done[6]),
+        .regs(copy_regs),
+        .REGION_read(REGION_input_read[2].read),
+        .REGION_write(REGION_inputcopy_interface[0].write)
+    );
 
     pipearch_loadreg
     execute_loadreg

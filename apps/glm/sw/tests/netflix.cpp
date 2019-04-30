@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 	asyncUpdate = (strcmp(argv[5], "y") == 0);
 	numEpochs = atoi(argv[6]);
 
-	float stepSize = 0.001;
+	float stepSize = 0.0001;
 	float lambda = 0;
 
 #ifdef FPGA
@@ -45,13 +45,13 @@ int main(int argc, char* argv[]) {
 	// lrmf.PrintM();
 	// lrmf.PrintU();
 
-	lrmf.RandInitMU();
-	lrmf.Optimize(stepSize, lambda, numEpochs);
+	// lrmf.RandInitMU();
+	// lrmf.Optimize(stepSize, lambda, numEpochs);
 
 	lrmf.DivideLBIntoTiles(tileSize);
 
-	lrmf.RandInitMU();
-	lrmf.OptimizeRound(stepSize, lambda, numEpochs);
+	// lrmf.RandInitMU();
+	// lrmf.OptimizeRound(stepSize, lambda, numEpochs);
 
 	lrmf.RandInitMU();
 	lrmf.OptimizeRoundStale(stepSize, lambda, numEpochs);

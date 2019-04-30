@@ -47,15 +47,15 @@ private:
 public:
 	uint32_t m_numFeaturesInCL;
 	uint32_t m_alignedNumFeatures;
-	uint32_t m_MdimInCL;
-	uint32_t m_UdimInCL;
 	uint32_t m_maxBatchSize;
-	uint32_t m_numTilesUInCL;
+	uint32_t m_numAccessIndexesPerTileInCL;
+	uint32_t m_numLocalIndexesPerTileInCL;
 
 	FPGA_LRMF(iFPGA* ifpga, uint32_t numFeatures) : LRMF(numFeatures), FPGA_ColumnML(ifpga) {}
 
-	inline uint32_t ConvertNumWordToNumCL(uint32_t numWords) {
-		return (numWords >> 4) + ((numWords&0xF) > 0);
+	inline uint32_t ConvertNumWordToNumCL(uint32_t numWords, uint32_t wordSizeInBytes) {
+		uint32_t numWordsInCL = 64/wordSizeInBytes;
+		return numWords/numWordsInCL + (numWords%numWordsInCL > 0);
 	}
 
 	void CopyModel() {
@@ -78,18 +78,18 @@ public:
 			return 0;
 		}
 
-		m_numFeaturesInCL = ConvertNumWordToNumCL(m_numFeatures);
+		m_numFeaturesInCL = ConvertNumWordToNumCL(m_numFeatures, sizeof(float));
 		m_alignedNumFeatures = m_numFeaturesInCL*16;
-		m_MdimInCL = ConvertNumWordToNumCL(m_Mdim);
-		m_UdimInCL = ConvertNumWordToNumCL(m_Udim);
-		m_numTilesUInCL = ConvertNumWordToNumCL(m_numTilesU);
+		m_numAccessIndexesPerTileInCL = ConvertNumWordToNumCL(m_numTilesU, sizeof(remoteaccess_t));
+		m_numLocalIndexesPerTileInCL = ConvertNumWordToNumCL(m_numTilesU, sizeof(uint32_t));
 
 		cout << "m_tileSize: " << m_tileSize << endl;
 		cout << "m_numTilesM: " << m_numTilesM << endl;
 		cout << "m_numTilesU: " << m_numTilesU << endl;
 		cout << "m_restM: " << m_restM << endl;
-		cout << "m_numTilesUInCL: " << m_numTilesUInCL << endl;
 		cout << "m_restU: " << m_restU << endl;
+		cout << "m_numAccessIndexesPerTileInCL: " << m_numAccessIndexesPerTileInCL << endl;
+		cout << "m_numLocalIndexesPerTileInCL: " << m_numLocalIndexesPerTileInCL << endl;
 
 		uint32_t countCL = 0;
 
@@ -102,22 +102,22 @@ public:
 		m_Uchunk.m_lengthInCL = countCL - m_Uchunk.m_offsetInCL;
 
 		m_accessMindexesChunk.m_offsetInCL = countCL;
-		countCL += m_numTilesM*m_numTilesUInCL*2; // *2, because offset and length
+		countCL += m_numTilesM*m_numAccessIndexesPerTileInCL;
 		m_accessMindexesChunk.m_lengthInCL = countCL - m_accessMindexesChunk.m_offsetInCL;
 
 		m_accessUindexesChunk.m_offsetInCL = countCL;
-		countCL += m_numTilesM*m_numTilesUInCL*2; // *2, because offset and length
+		countCL += m_numTilesM*m_numAccessIndexesPerTileInCL;
 		m_accessUindexesChunk.m_lengthInCL = countCL - m_accessUindexesChunk.m_offsetInCL;
 
 		m_accessValuesChunk.m_offsetInCL = countCL;
-		countCL += m_numTilesM*m_numTilesUInCL*2; // *2, because offset and length
+		countCL += m_numTilesM*m_numAccessIndexesPerTileInCL;
 		m_accessValuesChunk.m_lengthInCL = countCL - m_accessValuesChunk.m_offsetInCL;
 
 		m_maxBatchSize = 0;
 		m_MindexesChunks.resize(m_numTilesM*m_numTilesU);
 		for (uint32_t t = 0; t < m_numTilesM*m_numTilesU; t++) {
 			m_MindexesChunks[t].m_offsetInCL = countCL;
-			countCL += ConvertNumWordToNumCL( m_LBTiled[t].size() );
+			countCL += ConvertNumWordToNumCL( m_LBTiled[t].size(), sizeof(uint32_t) );
 			m_MindexesChunks[t].m_lengthInCL = countCL - m_MindexesChunks[t].m_offsetInCL;
 			if (m_LBTiled[t].size() > m_maxBatchSize) {
 				m_maxBatchSize = m_LBTiled[t].size();
@@ -127,19 +127,19 @@ public:
 		m_UindexesChunks.resize(m_numTilesM*m_numTilesU);
 		for (uint32_t t = 0; t < m_numTilesM*m_numTilesU; t++) {
 			m_UindexesChunks[t].m_offsetInCL = countCL;
-			countCL += ConvertNumWordToNumCL( m_LBTiled[t].size() );
+			countCL += ConvertNumWordToNumCL( m_LBTiled[t].size(), sizeof(uint32_t) );
 			m_UindexesChunks[t].m_lengthInCL = countCL - m_UindexesChunks[t].m_offsetInCL;
 		}
 
 		m_ValuesChunks.resize(m_numTilesM*m_numTilesU);
 		for (uint32_t t = 0; t < m_numTilesM*m_numTilesU; t++) {
 			m_ValuesChunks[t].m_offsetInCL = countCL;
-			countCL += ConvertNumWordToNumCL( m_LBTiled[t].size() );
+			countCL += ConvertNumWordToNumCL( m_LBTiled[t].size(), sizeof(uint32_t) );
 			m_ValuesChunks[t].m_lengthInCL = countCL - m_ValuesChunks[t].m_offsetInCL;
 		}
 
 		m_minibatchSizesChunk.m_offsetInCL = countCL;
-		countCL += m_numTilesM*m_numTilesUInCL;
+		countCL += m_numTilesM*m_numLocalIndexesPerTileInCL;
 		m_minibatchSizesChunk.m_lengthInCL = countCL - m_minibatchSizesChunk.m_offsetInCL;
 
 		m_ifpga->Realloc(m_inputHandle, countCL*64);
@@ -175,20 +175,20 @@ public:
 		for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
 			for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
 
-				m_accessMindexes[tm*m_numTilesU+tu].m_offsetInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
-				m_accessMindexes[tm*m_numTilesU+tu].m_lengthInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
+				m_accessMindexes[tm*m_numAccessIndexesPerTileInCL*8+tu].m_offsetInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
+				m_accessMindexes[tm*m_numAccessIndexesPerTileInCL*8+tu].m_lengthInCL = m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
 
-				m_accessUindexes[tm*m_numTilesU+tu].m_offsetInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
-				m_accessUindexes[tm*m_numTilesU+tu].m_lengthInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
+				m_accessUindexes[tm*m_numAccessIndexesPerTileInCL*8+tu].m_offsetInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_offsetInCL;
+				m_accessUindexes[tm*m_numAccessIndexesPerTileInCL*8+tu].m_lengthInCL = m_UindexesChunks[tm*m_numTilesU+tu].m_lengthInCL;
 
-				m_accessValues[tm*m_numTilesU+tu].m_offsetInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_offsetInCL;
-				m_accessValues[tm*m_numTilesU+tu].m_lengthInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_lengthInCL;
+				m_accessValues[tm*m_numAccessIndexesPerTileInCL*8+tu].m_offsetInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_offsetInCL;
+				m_accessValues[tm*m_numAccessIndexesPerTileInCL*8+tu].m_lengthInCL = m_ValuesChunks[tm*m_numTilesU+tu].m_lengthInCL;
 
 				if (m_LBTiled[tm*m_numTilesU+tu].size() > 0) {
-					m_minibatchSizes[tm*m_numTilesU+tu] = (m_LBTiled[tm*m_numTilesU+tu].size() << 16) | m_numFeaturesInCL;
+					m_minibatchSizes[tm*m_numLocalIndexesPerTileInCL*16+tu] = (m_LBTiled[tm*m_numTilesU+tu].size() << 16) | m_numFeaturesInCL;
 				}
 				else {
-					m_minibatchSizes[tm*m_numTilesU+tu] = 0;
+					m_minibatchSizes[tm*m_numLocalIndexesPerTileInCL*16+tu] = 0;
 				}
 
 				uint32_t M_min = tm*m_tileSize;
@@ -207,7 +207,15 @@ public:
 						// cout << "(m_LBTiled[" << tm << "][" << tu << "][" << i << "].m_value: " << m_LBTiled[tm*m_numTilesU+tu][i].m_value << endl;
 
 						m_MindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Mindex-M_min)*m_numFeaturesInCL & 0x3FFF);
-						m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
+						// m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
+						if ( (tm*m_numTilesU+tu)%2 == 0 ) {
+							m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
+						}
+						else {
+							m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) |
+							((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min + m_tileSize)*m_numFeaturesInCL & 0x3FFF);
+						}
+
 						m_ValuesPtr[tm*m_numTilesU+tu][i] = m_LBTiled[tm*m_numTilesU+tu][i].m_value;
 					}
 					else {
@@ -276,21 +284,22 @@ public:
 
 		// MEM_ACCESSPROPS
 		uint32_t accessMindexesOffsetInBRAM = 0;
-		uint32_t accessUindexesOffsetInBRAM = accessMindexesOffsetInBRAM + m_numTilesUInCL*2;
-		uint32_t accessValuesOffsetInBRAM = accessUindexesOffsetInBRAM + m_numTilesUInCL*2;
-		uint32_t MEM_ACCESSPROPS_size = accessValuesOffsetInBRAM + m_numTilesUInCL*2;
+		uint32_t accessUindexesOffsetInBRAM = accessMindexesOffsetInBRAM + m_numAccessIndexesPerTileInCL;
+		uint32_t accessValuesOffsetInBRAM = accessUindexesOffsetInBRAM + m_numAccessIndexesPerTileInCL;
+		uint32_t MEM_ACCESSPROPS_size = accessValuesOffsetInBRAM + m_numAccessIndexesPerTileInCL;
 		fit &= CheckMemoryFit(MEM_ACCESSPROPS_size, "MEM_ACCESSPROPS");
 
 		// MEM_LOCALPROPS
 		uint32_t minibatchSizesOffsetInBRAM = 0;
-		uint32_t MindexesOffsetInBRAM = m_numTilesUInCL;
-		uint32_t UindexesOffsetInBRAM = MindexesOffsetInBRAM + ConvertNumWordToNumCL(m_maxBatchSize);
-		uint32_t MEM_LOCALPROPS_size = UindexesOffsetInBRAM + ConvertNumWordToNumCL(m_maxBatchSize);
+		uint32_t MindexesOffsetInBRAM = m_numLocalIndexesPerTileInCL;
+		uint32_t UindexesOffsetInBRAM = MindexesOffsetInBRAM + ConvertNumWordToNumCL(m_maxBatchSize, sizeof(uint32_t));
+		uint32_t MEM_LOCALPROPS_size = UindexesOffsetInBRAM + ConvertNumWordToNumCL(m_maxBatchSize, sizeof(uint32_t));
 		fit &= CheckMemoryFit(MEM_LOCALPROPS_size, "MEM_LOCALPROPS");
 
 		// REGION_LABELS
 		uint32_t ValuesOffsetInBRAM = 0;
-		uint32_t REGION_LABELS_size = ValuesOffsetInBRAM + ConvertNumWordToNumCL(m_maxBatchSize);
+		uint32_t Values2OffsetInBRAM = ValuesOffsetInBRAM + ConvertNumWordToNumCL(m_maxBatchSize, sizeof(float));
+		uint32_t REGION_LABELS_size = Values2OffsetInBRAM + ConvertNumWordToNumCL(m_maxBatchSize, sizeof(float));
 		fit &= CheckMemoryFit(REGION_LABELS_size, "REGION_LABELS");
 
 		// REGION_MODEL
@@ -300,14 +309,15 @@ public:
 
 		// REGION_INPUT
 		uint32_t UtileOffsetInBRAM = 0;
-		uint32_t REGION_INPUT_size = UtileOffsetInBRAM + m_tileSize*m_numFeaturesInCL;
+		uint32_t Utile2OffsetInBRAM = UtileOffsetInBRAM + m_tileSize*m_numFeaturesInCL;
+		uint32_t REGION_INPUT_size = Utile2OffsetInBRAM + m_tileSize*m_numFeaturesInCL;
 		fit &= CheckMemoryFit(REGION_INPUT_size, "REGION_INPUT");
 
 		if (fit == false) {
 			return false;
 		}
 
-		cout << "ConvertNumWordToNumCL(m_maxBatchSize): " << ConvertNumWordToNumCL(m_maxBatchSize) << endl;
+		cout << "ConvertNumWordToNumCL(m_maxBatchSize): " << ConvertNumWordToNumCL(m_maxBatchSize, sizeof(uint32_t)) << endl;
 		cout << "MEM_ACCESSPROPS_size: " << MEM_ACCESSPROPS_size << endl;
 		cout << "MEM_LOCALPROPS_size: " << MEM_LOCALPROPS_size << endl;
 		cout << "REGION_LABELS_size: " << REGION_LABELS_size << endl;
@@ -329,27 +339,27 @@ public:
 		// Per M tile
 		uint32_t loadMtile = pc;
 		vector<localaccess_t> loadAccessMIndexWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadAccessMIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessMindexesOffsetInBRAM, m_numTilesUInCL*2);
-		m_inst[pc].Load(m_accessMindexesChunk.m_offsetInCL, m_numTilesUInCL*2,
-			0, m_numTilesUInCL*2, 0, loadAccessMIndexWrite);
+		loadAccessMIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessMindexesOffsetInBRAM, m_numAccessIndexesPerTileInCL);
+		m_inst[pc].Load(m_accessMindexesChunk.m_offsetInCL, m_numAccessIndexesPerTileInCL,
+			0, m_numAccessIndexesPerTileInCL, 0, loadAccessMIndexWrite);
 		pc++;
 
 		vector<localaccess_t> loadAccessUIndexWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadAccessUIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessUindexesOffsetInBRAM, m_numTilesUInCL*2);
-		m_inst[pc].Load(m_accessUindexesChunk.m_offsetInCL, m_numTilesUInCL*2,
-			0, m_numTilesUInCL*2, 0, loadAccessUIndexWrite);
+		loadAccessUIndexWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessUindexesOffsetInBRAM, m_numAccessIndexesPerTileInCL);
+		m_inst[pc].Load(m_accessUindexesChunk.m_offsetInCL, m_numAccessIndexesPerTileInCL,
+			0, m_numAccessIndexesPerTileInCL, 0, loadAccessUIndexWrite);
 		pc++;
 
 		vector<localaccess_t> loadAccessValuesWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadAccessValuesWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessValuesOffsetInBRAM, m_numTilesUInCL*2);
-		m_inst[pc].Load(m_accessValuesChunk.m_offsetInCL, m_numTilesUInCL*2,
-			0, m_numTilesUInCL*2, 0, loadAccessValuesWrite);
+		loadAccessValuesWrite[Instruction::LOAD_MEM_ACCESSPROPS_CHANNEL].Set(BRAM, accessValuesOffsetInBRAM, m_numAccessIndexesPerTileInCL);
+		m_inst[pc].Load(m_accessValuesChunk.m_offsetInCL, m_numAccessIndexesPerTileInCL,
+			0, m_numAccessIndexesPerTileInCL, 0, loadAccessValuesWrite);
 		pc++;
 
 		vector<localaccess_t> loadMinibatchSizesWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadMinibatchSizesWrite[Instruction::LOAD_MEM_LOCALPROPS_CHANNEL].Set(BRAM, minibatchSizesOffsetInBRAM, m_numTilesUInCL);
-		m_inst[pc].Load(m_minibatchSizesChunk.m_offsetInCL, m_numTilesUInCL,
-			0, m_numTilesUInCL, 0, loadMinibatchSizesWrite);
+		loadMinibatchSizesWrite[Instruction::LOAD_MEM_LOCALPROPS_CHANNEL].Set(BRAM, minibatchSizesOffsetInBRAM, m_numLocalIndexesPerTileInCL);
+		m_inst[pc].Load(m_minibatchSizesChunk.m_offsetInCL, m_numLocalIndexesPerTileInCL,
+			0, m_numLocalIndexesPerTileInCL, 0, loadMinibatchSizesWrite);
 		pc++;
 
 		vector<localaccess_t> loadMTileWrite(Instruction::NUM_LOAD_CHANNELS);
@@ -359,29 +369,11 @@ public:
 		pc++;
 
 		localaccess_t copyModelRead(BRAM, MtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
-		m_inst[pc].Copy(copyModelRead, copyModelRead);
-		pc++;
+		// m_inst[pc].Copy(copyModelRead, copyModelRead);
+		// m_inst[pc].MakeNonBlocking();
+		// pc++;
 
-		// Start---Innermost loop
-		uint32_t startInnerMost = pc;
-		m_inst[pc].LoadReg(3, minibatchSizesOffsetInBRAM);
-		pc++;
-
-		m_inst[pc].Jump(3, 0, pc+1, pc+11);
-		pc++;
-
-		vector<localaccess_t> loadMindexesWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadMindexesWrite[Instruction::LOAD_MEM_LOCALPROPS_CHANNEL].Set(BRAM, MindexesOffsetInBRAM, 0);
-		m_inst[pc].LocalLoad(accessMindexesOffsetInBRAM,
-			1, 0, 0, loadMindexesWrite);
-		pc++;
-
-		vector<localaccess_t> loadUindexesWrite(Instruction::NUM_LOAD_CHANNELS);
-		loadUindexesWrite[Instruction::LOAD_MEM_LOCALPROPS_CHANNEL].Set(BRAM, UindexesOffsetInBRAM, 0);
-		m_inst[pc].LocalLoad(accessUindexesOffsetInBRAM,
-			1, 0, 0, loadUindexesWrite);
-		pc++;
-
+		// First load of values and U tile (the next loads will be in parallel to computation)
 		vector<localaccess_t> loadValuesWrite(Instruction::NUM_LOAD_CHANNELS);
 		loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, ValuesOffsetInBRAM, 0);
 		m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
@@ -394,46 +386,190 @@ public:
 			m_tileSize*m_numFeaturesInCL, 0, 0, loadUTileWrite);
 		pc++;
 
-		m_inst[pc].Copy(copyModelRead, copyModelRead);
-		pc++;
+		// Start---Innermost loop
+			uint32_t startInnerMost = pc;
+			m_inst[pc].LoadReg(3, minibatchSizesOffsetInBRAM);
+			pc++;
 
-		localaccess_t dotLeftRead(BRAM, UindexesOffsetInBRAM, 1, true, true);
-		localaccess_t dotRightRead(BRAM, MindexesOffsetInBRAM, 1, true, true);
-		localaccess_t dotWrite(FIFO, 1);
-		m_inst[pc].Dot(Instruction::USE_REG, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, false);
-		m_inst[pc].MakeNonBlocking();
-		pc++;
+			// Jump instruction here if reg[3] is 0
+			uint32_t jumpIfSizeIsZero = pc;
+			pc++;
 
-		localaccess_t labelsRead(BRAM, ValuesOffsetInBRAM, 1);
-		localaccess_t modifyWrite(FIFO, 1);
-		m_inst[pc].Modify(false, Instruction::USE_REG, 0, 0, stepSize, lambda, labelsRead, modifyWrite);
-		m_inst[pc].MakeNonBlocking();
-		pc++;
+			m_inst[pc].Copy(copyModelRead, copyModelRead);
+			m_inst[pc].MakeNonBlocking();
+			pc++;
 
-		localaccess_t updateURead(BRAM, UindexesOffsetInBRAM, 1, true, true);
-		localaccess_t updateUWrite(BRAM, UindexesOffsetInBRAM, 1, true, true);
-		localaccess_t updateMRead(BRAM, MindexesOffsetInBRAM, 1, true, true);
-		localaccess_t updateMWrite(BRAM, MindexesOffsetInBRAM, 1, true, true);
+			// Start---Copy U tile to buffer 0 or buffer 1
+				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
+				pc++;
 
-		m_inst[pc].Update(Instruction::USE_REG, m_numFeaturesInCL, updateURead, modifyWrite, updateMRead, updateMWrite, asyncUpdate);
-		m_inst[pc].MakeNonBlocking();
-		pc++;
+				localaccess_t inputRead(BRAM, Utile2OffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				m_inst[pc].Copy2(inputRead, inputRead);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
 
-		m_inst[pc].Update2(Instruction::USE_REG, m_numFeaturesInCL, updateMRead, modifyWrite, updateURead, updateUWrite, asyncUpdate);
-		pc++;
+				m_inst[pc].Jump(0, 0xFFFFFFFF, pc+2, 0);
+				pc++;
 
-		vector<localaccess_t> writebackURead(Instruction::NUM_WRITEBACK_CHANNELS);
-		writebackURead[Instruction::WRITEBACK_INPUT_CHANNEL].Set(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
-		m_inst[pc].WriteBack(true, m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
-			m_tileSize*m_numFeaturesInCL, 0, 0,
-			Instruction::WRITEBACK_INPUT_CHANNEL, true,
-			writebackURead);
-		m_inst[pc].MakeNonBlocking();
-		pc++;
+				localaccess_t inputRead2(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				m_inst[pc].Copy2(inputRead2, inputRead2);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
+			// End---Copy U tile to buffer 0 or buffer 1
 
-		m_inst[pc].Jump(0, m_numTilesU-1, startInnerMost, pc+1);
-		m_inst[pc].IncrementIndex(0);
-		pc++;
+			vector<localaccess_t> loadMindexesWrite(Instruction::NUM_LOAD_CHANNELS);
+			loadMindexesWrite[Instruction::LOAD_MEM_LOCALPROPS_CHANNEL].Set(BRAM, MindexesOffsetInBRAM, 0);
+			m_inst[pc].LocalLoad(accessMindexesOffsetInBRAM,
+				1, 0, 0, loadMindexesWrite);
+			pc++;
+
+			vector<localaccess_t> loadUindexesWrite(Instruction::NUM_LOAD_CHANNELS);
+			loadUindexesWrite[Instruction::LOAD_MEM_LOCALPROPS_CHANNEL].Set(BRAM, UindexesOffsetInBRAM, 0);
+			m_inst[pc].LocalLoad(accessUindexesOffsetInBRAM,
+				1, 0, 0, loadUindexesWrite);
+			pc++;
+
+			// Start---Load U tile to buffer 0 or buffer 1
+				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
+				m_inst[pc].IncrementIndex(0);
+				pc++;
+
+				// loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, Values2OffsetInBRAM, 0);
+				// m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
+				// 	1, 0, 0, loadValuesWrite);
+				// m_inst[pc].MakeNonBlocking();
+				// pc++;
+
+				// localaccess_t inputRead(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				// m_inst[pc].Copy2(inputRead, inputRead);
+				// pc++;
+
+				loadUTileWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				m_inst[pc].Load(m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
+					m_tileSize*m_numFeaturesInCL, 0, 0, loadUTileWrite);
+				m_inst[pc].MakeNonBlocking();
+				m_inst[pc].DecrementIndex(0);
+				pc++;
+
+				m_inst[pc].Jump(0, 0xFFFFFFFF, pc+2, 0);
+				pc++;
+
+				// loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, ValuesOffsetInBRAM, 0);
+				// m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
+				// 	1, 0, 0, loadValuesWrite);
+				// m_inst[pc].MakeNonBlocking();
+				// pc++;
+
+				// localaccess_t inputRead2(BRAM, Utile2OffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				// m_inst[pc].Copy2(inputRead2, inputRead2);
+				// pc++;
+
+				loadUTileWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(BRAM, Utile2OffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				m_inst[pc].Load(m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
+					m_tileSize*m_numFeaturesInCL, 0, 0, loadUTileWrite);
+				m_inst[pc].MakeNonBlocking();
+				m_inst[pc].DecrementIndex(0);
+				pc++;
+			// End---Load U tile to buffer 0 or buffer 1
+
+			localaccess_t dotLeftRead(BRAM, UindexesOffsetInBRAM, 1, true, true);
+			localaccess_t dotRightRead(BRAM, MindexesOffsetInBRAM, 1, true, true);
+			localaccess_t dotWrite(FIFO, 1);
+			m_inst[pc].Dot(Instruction::USE_REG, m_numFeaturesInCL, dotLeftRead, dotRightRead, dotWrite, false);
+			m_inst[pc].MakeNonBlocking();
+			pc++;
+
+			// Start---use values from buffer 0 or buffer 1
+				localaccess_t labelsRead(BRAM, ValuesOffsetInBRAM, 1);
+				localaccess_t labels2Read(BRAM, Values2OffsetInBRAM, 1);
+				localaccess_t modifyWrite(FIFO, 1);
+
+				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
+				pc++;
+
+				m_inst[pc].Modify(false, Instruction::USE_REG, 0, 0, stepSize, lambda, labels2Read, modifyWrite);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
+
+				m_inst[pc].Jump(0, 0xFFFFFFFF, pc+2, 0);
+				pc++;
+
+				m_inst[pc].Modify(false, Instruction::USE_REG, 0, 0, stepSize, lambda, labelsRead, modifyWrite);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
+			// End---use values from buffer 0 or buffer 1
+
+			localaccess_t updateURead(BRAM, UindexesOffsetInBRAM, 1, true, true);
+			localaccess_t updateUWrite(BRAM, UindexesOffsetInBRAM, 1, true, true);
+			localaccess_t updateMRead(BRAM, MindexesOffsetInBRAM, 1, true, true);
+			localaccess_t updateMWrite(BRAM, MindexesOffsetInBRAM, 1, true, true);
+
+			m_inst[pc].Update(Instruction::USE_REG, m_numFeaturesInCL, updateURead, modifyWrite, updateMRead, updateMWrite, asyncUpdate);
+			m_inst[pc].MakeNonBlocking();
+			pc++;
+
+			m_inst[pc].Update2(Instruction::USE_REG, m_numFeaturesInCL, updateMRead, modifyWrite, updateURead, updateUWrite, asyncUpdate);
+			m_inst[pc].MakeNonBlocking();
+			pc++;
+
+			// Start---Load values to buffer 0 or buffer 1
+				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
+				m_inst[pc].IncrementIndex(0);
+				pc++;
+
+				loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, ValuesOffsetInBRAM, 0);
+				m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
+					1, 0, 0, loadValuesWrite);
+				m_inst[pc].DecrementIndex(0);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
+
+				m_inst[pc].Jump(0, 0xFFFFFFFF, pc+2, 0);
+				pc++;
+
+				loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, Values2OffsetInBRAM, 0);
+				m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
+					1, 0, 0, loadValuesWrite);
+				m_inst[pc].DecrementIndex(0);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
+			// End---Load values to buffer 0 or buffer 1
+
+			m_inst[pc].BlockOnInstruction("Update2");
+			pc++;
+
+			// Start---use U tile from buffer 0 or buffer 1
+				vector<localaccess_t> writebackURead(Instruction::NUM_WRITEBACK_CHANNELS);
+
+				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
+				pc++;
+
+				writebackURead[Instruction::WRITEBACK_INPUT_CHANNEL].Set(BRAM, Utile2OffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				m_inst[pc].WriteBack(true, m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
+					m_tileSize*m_numFeaturesInCL, 0, 0,
+					Instruction::WRITEBACK_INPUT_CHANNEL, false,
+					writebackURead);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
+
+				m_inst[pc].Jump(0, 0xFFFFFFFF, pc+2, 0);
+				pc++;
+
+				writebackURead[Instruction::WRITEBACK_INPUT_CHANNEL].Set(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+				m_inst[pc].WriteBack(true, m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
+					m_tileSize*m_numFeaturesInCL, 0, 0,
+					Instruction::WRITEBACK_INPUT_CHANNEL, false,
+					writebackURead);
+				m_inst[pc].MakeNonBlocking();
+				pc++;
+			// End---use U tile from buffer 0 or buffer 1
+
+			uint32_t endInnerMost = pc;
+			m_inst[pc].Jump(0, m_numTilesU-1, startInnerMost, pc+1);
+			m_inst[pc].IncrementIndex(0);
+			pc++;
+
+			m_inst[jumpIfSizeIsZero].Jump(3, 0, jumpIfSizeIsZero+1, endInnerMost);
 		// End---Innermost loop
 
 		vector<localaccess_t> writebackMRead(Instruction::NUM_WRITEBACK_CHANNELS);

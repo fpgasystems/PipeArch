@@ -48,6 +48,8 @@ module glm_update
     logic [17:0] accessprops_raddr;
     logic [17:0] accessprops_waddr;
     logic [CLDATA_WIDTH-1:0] accessprops_data;
+    logic [CLDATA_WIDTH-1:0] accessprops_data_1d;
+    logic [CLDATA_WIDTH-1:0] accessprops_data_2d;
     logic [3:0] accessprops_read_position;
     logic [LOG2_ACCESS_SIZE-1:0] current_read_offset;
     logic [LOG2_ACCESS_SIZE-1:0] current_read_length;
@@ -59,8 +61,8 @@ module glm_update
     assign current_read_offset = accessprops_data[accessprops_read_position*32+13 -: 14];
     assign current_read_length = accessprops_data[accessprops_read_position*32+29 -: 14];
     assign accessprops_write_position = accessprops_waddr[3:0];
-    assign current_write_offset = accessprops_data[accessprops_write_position*32+13 -: 14];
-    assign current_write_length = accessprops_data[accessprops_write_position*32+29 -: 14];
+    assign current_write_offset = accessprops_data_2d[accessprops_write_position*32+13 -: 14];
+    assign current_write_length = accessprops_data_2d[accessprops_write_position*32+29 -: 14];
 
     // *************************************************************************
     //
@@ -214,6 +216,9 @@ module glm_update
 
     always_ff @(posedge clk)
     begin
+        accessprops_data_1d <= accessprops_data;
+        accessprops_data_2d <= accessprops_data_1d;
+
         subtract_valid_1d <= subtract_valid;
         num_lines_subtracted_1d <= num_lines_subtracted;
 
@@ -340,45 +345,50 @@ module glm_update
                     if (num_lines_subtracted_requested == num_lines_to_process-1)
                     begin
                         num_subtract_iterations1 <= num_subtract_iterations1 + 1;
-                        if (num_subtract_iterations1 < num_iterations-1 && num_subtract_iterations1[3:0] < 4'd15)
+                        // if (num_subtract_iterations1 < num_iterations-1 && num_subtract_iterations1[3:0] < 4'd15)
+                        if (num_subtract_iterations1 < num_iterations-1)
                         begin
                             num_lines_subtracted_requested <= 0;
                             if (MEM_model_read_accessproperties.keep_count_along_iterations)
                             begin
                                 accessprops_raddr <= accessprops_raddr + MEM_model_read_accessproperties.length;
                             end
-                        end
-                    end
-                end
-
-                if (subtract_valid)
-                begin
-                    REGION_model_write.we <= 1'b1;
-                    REGION_model_write.waddr <= current_write_offset + num_lines_subtracted;
-                    REGION_model_write.wdata <= subtract_result;
-                    num_lines_subtracted <= num_lines_subtracted + 1;
-                    if (num_lines_subtracted == num_lines_to_process-1)
-                    begin
-                        num_subtract_iterations2 <= num_subtract_iterations2 + 1;
-                        if (num_subtract_iterations2 == num_iterations-1)
-                        begin
-                            op_done <= 1'b1;
-                            update_state <= STATE_IDLE;
-                        end
-                        else
-                        begin
-                            num_lines_subtracted <= 0;
-                            if (REGION_model_write_accessproperties.keep_count_along_iterations)
-                            begin
-                                accessprops_waddr <= accessprops_waddr + REGION_model_write_accessproperties.length;
-                            end
-                            if (num_subtract_iterations2[3:0] == 4'd15)
+                            if (num_subtract_iterations1[3:0] == 4'd15)
                             begin
                                 update_state <= STATE_FETCH_PROPS;
                             end
                         end
                     end
                 end
+
+                // if (subtract_valid)
+                // begin
+                //     REGION_model_write.we <= 1'b1;
+                //     REGION_model_write.waddr <= current_write_offset + num_lines_subtracted;
+                //     REGION_model_write.wdata <= subtract_result;
+                //     num_lines_subtracted <= num_lines_subtracted + 1;
+                //     if (num_lines_subtracted == num_lines_to_process-1)
+                //     begin
+                //         num_subtract_iterations2 <= num_subtract_iterations2 + 1;
+                //         if (num_subtract_iterations2 == num_iterations-1)
+                //         begin
+                //             op_done <= 1'b1;
+                //             update_state <= STATE_IDLE;
+                //         end
+                //         else
+                //         begin
+                //             num_lines_subtracted <= 0;
+                //             if (REGION_model_write_accessproperties.keep_count_along_iterations)
+                //             begin
+                //                 accessprops_waddr <= accessprops_waddr + REGION_model_write_accessproperties.length;
+                //             end
+                //             if (num_subtract_iterations2[3:0] == 4'd15)
+                //             begin
+                //                 update_state <= STATE_FETCH_PROPS;
+                //             end
+                //         end
+                //     end
+                // end
             end
 
             STATE_MAIN:
@@ -427,6 +437,34 @@ module glm_update
                 end
             end
         endcase
+
+        if (enable_async)
+        begin
+            if (subtract_valid)
+            begin
+                REGION_model_write.we <= 1'b1;
+                REGION_model_write.waddr <= current_write_offset + num_lines_subtracted;
+                REGION_model_write.wdata <= subtract_result;
+                num_lines_subtracted <= num_lines_subtracted + 1;
+                if (num_lines_subtracted == num_lines_to_process-1)
+                begin
+                    num_subtract_iterations2 <= num_subtract_iterations2 + 1;
+                    if (num_subtract_iterations2 == num_iterations-1)
+                    begin
+                        op_done <= 1'b1;
+                        update_state <= STATE_IDLE;
+                    end
+                    else
+                    begin
+                        num_lines_subtracted <= 0;
+                        if (REGION_model_write_accessproperties.keep_count_along_iterations)
+                        begin
+                            accessprops_waddr <= accessprops_waddr + REGION_model_write_accessproperties.length;
+                        end
+                    end
+                end
+            end
+        end
 
         if (reset)
         begin
