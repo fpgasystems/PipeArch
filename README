@@ -35,3 +35,20 @@
 Example location: SOMEWHERE/Tools/Mentor/questa-10.5a/questasim/vivado2018_2_compile_simlib
 - After compilation is done, copy paste all lines (secureip = SOMEWHERE/Tools/Mentor/questa-10.5a/questasim/vivado2018_2_compile_simlib/questa/secureip)
 to SOMEWHERE/Tools/Mentor/questa-10.5a/questasim/modelsim.ini
+
+## Set up postgresql (for MADLib baselines)
+- Install postgres-10.0 from source. Download postgresql-10.0.tar.gz. Extract.
+	- cd postgresql-10.0/
+	- mkdir BUILD
+	- cd BUILD
+	- ../configure --with-python
+	- make all
+	- sudo make install
+	- export PATH=/usr/local/pgsql/bin:$PATH
+- Create a dbfarm:
+	- mkdir psql_dbfarm
+	- initdb -D psql_dbfarm
+	- createdb madlibtest
+	- export PGDATABASE=madlibtest
+	- /usr/local/madlib/bin/madpack -s madlib -p postgres install
+	- Check installation: /usr/local/madlib/bin/madpack -s madlib -p postgres install-check
