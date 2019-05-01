@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 	asyncUpdate = (strcmp(argv[5], "y") == 0);
 	numEpochs = atoi(argv[6]);
 
-	float stepSize = 0.0001;
+	float stepSize = 0.0008;
 	float lambda = 0;
 
 #ifdef FPGA
@@ -65,8 +65,12 @@ int main(int argc, char* argv[]) {
 	lrmf.CreateMemoryLayout();
 	lrmf.fOptimizeRound(stepSize, lambda, asyncUpdate, numEpochs);
 
+	double start = get_time();
 	FThread* fthread = server.Request(&lrmf);
 	fthread->WaitUntilFinished();
+	double total = get_time() - start;
+	cout << "Avg time per epoch: " << total/numEpochs << endl;
+	cout << "Processing rate: " << (numEpochs*lrmf.GetDataSize())/total/1e9 << "GB/s" << endl;
 
 	// Verify
 	lrmf.CopyModel();

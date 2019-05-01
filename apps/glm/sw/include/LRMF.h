@@ -95,7 +95,8 @@ protected:
 
 	void RandInit(float* base, uint32_t length) {
 		for (uint32_t i = 0; i < length; i++) {
-			base[i] = (float)rand()/(float)RAND_MAX/(float)m_numFeatures;
+			// base[i] = (float)rand()/(float)RAND_MAX/(float)m_numFeatures;
+			base[i] = (float)rand()/(float)RAND_MAX;
 		}
 	}
 
