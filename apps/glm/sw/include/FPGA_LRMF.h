@@ -86,19 +86,17 @@ public:
 		cout << "m_tileSize: " << m_tileSize << endl;
 		cout << "m_numTilesM: " << m_numTilesM << endl;
 		cout << "m_numTilesU: " << m_numTilesU << endl;
-		cout << "m_restM: " << m_restM << endl;
-		cout << "m_restU: " << m_restU << endl;
 		cout << "m_numAccessIndexesPerTileInCL: " << m_numAccessIndexesPerTileInCL << endl;
 		cout << "m_numLocalIndexesPerTileInCL: " << m_numLocalIndexesPerTileInCL << endl;
 
 		uint32_t countCL = 0;
 
 		m_Mchunk.m_offsetInCL = countCL;
-		countCL += m_numFeaturesInCL*m_Mdim;
+		countCL += m_numFeaturesInCL*m_numTilesM*m_tileSize;
 		m_Mchunk.m_lengthInCL = countCL - m_Mchunk.m_offsetInCL;
 
 		m_Uchunk.m_offsetInCL = countCL;
-		countCL += m_numFeaturesInCL*m_Udim;
+		countCL += m_numFeaturesInCL*m_numTilesU*m_tileSize;
 		m_Uchunk.m_lengthInCL = countCL - m_Uchunk.m_offsetInCL;
 
 		m_accessMindexesChunk.m_offsetInCL = countCL;
