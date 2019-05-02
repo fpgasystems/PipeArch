@@ -101,6 +101,10 @@ protected:
 	}
 
 public:
+	uint32_t GetNumTilesM() {return m_numTilesM;}
+	uint32_t GetNumTilesU() {return m_numTilesU;}
+	uint32_t GetTileSize() {return m_tileSize;}
+
 	LRMF(uint32_t numFeatures) {
 		m_numFeatures = numFeatures;
 		m_Mdim = 0;
@@ -357,7 +361,6 @@ public:
 					for (uint32_t j = 0; j < m_numFeatures; j++) {
 						cout << "U_vector " << j << ": " << U_vector[j] << endl;
 					}
-
 					exit(1);
 				}
 			}
@@ -513,22 +516,6 @@ public:
 						float dot = Dot(M_vector, U_vector, m_numFeatures);
 						float error = dot - LTile[i].m_value;
 
-						if (isnan(dot)) {
-							cout << "i: " << i << endl;
-							cout << "Mindex: " << LTile[i].m_Mindex << endl;
-							cout << "Uindex: " << LTile[i].m_Uindex << endl;
-							cout << "OptimizeRoundStale dot is nan" << endl;
-
-							for (uint32_t j = 0; j < m_numFeatures; j++) {
-								cout << "M_vector " << j << ": " << M_vector[j] << endl;
-							}
-							for (uint32_t j = 0; j < m_numFeatures; j++) {
-								cout << "U_vector " << j << ": " << U_vector[j] << endl;
-							}
-
-							exit(1);
-						}
-
 						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " dot: " << dot << endl;
 						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " value: " << LTile[i].m_value << endl;
 						// cout << LTile[i].m_Mindex << "\t" << LTile[i].m_Uindex << "\t" << " error: " << error << endl;
@@ -537,37 +524,9 @@ public:
 						float* U_vector_new = U_tile_new + (LTile[i].m_Uindex-U_min)*m_numFeatures;
 
 						for (uint32_t j = 0; j < m_numFeatures; j++) {
-							// float M_temp = M_vector_new[j];
-							// float U_temp = U_vector_new[j];
-
 							// cout << "error*U_vector[" << j << "]: " << stepSize*error*U_vector[j] << endl;
-
-							M_vector_new[j] = M_vector_new[j] - stepSize*error*U_vector[j];
-							U_vector_new[j] = U_vector_new[j] - stepSize*error*M_vector[j];
-
-							// M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector[j]);
-							// U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector[j]);
-						}
-						// for (uint32_t j = 0; j < m_numFeatures; j++) {
-						// 	if (M_vector_new[j]  > 100) {
-						// 		cout << "M_vector[" << j << "]: " << M_vector[j] << endl;
-						// 		cout << "M_vector_new[" << j << "]: " << M_vector_new[j] << endl;
-						// 		exit(1);
-						// 	}
-						// }
-						// for (uint32_t j = 0; j < m_numFeatures; j++) {
-						// 	cout << "U_vector_new[" << j << "]: " << U_vector_new[j] << endl;
-						// }
-					}
-					// L2 Regularization
-					for (uint32_t i = 0; i < LTile.size(); i++) {
-						float* M_vector = M_tile_offset + (LTile[i].m_Mindex-M_min)*m_numFeatures;
-						float* U_vector = U_tile_offset + (LTile[i].m_Uindex-U_min)*m_numFeatures;
-						float* M_vector_new = M_tile_new + (LTile[i].m_Mindex-M_min)*m_numFeatures;
-						float* U_vector_new = U_tile_new + (LTile[i].m_Uindex-U_min)*m_numFeatures;
-						for (uint32_t j = 0; j < m_numFeatures; j++) {
-							M_vector_new[j] = M_vector_new[j] - stepSize*lambda*M_vector[j];
-							U_vector_new[j] = U_vector_new[j] - stepSize*lambda*U_vector[j];
+							M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector[j]);
+							U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector[j]);
 						}
 					}
 

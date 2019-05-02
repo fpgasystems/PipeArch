@@ -23,17 +23,10 @@
 
 class FPGA_LRMF : public LRMF, public FPGA_ColumnML {
 private:
-	remoteaccess_t m_Mchunk;
-	remoteaccess_t m_Uchunk;
-	remoteaccess_t m_accessMindexesChunk;
-	remoteaccess_t m_accessUindexesChunk;
-	remoteaccess_t m_accessValuesChunk;
 	vector<remoteaccess_t> m_MindexesChunks;
 	vector<remoteaccess_t> m_UindexesChunks;
 	vector<remoteaccess_t> m_ValuesChunks;
-	remoteaccess_t m_minibatchSizesChunk;
 
-	volatile float* m_base = nullptr;
 	volatile float* m_Mptr = nullptr;
 	volatile float* m_Uptr = nullptr;
 	volatile remoteaccess_t* m_accessMindexes = nullptr;
@@ -45,6 +38,13 @@ private:
 	volatile uint32_t* m_minibatchSizes;
 
 public:
+	remoteaccess_t m_Mchunk;
+	remoteaccess_t m_Uchunk;
+	remoteaccess_t m_accessMindexesChunk;
+	remoteaccess_t m_accessUindexesChunk;
+	remoteaccess_t m_accessValuesChunk;
+	remoteaccess_t m_minibatchSizesChunk;
+
 	uint32_t m_numFeaturesInCL;
 	uint32_t m_alignedNumFeatures;
 	uint32_t m_maxBatchSize;
@@ -52,6 +52,8 @@ public:
 	uint32_t m_numLocalIndexesPerTileInCL;
 
 	FPGA_LRMF(iFPGA* ifpga, uint32_t numFeatures) : LRMF(numFeatures), FPGA_ColumnML(ifpga) {}
+
+	FPGA_LRMF(iFPGA* ifpga) : LRMF(0), FPGA_ColumnML(ifpga) {}
 
 	inline uint32_t ConvertNumWordToNumCL(uint32_t numWords, uint32_t wordSizeInBytes) {
 		uint32_t numWordsInCL = 64/wordSizeInBytes;
@@ -71,8 +73,37 @@ public:
 		}
 	}
 
-	uint32_t CreateMemoryLayout() {
+	void UseCreatedMemoryLayout(FPGA_LRMF& baseObj) {
+		if (m_numFeatures > 0) {
+			cout << "m_numFeatures of FPGA_LRMF object created as clone is larger than 0" << endl;
+			return;
+		}
 
+		m_base = baseObj.GetBase();
+
+		m_tileSize = baseObj.GetTileSize();
+
+		m_inputHandle = baseObj.m_inputHandle;
+
+		m_Mchunk = baseObj.m_Mchunk;
+		m_Uchunk = baseObj.m_Uchunk;
+		m_accessMindexesChunk = baseObj.m_accessMindexesChunk;
+		m_accessUindexesChunk = baseObj.m_accessUindexesChunk;
+		m_accessValuesChunk = baseObj.m_accessValuesChunk;
+		m_minibatchSizesChunk = baseObj.m_minibatchSizesChunk;
+
+		m_numFeaturesInCL = baseObj.m_numFeaturesInCL;
+		m_alignedNumFeatures = baseObj.m_alignedNumFeatures;
+		m_maxBatchSize = baseObj.m_maxBatchSize;
+		m_numAccessIndexesPerTileInCL = baseObj.m_numAccessIndexesPerTileInCL;
+		m_numLocalIndexesPerTileInCL = baseObj.m_numLocalIndexesPerTileInCL;
+	}
+
+	uint32_t CreateMemoryLayout() {
+		if (m_numFeatures == 0) {
+			cout << "m_numFeatures of FPGA_LRMF object created as main is equal to 0" << endl;
+			return 0;
+		}
 		if (m_LBTiled.size() == 0) {
 			cout << "m_LBTiled is empty" << endl;
 			return 0;
@@ -192,20 +223,9 @@ public:
 				uint32_t M_min = tm*m_tileSize;
 				uint32_t U_min = tu*m_tileSize;
 
-				// cout << "M_min: " << M_min << endl;
-				// cout << "U_min: " << U_min << endl;
-				// cout << "----m_LBTiled[" << tm << "][" << tu << "].size(): " << m_LBTiled[tm*m_numTilesU+tu].size() << endl;
-				// cout << "----m_MindexesChunks[" << tm << "][" << tu << "].m_offsetInCL: " << m_MindexesChunks[tm*m_numTilesU+tu].m_offsetInCL << endl;
-				// cout << "----m_MindexesChunks[" << tm << "][" << tu << "].m_lengthInCL: " << m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL << endl;
-
 				for (uint32_t i = 0; i < m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL*16; i++) {
 					if (i < m_LBTiled[tm*m_numTilesU+tu].size()) {
-						// cout << "(m_LBTiled[" << tm << "][" << tu << "][" << i << "].m_Mindex: " << m_LBTiled[tm*m_numTilesU+tu][i].m_Mindex << endl;
-						// cout << "(m_LBTiled[" << tm << "][" << tu << "][" << i << "].m_Uindex: " << m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex << endl;
-						// cout << "(m_LBTiled[" << tm << "][" << tu << "][" << i << "].m_value: " << m_LBTiled[tm*m_numTilesU+tu][i].m_value << endl;
-
 						m_MindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Mindex-M_min)*m_numFeaturesInCL & 0x3FFF);
-						// m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
 						if ( tu%2 == 0 ) {
 							m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
 						}
@@ -225,34 +245,6 @@ public:
 			}
 		}
 
-		// for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
-		// 	for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
-		// 		cout << "m_accessMindexes[" << tm << "][" << tu << "].m_offsetInCL:" << m_accessMindexes[tm*m_numTilesU+tu].m_offsetInCL << endl;
-		// 		cout << "m_accessMindexes[" << tm << "][" << tu << "].m_lengthInCL:" << m_accessMindexes[tm*m_numTilesU+tu].m_lengthInCL << endl;
-		// 	}
-		// }
-		// for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
-		// 	for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
-		// 		cout << "m_accessUindexes[" << tm << "][" << tu << "].m_offsetInCL:" << m_accessUindexes[tm*m_numTilesU+tu].m_offsetInCL << endl;
-		// 		cout << "m_accessUindexes[" << tm << "][" << tu << "].m_lengthInCL:" << m_accessUindexes[tm*m_numTilesU+tu].m_lengthInCL << endl;
-		// 	}
-		// }
-		// for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
-		// 	for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
-		// 		cout << "m_accessValues[" << tm << "][" << tu << "].m_offsetInCL:" << m_accessValues[tm*m_numTilesU+tu].m_offsetInCL << endl;
-		// 		cout << "m_accessValues[" << tm << "][" << tu << "].m_lengthInCL:" << m_accessValues[tm*m_numTilesU+tu].m_lengthInCL << endl;
-		// 	}
-		// }
-
-		// for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
-		// 	for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
-		// 		for (uint32_t i = 0; i < m_MindexesChunks[tm*m_numTilesU+tu].m_lengthInCL*8; i++) {
-		// 			cout << "m_MindexesPtr[" << tm << "][" << tu << "][" << i << "] offsetInCL: " << (m_MindexesPtr[tm*m_numTilesU+tu][i] & 0x3FFF) << endl;
-		// 			cout << "m_MindexesPtr[" << tm << "][" << tu << "][" << i << "] lengthInCL: " << ((m_MindexesPtr[tm*m_numTilesU+tu][i] >> 16) & 0x3FFF) << endl;
-		// 		}
-		// 	}
-		// }
-
 		return countCL;
 	}
 
@@ -268,6 +260,10 @@ public:
 	}
 
 	bool fOptimizeRound(
+		uint32_t MtileToStart,
+		uint32_t numTilesM,
+		uint32_t UtileToStart,
+		uint32_t numTilesU,
 		float stepSize,
 		float lambda,
 		bool asyncUpdate,
@@ -329,8 +325,8 @@ public:
 		// *************************************************************************
 		uint32_t pc = 0;
 
-		m_inst[pc].ResetIndex(0);
-		m_inst[pc].ResetIndex(1);
+		m_inst[pc].SetIndex(0, UtileToStart);
+		m_inst[pc].SetIndex(1, MtileToStart);
 		m_inst[pc].ResetIndex(2);
 		pc++;
 
@@ -366,11 +362,6 @@ public:
 			0, m_tileSize*m_numFeaturesInCL, 0, loadMTileWrite);
 		pc++;
 
-		localaccess_t copyModelRead(BRAM, MtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
-		// m_inst[pc].Copy(copyModelRead, copyModelRead);
-		// m_inst[pc].MakeNonBlocking();
-		// pc++;
-
 		// First load of values and U tile (the next loads will be in parallel to computation)
 		vector<localaccess_t> loadValuesWrite(Instruction::NUM_LOAD_CHANNELS);
 		loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, ValuesOffsetInBRAM, 0);
@@ -393,6 +384,7 @@ public:
 			uint32_t jumpIfSizeIsZero = pc;
 			pc++;
 
+			localaccess_t copyModelRead(BRAM, MtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
 			m_inst[pc].Copy(copyModelRead, copyModelRead);
 			m_inst[pc].MakeNonBlocking();
 			pc++;
@@ -428,7 +420,7 @@ public:
 			pc++;
 
 			// Start---Load U tile to buffer 0 or buffer 1
-				m_inst[pc].Jump(0, m_numTilesU-1, pc+1, pc+5);
+				m_inst[pc].Jump(0, UtileToStart+numTilesU-1, pc+1, pc+5);
 				pc++;
 
 				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
@@ -494,7 +486,7 @@ public:
 			pc++;
 
 			// Start---Load values to buffer 0 or buffer 1
-				m_inst[pc].Jump(0, m_numTilesU-1, pc+1, pc+5);
+				m_inst[pc].Jump(0, UtileToStart+numTilesU-1, pc+1, pc+5);
 				pc++;
 
 				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
@@ -549,7 +541,7 @@ public:
 			// End---use U tile from buffer 0 or buffer 1
 
 			uint32_t endInnerMost = pc;
-			m_inst[pc].Jump(0, m_numTilesU-1, startInnerMost, pc+1);
+			m_inst[pc].Jump(0, UtileToStart+numTilesU-1, startInnerMost, pc+1);
 			m_inst[pc].IncrementIndex(0);
 			pc++;
 
@@ -562,14 +554,14 @@ public:
 			0, m_tileSize*m_numFeaturesInCL, 0,
 			Instruction::WRITEBACK_MODEL_CHANNEL, true,
 			writebackMRead);
-		m_inst[pc].ResetIndex(0);
+		m_inst[pc].SetIndex(0, UtileToStart);
 		m_inst[pc].IncrementIndex(1);
-		m_inst[pc].Jump(1, m_numTilesM-1, loadMtile, pc+1);
+		m_inst[pc].Jump(1, MtileToStart+numTilesM-1, loadMtile, pc+1);
 		pc++;
 
 		m_inst[pc].Jump(2, numEpochs-1, loadMtile, 0xFFFFFFFF);
-		m_inst[pc].ResetIndex(0);
-		m_inst[pc].ResetIndex(1);
+		m_inst[pc].SetIndex(0, UtileToStart);
+		m_inst[pc].SetIndex(1, MtileToStart);
 		m_inst[pc].IncrementIndex(2);
 		pc++;
 

@@ -27,10 +27,10 @@
 class iFPGA {
 public:
 	static const uint32_t MAX_MEMORY_SIZE_IN_CL = (1 << 10);
-
-protected:
 	static const uint32_t MAX_NUM_INSTANCES = MAKEFILE_MAX_NUM_INSTANCES;
 	static const uint32_t NUM_INSTANCES_PER_BANK = MAKEFILE_NUM_INSTANCES_PER_BANK;
+
+protected:
 	uint32_t m_numInstances;
 
 private:

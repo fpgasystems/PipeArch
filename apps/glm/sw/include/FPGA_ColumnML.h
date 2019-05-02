@@ -91,6 +91,8 @@ public:
 		m_ifpga->Free(m_programMemoryHandle);
 	}
 
+	volatile float* GetBase() {return m_base;}
+
 	void ResetContext() {
 		auto output = iFPGA::CastToInt(m_outputHandle);
 		output[0] = 0; // Done
