@@ -41,7 +41,7 @@ public:
 		m_stopTime = 0;
 		m_priority = priority;
 		m_outputCopyRequested = false;
-		m_cML-> ResetContext();
+		m_cML->ResetContext();
 	}
 
 	uint32_t GetId() {
