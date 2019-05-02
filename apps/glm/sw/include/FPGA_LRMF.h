@@ -428,19 +428,12 @@ public:
 			pc++;
 
 			// Start---Load U tile to buffer 0 or buffer 1
+				m_inst[pc].Jump(0, m_numTilesU-1, pc+1, pc+5);
+				pc++;
+
 				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
 				m_inst[pc].IncrementIndex(0);
 				pc++;
-
-				// loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, Values2OffsetInBRAM, 0);
-				// m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
-				// 	1, 0, 0, loadValuesWrite);
-				// m_inst[pc].MakeNonBlocking();
-				// pc++;
-
-				// localaccess_t inputRead(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
-				// m_inst[pc].Copy2(inputRead, inputRead);
-				// pc++;
 
 				loadUTileWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
 				m_inst[pc].Load(m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
@@ -451,16 +444,6 @@ public:
 
 				m_inst[pc].Jump(0, 0xFFFFFFFF, pc+2, 0);
 				pc++;
-
-				// loadValuesWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(BRAM, ValuesOffsetInBRAM, 0);
-				// m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
-				// 	1, 0, 0, loadValuesWrite);
-				// m_inst[pc].MakeNonBlocking();
-				// pc++;
-
-				// localaccess_t inputRead2(BRAM, Utile2OffsetInBRAM, m_tileSize*m_numFeaturesInCL);
-				// m_inst[pc].Copy2(inputRead2, inputRead2);
-				// pc++;
 
 				loadUTileWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(BRAM, Utile2OffsetInBRAM, m_tileSize*m_numFeaturesInCL);
 				m_inst[pc].Load(m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
@@ -511,6 +494,9 @@ public:
 			pc++;
 
 			// Start---Load values to buffer 0 or buffer 1
+				m_inst[pc].Jump(0, m_numTilesU-1, pc+1, pc+5);
+				pc++;
+
 				m_inst[pc].JumpIfEven(0, pc+1, pc+3);
 				m_inst[pc].IncrementIndex(0);
 				pc++;
