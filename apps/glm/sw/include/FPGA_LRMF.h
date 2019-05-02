@@ -206,7 +206,7 @@ public:
 
 						m_MindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Mindex-M_min)*m_numFeaturesInCL & 0x3FFF);
 						// m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
-						if ( (tm*m_numTilesU+tu)%2 == 0 ) {
+						if ( tu%2 == 0 ) {
 							m_UindexesPtr[tm*m_numTilesU+tu][i] = ((m_numFeaturesInCL&0x3FFF) << 16) | ((m_LBTiled[tm*m_numTilesU+tu][i].m_Uindex-U_min)*m_numFeaturesInCL & 0x3FFF);
 						}
 						else {
