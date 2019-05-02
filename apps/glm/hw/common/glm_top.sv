@@ -129,7 +129,6 @@ module glm_top
     //
     // =========================================================================
 
-    logic [LOG2_PROGRAM_SIZE-1:0] program_length_request;
     logic [LOG2_PROGRAM_SIZE-1:0] program_length_receive;
 
     always_ff @(posedge clk)
@@ -152,7 +151,6 @@ module glm_top
                 if (thread_information.status == THREAD_LOAD_PROGRAM)
                 begin
                     request_state <= RXTX_STATE_PROGRAM_READ;
-                    program_length_request <= 15'b0;
                 end
             end
 
@@ -947,13 +945,6 @@ module glm_top
         .MEM_accessprops_write(MEM_accessprops_write[0].write),
         .MEM_accessprops_read(MEM_accessprops_read[0].read)
     );
-    // always_ff @(posedge clk)
-    // begin
-    //     REGION_inputcopy_interface[0].we <= REGION_input_write[0].we;
-    //     REGION_inputcopy_interface[0].waddr <= REGION_input_write[0].waddr;
-    //     REGION_inputcopy_interface[0].wdata <= REGION_input_write[0].wdata;
-    //     REGION_inputcopy_interface[0].wfifobram <= REGION_input_write[0].wfifobram;
-    // end
 
     glm_writeback
     execute_writeback

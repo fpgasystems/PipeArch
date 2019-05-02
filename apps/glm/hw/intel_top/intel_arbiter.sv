@@ -136,7 +136,7 @@ module intel_arbiter
     logic [1:0] current_Tx_c0_1d = 0;
     always_ff @(posedge clk)
     begin
-        for (int i = 1; i < NUM_INSTANCES; i=i+1)
+        for (int i = 0; i < NUM_INSTANCES; i=i+1)
         begin
             if (!Tx_c0[i].rdempty) begin
                 current_Tx_c0 <= i;
@@ -208,7 +208,7 @@ module intel_arbiter
     logic [1:0] current_Tx_c1_1d = 0;
     always_ff @(posedge clk)
     begin
-        for (int i = 1; i < NUM_INSTANCES; i=i+1)
+        for (int i = 0; i < NUM_INSTANCES; i=i+1)
         begin
             if (!Tx_c1[i].rdempty) begin
                 current_Tx_c1 <= i;

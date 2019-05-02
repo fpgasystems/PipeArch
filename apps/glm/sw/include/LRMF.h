@@ -114,7 +114,8 @@ public:
 	}
 
 	~LRMF() {
-		deallocData();
+		if (m_numFeatures > 0)
+			deallocData();
 	}
 
 	void RandInitMU() {

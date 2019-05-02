@@ -73,30 +73,30 @@ public:
 		}
 	}
 
-	void UseCreatedMemoryLayout(FPGA_LRMF& baseObj) {
+	void UseCreatedMemoryLayout(FPGA_LRMF* baseObj) {
 		if (m_numFeatures > 0) {
 			cout << "m_numFeatures of FPGA_LRMF object created as clone is larger than 0" << endl;
 			return;
 		}
 
-		m_base = baseObj.GetBase();
+		m_base = baseObj->GetBase();
 
-		m_tileSize = baseObj.GetTileSize();
+		m_tileSize = baseObj->GetTileSize();
 
-		m_inputHandle = baseObj.m_inputHandle;
+		m_inputHandle = baseObj->m_inputHandle;
 
-		m_Mchunk = baseObj.m_Mchunk;
-		m_Uchunk = baseObj.m_Uchunk;
-		m_accessMindexesChunk = baseObj.m_accessMindexesChunk;
-		m_accessUindexesChunk = baseObj.m_accessUindexesChunk;
-		m_accessValuesChunk = baseObj.m_accessValuesChunk;
-		m_minibatchSizesChunk = baseObj.m_minibatchSizesChunk;
+		m_Mchunk = baseObj->m_Mchunk;
+		m_Uchunk = baseObj->m_Uchunk;
+		m_accessMindexesChunk = baseObj->m_accessMindexesChunk;
+		m_accessUindexesChunk = baseObj->m_accessUindexesChunk;
+		m_accessValuesChunk = baseObj->m_accessValuesChunk;
+		m_minibatchSizesChunk = baseObj->m_minibatchSizesChunk;
 
-		m_numFeaturesInCL = baseObj.m_numFeaturesInCL;
-		m_alignedNumFeatures = baseObj.m_alignedNumFeatures;
-		m_maxBatchSize = baseObj.m_maxBatchSize;
-		m_numAccessIndexesPerTileInCL = baseObj.m_numAccessIndexesPerTileInCL;
-		m_numLocalIndexesPerTileInCL = baseObj.m_numLocalIndexesPerTileInCL;
+		m_numFeaturesInCL = baseObj->m_numFeaturesInCL;
+		m_alignedNumFeatures = baseObj->m_alignedNumFeatures;
+		m_maxBatchSize = baseObj->m_maxBatchSize;
+		m_numAccessIndexesPerTileInCL = baseObj->m_numAccessIndexesPerTileInCL;
+		m_numLocalIndexesPerTileInCL = baseObj->m_numLocalIndexesPerTileInCL;
 	}
 
 	uint32_t CreateMemoryLayout() {
