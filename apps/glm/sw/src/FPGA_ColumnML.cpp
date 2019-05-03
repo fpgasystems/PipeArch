@@ -49,7 +49,7 @@ bool FPGA_ColumnML::fSGD(
 	pc++;
 
 	vector<localaccess_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
-	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFOBRAM, 0, m_numFeaturesInCL);
+	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFO, 0, m_numFeaturesInCL);
 	m_inst[pc].Load(m_samplesChunk.m_offsetInCL, m_numFeaturesInCL, m_numFeaturesInCL, m_partitionSize*m_numFeaturesInCL, 0, loadSamplesWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
@@ -68,7 +68,7 @@ bool FPGA_ColumnML::fSGD(
 	uint32_t pcModify = pc;
 	pc++;
 
-	localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL);
+	localaccess_t updateSamplesRead(FIFO, 0, m_numFeaturesInCL);
 	localaccess_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	localaccess_t updateModelWrite(FIFOBRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	m_inst[pc].Update(m_numFeaturesInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
@@ -271,7 +271,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 
 	// Start---Innermost loop
 	vector<localaccess_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
-	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFOBRAM, 0, minibatchSize*m_numFeaturesInCL);
+	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFO, 0, minibatchSize*m_numFeaturesInCL);
 	m_inst[pc].Load(m_samplesChunk.m_offsetInCL, minibatchSize*m_numFeaturesInCL, m_numFeaturesInCL, m_partitionSize*m_numFeaturesInCL, 0, loadSamplesWrite);
 	uint32_t pcSamples = pc;
 	m_inst[pc].MakeNonBlocking();
@@ -293,7 +293,6 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	// localaccess_t updateSamplesRead(BRAM, 0, m_numFeaturesInCL, true);
 	localaccess_t updateSamplesRead(FIFO, m_numFeaturesInCL);
 	localaccess_t updateModelRead(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
 	localaccess_t updateModelWrite(BRAM, modelOffsetInBRAM, m_numFeaturesInCL);
@@ -317,7 +316,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 		pc++;
 
 		// Start---Innermost loop
-		loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFOBRAM, 0, m_rest*m_numFeaturesInCL);
+		loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFO, 0, m_rest*m_numFeaturesInCL);
 		m_inst[pc].Load(m_samplesChunk.m_offsetInCL, m_rest*m_numFeaturesInCL, m_numFeaturesInCL, m_partitionSize*m_numFeaturesInCL, 0, loadSamplesWrite);
 		uint32_t pcRestSamples = pc;
 		m_inst[pc].MakeNonBlocking();
@@ -441,7 +440,7 @@ bool FPGA_ColumnML::fSCD(
 
 	// Load samples
 	vector<localaccess_t> loadSamplesWrite(Instruction::NUM_LOAD_CHANNELS);
-	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFOBRAM, 0, m_partitionSizeInCL);
+	loadSamplesWrite[Instruction::LOAD_REGION_INPUT_CHANNEL].Set(FIFO, 0, m_partitionSizeInCL);
 	m_inst[pc].LocalLoad(0, 1, 0, 0, loadSamplesWrite);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
@@ -467,7 +466,7 @@ bool FPGA_ColumnML::fSCD(
 	uint32_t pcModify = pc;
 	pc++;
 
-	localaccess_t updateSamplesRead(BRAM, 0, m_partitionSizeInCL);
+	localaccess_t updateSamplesRead(FIFO, 0, m_partitionSizeInCL);
 	localaccess_t updateModelRead(BRAM, residualOffsetInBRAM, m_partitionSizeInCL);
 	localaccess_t updateModelWrite(FIFOBRAM, residualOffsetInBRAM, m_partitionSizeInCL);
 	m_inst[pc].Update(m_partitionSizeInCL, updateSamplesRead, modifyWrite, updateModelRead, updateModelWrite, false);
