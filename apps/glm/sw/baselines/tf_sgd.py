@@ -159,7 +159,7 @@ train(model, tf_x, tf_y, 10, minibatch_size, lr, reg)
 # 	for epoch in range(0, 10):
 # 		start = time.time()
 # 		for i in range(0, int(y.shape[0]/minibatch_size) ):
-# 			_ = sess.run(optimizer, feed_dict={tf_x:X_norm[i:i+minibatch_size, :].reshape(minibatch_size,X_norm.shape[1]), tf_y:y[i:i+minibatch_size].reshape(minibatch_size), learning_rate:lr, regularization:reg})
+# 			_ = sess.run(optimizer, feed_dict={tf_x:X_norm[i*minibatch_size:(i+1)*minibatch_size, :].reshape(minibatch_size,X_norm.shape[1]), tf_y:y[i*minibatch_size:(i+1)*minibatch_size].reshape(minibatch_size), learning_rate:lr, regularization:reg})
 
 # 		end = time.time()
 # 		print('time per epoch: ' + str(end-start))
