@@ -274,6 +274,7 @@ void ColumnML::AVX_SGD(
 
 	float scaledStepSize = stepSize/minibatchSize;
 	float scaledLambda = stepSize*lambda;
+	double total = 0.0;
 	for(uint32_t epoch = 0; epoch < numEpochs; epoch++) {
 
 		double start = get_time();
@@ -351,6 +352,7 @@ void ColumnML::AVX_SGD(
 		}
 
 		double end = get_time();
+		total += (end-start);
 #ifdef PRINT_TIMING
 		cout << "time for one epoch: " << end-start << endl;
 #endif
@@ -368,6 +370,8 @@ void ColumnML::AVX_SGD(
 #endif
 		}
 	}
+
+	cout << "avg epoch time: " << total/numEpochs << endl;
 
 	free(x);
 	free(gradient);
