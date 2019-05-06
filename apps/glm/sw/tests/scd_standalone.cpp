@@ -15,8 +15,9 @@ int main(int argc, char* argv[]) {
 	uint32_t numEpochs = 10;
 	uint32_t partitionSize = 1;
 	uint32_t numInstances = 1;
-	if (!(argc == 7)) {
-		cout << "Usage: ./app <pathToDataset> <numSamples> <numFeatures> <partitionSize> <numEpochs> <numInstances>" << endl;
+	uint32_t sw0hw1 = 0;
+	if (!(argc == 8)) {
+		cout << "Usage: ./app <pathToDataset> <numSamples> <numFeatures> <partitionSize> <numEpochs> <numInstances> <sw0hw1>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
@@ -25,11 +26,7 @@ int main(int argc, char* argv[]) {
 	partitionSize = atoi(argv[4]);
 	numEpochs = atoi(argv[5]);
 	numInstances = atoi(argv[6]);
-
-	if (numInstances > iFPGA::MAX_NUM_INSTANCES) {
-		cout << "numInstances is larger than iFPGA::MAX_NUM_INSTANCES (" << iFPGA::MAX_NUM_INSTANCES << ")" << endl;
-		return 1;
-	}
+	sw0hw1 = atoi(argv[7]);
 
 #ifdef FPGA
 	Server server(false, true);
@@ -68,54 +65,67 @@ int main(int argc, char* argv[]) {
 	// Set memory format / decide on SGD or SCD
 	MemoryFormat format = ColumnStore;
 
-	columnML[0]->SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
-
-#ifdef FPGA
-	columnML[0]->CreateMemoryLayout(format, partitionSize, 1);
-	for (uint32_t i = 1; i < numInstances; i++) {
-		columnML[i]->UseCreatedMemoryLayout(columnML[0]);
+	if (sw0hw1 == 0) {
+		// columnML[0]->SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
+		columnML[0]->AVXmulti_SCD(type, false, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args, numInstances);
 	}
-
-	vector<uint32_t> numPartitionsPerInstance(numInstances);
-	for (uint32_t i = 0; i < numInstances; i++) {
-		if (i == numInstances-1) {
-			numPartitionsPerInstance[i] = columnML[0]->m_numPartitions - i*(columnML[0]->m_numPartitions/numInstances);
-		}
-		else {
-			numPartitionsPerInstance[i] = columnML[0]->m_numPartitions/numInstances;
-		}
-		cout << "numPartitionsPerInstance[" << i << "]: " << numPartitionsPerInstance[i] << endl;
-
-		if (numPartitionsPerInstance[i] > 0) {
-			columnML[i]->fSCD(i*(columnML[0]->m_numPartitions/numInstances), numPartitionsPerInstance[i], type, 1, stepSize, lambda);
-		}
-	}
-#endif
-
+	else {
 #ifdef FPGA
-	vector<vector<float> > modelsPerEpoch;
-	modelsPerEpoch.reserve(numEpochs);
-	for (uint32_t e = 0; e < numEpochs; e++) {
+		if (numInstances > iFPGA::MAX_NUM_INSTANCES) {
+			cout << "numInstances is larger than iFPGA::MAX_NUM_INSTANCES (" << iFPGA::MAX_NUM_INSTANCES << ")" << endl;
+			return 1;
+		}
+		
+		columnML[0]->CreateMemoryLayout(format, partitionSize, 1);
+		for (uint32_t i = 1; i < numInstances; i++) {
+			columnML[i]->UseCreatedMemoryLayout(columnML[0]);
+		}
+
+		vector<uint32_t> numPartitionsPerInstance(numInstances);
+		for (uint32_t i = 0; i < numInstances; i++) {
+			if (i == numInstances-1) {
+				numPartitionsPerInstance[i] = columnML[0]->m_numPartitions - i*(columnML[0]->m_numPartitions/numInstances);
+			}
+			else {
+				numPartitionsPerInstance[i] = columnML[0]->m_numPartitions/numInstances;
+			}
+			cout << "numPartitionsPerInstance[" << i << "]: " << numPartitionsPerInstance[i] << endl;
+
+			if (numPartitionsPerInstance[i] > 0) {
+				columnML[i]->fSCD(i*(columnML[0]->m_numPartitions/numInstances), numPartitionsPerInstance[i], type, 1, stepSize, lambda);
+			}
+		}
+
+		vector<vector<float> > modelsPerEpoch;
+		modelsPerEpoch.reserve(numEpochs);
+
 		vector<FThread*> fthreads(numInstances);
-		for (uint32_t i = 0; i < numInstances; i++) {
-			if (numPartitionsPerInstance[i] > 0) {
-				fthreads[i] = server.Request(columnML[i]);
-			}
-		}
-		for (uint32_t i = 0; i < numInstances; i++) {
-			if (numPartitionsPerInstance[i] > 0) {
-				fthreads[i]->WaitUntilFinished();
-			}
-		}
-		modelsPerEpoch.push_back(columnML[0]->GetModelSCD(0));
-	}
 
-	// Verify
-	for (uint32_t e = 0; e < numEpochs; e++) {
-		float loss = columnML[0]->Loss(type, modelsPerEpoch[e].data(), lambda, &args);
-		cout << "loss " << e << ": " << loss << endl;
-	}
+		double start = get_time();
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			for (uint32_t i = 0; i < numInstances; i++) {
+				if (numPartitionsPerInstance[i] > 0) {
+					fthreads[i] = server.Request(columnML[i]);
+				}
+			}
+			for (uint32_t i = 0; i < numInstances; i++) {
+				if (numPartitionsPerInstance[i] > 0) {
+					fthreads[i]->WaitUntilFinished();
+				}
+			}
+			modelsPerEpoch.push_back(columnML[0]->GetModelSCD(0));
+		}
+		double total = get_time() - start;
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;
+
+		// Verify
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			float loss = columnML[0]->Loss(type, modelsPerEpoch[e].data(), lambda, &args);
+			cout << loss << endl;
+		}
 #endif
+	}
 
 	return 0;
 }

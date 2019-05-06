@@ -62,13 +62,13 @@ public:
 
 	void CopyModel() {
 		for (uint32_t m = 0; m < m_Mdim; m++) {
-			for (uint32_t j = 0; j < m_numFeatures; j++) {
-				m_M[m*m_numFeatures + j] = m_Mptr[m*m_alignedNumFeatures + j];
+			for (uint32_t j = 0; j < LRMF::LRMF::m_numFeatures; j++) {
+				m_M[m*LRMF::LRMF::m_numFeatures + j] = m_Mptr[m*m_alignedNumFeatures + j];
 			}
 		}
 		for (uint32_t u = 0; u < m_Udim; u++) {
-			for (uint32_t j = 0; j < m_numFeatures; j++) {
-				m_U[u*m_numFeatures + j] = m_Uptr[u*m_alignedNumFeatures + j];
+			for (uint32_t j = 0; j < LRMF::LRMF::m_numFeatures; j++) {
+				m_U[u*LRMF::LRMF::m_numFeatures + j] = m_Uptr[u*m_alignedNumFeatures + j];
 			}
 		}
 	}
@@ -100,8 +100,8 @@ public:
 	}
 
 	uint32_t CreateMemoryLayout() {
-		if (m_numFeatures == 0) {
-			cout << "m_numFeatures of FPGA_LRMF object created as main is equal to 0" << endl;
+		if (LRMF::LRMF::m_numFeatures == 0) {
+			cout << "LRMF::m_numFeatures of FPGA_LRMF object created as main is equal to 0" << endl;
 			return 0;
 		}
 		if (m_LBTiled.size() == 0) {
@@ -109,7 +109,7 @@ public:
 			return 0;
 		}
 
-		m_numFeaturesInCL = ConvertNumWordToNumCL(m_numFeatures, sizeof(float));
+		m_numFeaturesInCL = ConvertNumWordToNumCL(LRMF::LRMF::m_numFeatures, sizeof(float));
 		m_alignedNumFeatures = m_numFeaturesInCL*16;
 		m_numAccessIndexesPerTileInCL = ConvertNumWordToNumCL(m_numTilesU, sizeof(remoteaccess_t));
 		m_numLocalIndexesPerTileInCL = ConvertNumWordToNumCL(m_numTilesU, sizeof(uint32_t));
@@ -190,13 +190,13 @@ public:
 		}
 
 		for (uint32_t m = 0; m < m_Mdim; m++) {
-			for (uint32_t j = 0; j < m_numFeatures; j++) {
-				m_Mptr[m*m_alignedNumFeatures + j] = m_M[m*m_numFeatures + j];
+			for (uint32_t j = 0; j < LRMF::m_numFeatures; j++) {
+				m_Mptr[m*m_alignedNumFeatures + j] = m_M[m*LRMF::m_numFeatures + j];
 			}
 		}
 		for (uint32_t u = 0; u < m_Udim; u++) {
-			for (uint32_t j = 0; j < m_numFeatures; j++) {
-				m_Uptr[u*m_alignedNumFeatures + j] = m_U[u*m_numFeatures + j];
+			for (uint32_t j = 0; j < LRMF::m_numFeatures; j++) {
+				m_Uptr[u*m_alignedNumFeatures + j] = m_U[u*LRMF::m_numFeatures + j];
 			}
 		}
 		m_minibatchSizes = ((uint32_t*)m_base) + m_minibatchSizesChunk.m_offsetInCL*16;

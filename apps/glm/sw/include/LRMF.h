@@ -540,7 +540,7 @@ public:
 			total += (end-start);
 
 			loss = RMSE();
-			cout << "Loss " << e << ": " << loss << endl;
+			cout << loss << endl;
 		}
 
 		cout << "Avg time per epoch: " << total/numEpochs << endl;

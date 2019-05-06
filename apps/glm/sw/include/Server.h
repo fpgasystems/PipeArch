@@ -13,7 +13,8 @@
 
 using namespace std;
 
-#define PRINT_STATUS
+// #define PRINT_STATUS
+// #define VERBOSE
 
 static const struct timespec PAUSE {.tv_sec = 0, .tv_nsec = 1000};
 
@@ -191,7 +192,9 @@ public:
 
 		for (FThread* t: m_runningThreads) {
 			if (t->IsFinished()) {
+#ifdef VERBOSE
 				cout << "------ FThread with id: " << t->GetId() << " is finished" << endl;
+#endif
 				toErase.push_back(pos);
 			}
 			t->IsPaused();
@@ -253,13 +256,17 @@ public:
 		int pos = -1;
 		for (FThread* t: m_runningThreads) {
 			uint32_t minimum = numeric_limits<uint32_t>::max();
+#ifdef VERBOSE
 			cout << "t->GetNumTimesResumed(): " << t->GetNumTimesResumed() << endl;
+#endif
 			if ((t->GetState() == idle || t->GetState() == paused) && t->GetNumTimesResumed() < minimum) {
 				minimum = t->GetNumTimesResumed();
 				threadToMigrate = t;
 				pos = i;
 			}
+#ifdef VERBOSE
 			cout << "pos: " << pos << endl;
+#endif
 			i++;
 		}
 
@@ -291,9 +298,11 @@ private:
 		if (fthread == NULL) {
 			return;
 		}
+#ifdef VERBOSE
 		if (fthread->GetPriority() > 0) {
 			cout << "-----------------ResumeThread with id: " << fthread->GetId() << endl;
 		}
+#endif
 
 #ifdef PRINT_STATUS
 		cout << "ResumeThread with id: " << fthread->GetId() << endl;
@@ -302,14 +311,15 @@ private:
 
 		auto output = iFPGA::CastToInt(fthread->m_cML->m_outputHandle);
 		output[0] = 0;
-
+#ifdef VERBOSE
 		cout << "output resetted" << endl;
-
+#endif
 		auto programMemory = iFPGA::CastToPtr(fthread->m_cML->m_programMemoryHandle);
 		auto inputMemory = iFPGA::CastToPtr(fthread->m_cML->m_inputHandle);
 		auto outputMemory = iFPGA::CastToPtr(fthread->m_cML->m_outputHandle);
-
+#ifdef VERBOSE
 		cout << "Writing args" << endl;
+#endif
 
 #ifdef XILINX // On sdaccel we have to trigger context switch already while starting the kernel
 		uint64_t triggerContextSwitch = m_enableContextSwitch;
@@ -333,9 +343,11 @@ private:
 			return;
 		}
 
+#ifdef VERBOSE
 		if (fthread->GetPriority() > 0) {
 			cout << "-----------------PauseThread with id: " << fthread->GetId() << endl;
 		}
+#endif
 
 #ifdef PRINT_STATUS
 		cout << "PauseThread with id: " << fthread->GetId() << endl;
@@ -370,9 +382,11 @@ private:
 		if (temp.front()->GetNumThreads() < temp.back()->GetNumThreads()-1) {
 			FThread* fthread = temp.back()->GetThreadToMigrate();
 			if (fthread != NULL) {
+#ifdef VERBOSE
 				cout << "Migrate thread with id: " << fthread->GetId() << endl;
 				cout << "temp.front()->GetNumThreads(): " << temp.front()->GetNumThreads() << endl;
 				cout << "temp.back()->GetNumThreads(): " << temp.back()->GetNumThreads() << endl;
+#endif
 				temp.front()->AddThread(fthread);
 			}
 		}
@@ -405,7 +419,9 @@ private:
 					}
 
 					if (whichInstance != -1) {
+#ifdef VERBOSE
 						cout << "Putting fthread " << fthread->GetId() << " to instance " << whichInstance << endl;
+#endif
 						m_instance[whichInstance]->AddThread(fthread);
 						m_requestQueue.pop();
 					}

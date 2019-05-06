@@ -15,8 +15,9 @@ int main(int argc, char* argv[]) {
 	bool asyncUpdate = false;
 	uint32_t numEpochs = 10;
 	uint32_t numInstances = 1;
-	if (!(argc == 8)) {
-		cout << "Usage: ./app <pathToDataset> <Mdim> <numFeatures> <tileSize> <asyncUpdate> <numEpochs> <numInstances>" << endl;
+	uint32_t sw0hw1 = 0;
+	if (!(argc == 9)) {
+		cout << "Usage: ./app <pathToDataset> <Mdim> <numFeatures> <tileSize> <asyncUpdate> <numEpochs> <numInstances> <sw0hw1>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
@@ -26,11 +27,7 @@ int main(int argc, char* argv[]) {
 	asyncUpdate = (strcmp(argv[5], "y") == 0);
 	numEpochs = atoi(argv[6]);
 	numInstances = atoi(argv[7]);
-
-	if (numInstances > iFPGA::MAX_NUM_INSTANCES) {
-		cout << "numInstances is larger than iFPGA::MAX_NUM_INSTANCES (" << iFPGA::MAX_NUM_INSTANCES << ")" << endl;
-		return 1;
-	}
+	sw0hw1 = atoi(argv[8]);
 
 	float stepSize = 0.0008;
 	float lambda = 0;
@@ -58,93 +55,104 @@ int main(int argc, char* argv[]) {
 		lrmf[0]->ReadNetflixData(pathToDataset, Mdim);
 	}
 
-	// lrmf[0]->RandInitMU();
-	// lrmf[0]->Optimize(stepSize, lambda, numEpochs);
-
 	lrmf[0]->DivideLBIntoTiles(tileSize);
 
-	// lrmf[0]->RandInitMU();
-	// lrmf[0]->OptimizeRound(stepSize, lambda, numEpochs);
+	if (sw0hw1 == 0) {
+		// lrmf[0]->RandInitMU();
+		// lrmf[0]->Optimize(stepSize, lambda, numEpochs);
 
-	// lrmf[0]->RandInitMU();
-	// lrmf[0]->OptimizeRoundStale(stepSize, lambda, numEpochs);
+		// lrmf[0]->RandInitMU();
+		// lrmf[0]->OptimizeRound(stepSize, lambda, numEpochs);
 
+		lrmf[0]->RandInitMU();
+		lrmf[0]->OptimizeRoundStale(stepSize, lambda, numEpochs);
+	}
+	else {
 #ifdef FPGA
-	lrmf[0]->RandInitMU();
-
-	lrmf[0]->CreateMemoryLayout();
-	for (uint32_t i = 1; i < numInstances*numInstances; i++) {
-		lrmf[i]->UseCreatedMemoryLayout(lrmf[0]);
-	}
-
-	vector<uint32_t> MtilesPermutation(numInstances*numInstances);
-	vector<uint32_t> UtilesPermutation(numInstances*numInstances);
-	for (uint32_t i = 0; i < numInstances; i++) {
-		for (uint32_t j = 0; j < numInstances; j++) {
-			MtilesPermutation[i*numInstances+j] = j;
-			UtilesPermutation[i*numInstances+j] = (i+j)%numInstances;
+		if (numInstances > iFPGA::MAX_NUM_INSTANCES) {
+			cout << "numInstances is larger than iFPGA::MAX_NUM_INSTANCES (" << iFPGA::MAX_NUM_INSTANCES << ")" << endl;
+			return 1;
 		}
-	}
 
-	vector<uint32_t> MtileToStart(numInstances*numInstances);
-	vector<uint32_t> numTilesM(numInstances*numInstances);
-	vector<uint32_t> UtileToStart(numInstances*numInstances);
-	vector<uint32_t> numTilesU(numInstances*numInstances);
-	uint32_t MtilesPerInstance = lrmf[0]->GetNumTilesM()/numInstances;
-	uint32_t UtilesPerInstance = lrmf[0]->GetNumTilesU()/numInstances;
+		lrmf[0]->RandInitMU();
 
-	for (uint32_t i = 0; i < numInstances; i++) {
-		for (uint32_t j = 0; j < numInstances; j++) {
-			MtileToStart[i*numInstances+j] = MtilesPermutation[i*numInstances+j]*MtilesPerInstance;
-			if (MtilesPermutation[i*numInstances+j] == numInstances-1)
-				numTilesM[i*numInstances+j] = lrmf[0]->GetNumTilesM() - MtileToStart[i*numInstances+j];
-			else
-				numTilesM[i*numInstances+j] = MtilesPerInstance;
-
-			UtileToStart[i*numInstances+j] = UtilesPermutation[i*numInstances+j]*UtilesPerInstance;
-			if (UtilesPermutation[i*numInstances+j] == numInstances-1)
-				numTilesU[i*numInstances+j] = lrmf[0]->GetNumTilesU() - UtileToStart[i*numInstances+j];
-			else
-				numTilesU[i*numInstances+j] = UtilesPerInstance;
-
-			cout << "MtileToStart " << i << " " << j << ": " << MtileToStart[i*numInstances+j] << endl;
-			cout << "numTilesM " << i << " " << j << ": " << numTilesM[i*numInstances+j] << endl;
-			cout << "UtileToStart " << i << " " << j << ": " << UtileToStart[i*numInstances+j] << endl;
-			cout << "numTilesU " << i << " " << j << ": " << numTilesU[i*numInstances+j] << endl;
+		lrmf[0]->CreateMemoryLayout();
+		for (uint32_t i = 1; i < numInstances*numInstances; i++) {
+			lrmf[i]->UseCreatedMemoryLayout(lrmf[0]);
 		}
-	}
 
-	for (uint32_t i = 0; i < numInstances; i++) {
-		for (uint32_t j = 0; j < numInstances; j++) {
-			lrmf[i*numInstances+j]->fOptimizeRound(
-				MtileToStart[i*numInstances+j], numTilesM[i*numInstances+j],
-				UtileToStart[i*numInstances+j], numTilesU[i*numInstances+j],
-				stepSize, lambda, asyncUpdate, 1);
-		}
-	}
-
-	double start = get_time();
-
-	for (uint32_t e = 0; e < numEpochs; e++) {
+		vector<uint32_t> MtilesPermutation(numInstances*numInstances);
+		vector<uint32_t> UtilesPermutation(numInstances*numInstances);
 		for (uint32_t i = 0; i < numInstances; i++) {
-			vector<FThread*> fthreads;
 			for (uint32_t j = 0; j < numInstances; j++) {
-				fthreads.push_back( server.Request(lrmf[i*numInstances+j]) );
-			}
-			for (uint32_t j = 0; j < numInstances; j++) {
-				fthreads[j]->WaitUntilFinished();
+				MtilesPermutation[i*numInstances+j] = j;
+				UtilesPermutation[i*numInstances+j] = (i+j)%numInstances;
 			}
 		}
-	}
-	
-	double total = get_time() - start;
-	cout << "Avg time per epoch: " << total/numEpochs << endl;
-	cout << "Processing rate: " << (numEpochs*lrmf[0]->GetDataSize())/total/1e9 << "GB/s" << endl;
 
-	// Verify
-	lrmf[0]->CopyModel();
-	cout << "FPGA loss: " << lrmf[0]->RMSE() << endl;
+		vector<uint32_t> MtileToStart(numInstances*numInstances);
+		vector<uint32_t> numTilesM(numInstances*numInstances);
+		vector<uint32_t> UtileToStart(numInstances*numInstances);
+		vector<uint32_t> numTilesU(numInstances*numInstances);
+		uint32_t MtilesPerInstance = lrmf[0]->GetNumTilesM()/numInstances;
+		uint32_t UtilesPerInstance = lrmf[0]->GetNumTilesU()/numInstances;
+
+		for (uint32_t i = 0; i < numInstances; i++) {
+			for (uint32_t j = 0; j < numInstances; j++) {
+				MtileToStart[i*numInstances+j] = MtilesPermutation[i*numInstances+j]*MtilesPerInstance;
+				if (MtilesPermutation[i*numInstances+j] == numInstances-1)
+					numTilesM[i*numInstances+j] = lrmf[0]->GetNumTilesM() - MtileToStart[i*numInstances+j];
+				else
+					numTilesM[i*numInstances+j] = MtilesPerInstance;
+
+				UtileToStart[i*numInstances+j] = UtilesPermutation[i*numInstances+j]*UtilesPerInstance;
+				if (UtilesPermutation[i*numInstances+j] == numInstances-1)
+					numTilesU[i*numInstances+j] = lrmf[0]->GetNumTilesU() - UtileToStart[i*numInstances+j];
+				else
+					numTilesU[i*numInstances+j] = UtilesPerInstance;
+
+				cout << "MtileToStart " << i << " " << j << ": " << MtileToStart[i*numInstances+j] << endl;
+				cout << "numTilesM " << i << " " << j << ": " << numTilesM[i*numInstances+j] << endl;
+				cout << "UtileToStart " << i << " " << j << ": " << UtileToStart[i*numInstances+j] << endl;
+				cout << "numTilesU " << i << " " << j << ": " << numTilesU[i*numInstances+j] << endl;
+			}
+		}
+
+		for (uint32_t i = 0; i < numInstances; i++) {
+			for (uint32_t j = 0; j < numInstances; j++) {
+				lrmf[i*numInstances+j]->fOptimizeRound(
+					MtileToStart[i*numInstances+j], numTilesM[i*numInstances+j],
+					UtileToStart[i*numInstances+j], numTilesU[i*numInstances+j],
+					stepSize, lambda, asyncUpdate, 1);
+			}
+		}
+
+		double start = get_time();
+
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			for (uint32_t i = 0; i < numInstances; i++) {
+				vector<FThread*> fthreads;
+				for (uint32_t j = 0; j < numInstances; j++) {
+					fthreads.push_back( server.Request(lrmf[i*numInstances+j]) );
+					
+					// FThread* fthread = server.Request(lrmf[i*numInstances+j]);
+					// fthread->WaitUntilFinished();
+				}
+				for (uint32_t j = 0; j < numInstances; j++) {
+					fthreads[j]->WaitUntilFinished();
+				}
+			}
+		}
+
+		double total = get_time() - start;
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*((LRMF*)lrmf[0])->GetDataSize())/total/1e9 << "GB/s" << endl;
+
+		// Verify
+		lrmf[0]->CopyModel();
+		cout << lrmf[0]->RMSE() << endl;
 #endif
+	}
 
 	for (uint32_t i = 0; i < lrmf.size(); i++) {
 		delete lrmf[i];

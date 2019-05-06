@@ -94,6 +94,10 @@ public:
 	uint32_t LogregAccuracy(float* x, AdditionalArguments* args);
 	uint32_t LinregAccuracy(float* x, AdditionalArguments* args);
 	
+	size_t GetDataSize() {
+		return m_cstore->m_numSamples*(m_cstore->m_numFeatures+1)*sizeof(float);
+	}
+
 	float Loss(ModelType type, float* x, float lambda, AdditionalArguments* args) {
 		float result = 0.0;
 		switch(type) {
