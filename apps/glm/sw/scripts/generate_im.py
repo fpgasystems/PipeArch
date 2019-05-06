@@ -74,6 +74,10 @@ classes = [
 ,238	# 'Greater Swiss Mountain dog',
 ,200	# 'Tibetan terrier, chrysanthemum dog',
 ,230	# 'Shetland sheepdog, Shetland sheep dog, Shetland',
+,1		#'goldfish, Carassius auratus',
+,2		#'great white shark, white shark, man-eater, man-eating shark, Carcharodon carcharias',
+,3		#'tiger shark, Galeocerdo cuvieri',
+,4		#'hammerhead, hammerhead shark',
 ]
 for c in range(0, args.num_classes):
 	samples.extend( reformat_features(args.features_dir, [classes[c]], c) )
