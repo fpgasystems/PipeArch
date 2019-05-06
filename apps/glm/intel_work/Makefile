@@ -3,13 +3,13 @@ hw_path = ../hw/
 include ../../../opae/base/sw/base_include.mk
 
 # Primary test name
-TEST = netflix
+TEST = scd_standalone
 
 # Build directory
 OBJDIR = obj
 INCLUDE = $(sw_path)/include
 CFLAGS += -I./$(OBJDIR)
-CPPFLAGS += -I./$(OBJDIR) -march=native -DMAKEFILE_MAX_NUM_INSTANCES=3 -DMAKEFILE_NUM_INSTANCES_PER_BANK=3
+CPPFLAGS += -I./$(OBJDIR) -march=native -DMAKEFILE_MAX_NUM_INSTANCES=2 -DMAKEFILE_NUM_INSTANCES_PER_BANK=2 -DAVX2
 
 # Files and folders
 LOCAL_SRCS = $(wildcard $(sw_path)/src/*.cpp)

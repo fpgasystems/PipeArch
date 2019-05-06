@@ -74,8 +74,8 @@ public:
 	}
 
 	void UseCreatedMemoryLayout(FPGA_LRMF* baseObj) {
-		if (m_numFeatures > 0) {
-			cout << "m_numFeatures of FPGA_LRMF object created as clone is larger than 0" << endl;
+		if (m_inputHandle != NULL) {
+			cout << "m_inputHandle of FPGA_LRMF object created as clone is not NULL" << endl;
 			return;
 		}
 

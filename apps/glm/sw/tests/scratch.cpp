@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
 	ModelType type;
 	if ( strcmp(pathToDataset, "syn") == 0) {
 		columnML.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
-		type = logreg;
+		type = linreg;
 	}
 	else {
 		columnML.m_cstore->LoadRawData(pathToDataset, numSamples, numFeatures, true);
@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
 	args.m_constantStepSize = true;
 
 	// Set memory format / decide on SGD or SCD
-	MemoryFormat format = RowStore;
+	MemoryFormat format = ColumnStore;
 
 	if (format == RowStore) {
 		stepSize = 0.01;

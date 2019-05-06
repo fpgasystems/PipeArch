@@ -4,7 +4,8 @@ bool FPGA_ColumnML::fSGD(
 	ModelType type,
 	uint32_t numEpochs,
 	float stepSize,
-	float lambda)
+	float lambda,
+	uint32_t whichClass)
 {
 	if (m_base == nullptr) {
 		cout << "m_base is nullptr!" << endl;
@@ -41,7 +42,7 @@ bool FPGA_ColumnML::fSGD(
 	// Load labels in partition
 	vector<localaccess_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadLabelsWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(labelOffsetInBRAM, m_partitionSizeInCL);
-	m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
+	m_inst[pc].Load(m_labelsChunk.m_offsetInCL + whichClass*m_numSamplesInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
 	pc++;
 
 	m_inst[pc].Prefetch(m_samplesChunk.m_offsetInCL, m_partitionSize*m_numFeaturesInCL, 0, m_partitionSize*m_numFeaturesInCL, 0);
@@ -113,7 +114,7 @@ bool FPGA_ColumnML::fSGD(
 		pc++;
 
 		loadLabelsWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(labelOffsetInBRAM, m_restInCL);
-		m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
+		m_inst[pc].Load(m_labelsChunk.m_offsetInCL + whichClass*m_numSamplesInCL, m_restInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
 		pc++;
 
 		m_inst[pc].Prefetch(m_samplesChunk.m_offsetInCL, m_rest*m_numFeaturesInCL, 0, m_partitionSize*m_numFeaturesInCL, 0);
@@ -217,7 +218,8 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	uint32_t numEpochs,
 	uint32_t minibatchSize, 
 	float stepSize,
-	float lambda)
+	float lambda,
+	uint32_t whichClass)
 {
 	if (m_base == nullptr) {
 		cout << "m_base is nullptr!" << endl;
@@ -261,7 +263,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 	// Load labels in partition
 	vector<localaccess_t> loadLabelsWrite(Instruction::NUM_LOAD_CHANNELS);
 	loadLabelsWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(labelOffsetInBRAM, m_partitionSizeInCL);
-	m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
+	m_inst[pc].Load(m_labelsChunk.m_offsetInCL + whichClass*m_numSamplesInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
 	uint32_t pcLabels = pc;
 	pc++;
 
@@ -312,7 +314,7 @@ bool FPGA_ColumnML::fSGD_minibatch(
 
 	if ( m_rest > 0 ) {
 		loadLabelsWrite[Instruction::LOAD_REGION_LABELS_CHANNEL].Set(labelOffsetInBRAM, m_restInCL);
-		m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
+		m_inst[pc].Load(m_labelsChunk.m_offsetInCL + whichClass*m_numSamplesInCL, m_restInCL, 0, m_partitionSizeInCL, 0, loadLabelsWrite);
 		pc++;
 
 		// Start---Innermost loop
@@ -385,6 +387,8 @@ bool FPGA_ColumnML::fSGD_minibatch(
 }
 
 bool FPGA_ColumnML::fSCD(
+	uint32_t partitionToStart,
+	uint32_t numPartitions,
 	ModelType type, 
 	uint32_t numEpochs,
 	float stepSize, 
@@ -413,6 +417,14 @@ bool FPGA_ColumnML::fSCD(
 	//
 	// *************************************************************************
 	uint32_t pc = 0;
+
+	m_inst[pc].SetIndex(1, partitionToStart);
+	uint32_t pcEpochStart = pc;
+	pc++;
+
+	m_inst[pc].ResetIndex(0);
+	uint32_t pcPartitionStart = pc;
+	pc++;
 
 	// Load residual
 	vector<localaccess_t> loadResidualWrite(Instruction::NUM_LOAD_CHANNELS);
@@ -484,7 +496,7 @@ bool FPGA_ColumnML::fSCD(
 	pc++;
 
 	m_inst[pc].Dot(m_partitionSizeInCL, dotLeftRead, dotRightRead, dotWrite, false);
-	m_inst[pc].Jump(0, m_cstore->m_numFeatures-1, pcModify, pc+1);
+	m_inst[pc].Jump(0, m_numFeatures-1, pcModify, pc+1);
 	pc++;
 	// End---Innermost loop
 
@@ -508,14 +520,11 @@ bool FPGA_ColumnML::fSCD(
 	m_inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
 		0, m_numFeaturesInCL, m_numPartitions*m_numFeaturesInCL,
 		1, true, writebackModelRead);
-	m_inst[pc].Jump(1, m_numPartitions-1, 0, pc+1);
-	m_inst[pc].ResetIndex(0);
+	m_inst[pc].Jump(1, partitionToStart+numPartitions-1, pcPartitionStart, pc+1);
 	m_inst[pc].IncrementIndex(1);
 	pc++;
 
-	m_inst[pc].Jump(2, numEpochs-1, 0, 0xFFFFFFFF);
-	m_inst[pc].ResetIndex(0);
-	m_inst[pc].ResetIndex(1);
+	m_inst[pc].Jump(2, numEpochs-1, pcEpochStart, 0xFFFFFFFF);
 	m_inst[pc].IncrementIndex(2);
 	pc++;
 	// *************************************************************************

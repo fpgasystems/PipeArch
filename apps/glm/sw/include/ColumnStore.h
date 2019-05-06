@@ -21,6 +21,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <vector>
 #include <sys/time.h>
 
 #include "aes.h"
@@ -41,6 +42,7 @@ class ColumnStore {
 public:
 	float** m_samples;
 	float* m_labels;
+	vector<float*> m_onehotLabels;
 
 	uint32_t** m_compressedSamples;
 	uint32_t** m_compressedSamplesSizes;
@@ -103,6 +105,26 @@ public:
 	// Normalization and data shaping
 	void NormalizeSamples(NormType norm, NormDirection direction);
 	void NormalizeLabels(NormType norm, bool binarizeLabels, float labelsToBinarizeTo);
+	void PopulateOnehotLabels(uint32_t numClasses) {
+		for (float* item : m_onehotLabels) {
+			if (item != nullptr) {
+				free(item);
+			}
+		}
+		m_onehotLabels.clear();
+		m_onehotLabels.resize(numClasses);
+
+		// cout << "----PopulateOnehotLabels" << endl;
+		for (uint32_t c = 0; c < numClasses; c++) {
+			// cout << "--Class " << c << endl;
+			m_onehotLabels[c] = (float*)aligned_alloc(64, m_numSamples*sizeof(float));
+			for (uint32_t i = 0; i < m_numSamples; i++) {
+				m_onehotLabels[c][i] = (m_labels[i] == c) ? 1.0 : 0.0;
+				// cout << "m_labels[" << i << "]: " << m_labels[i] << endl;
+				// cout << "m_onehotLabels[" << i << "]: " << m_onehotLabels[c][i] << endl;
+			}
+		}
+	}
 	float CompressSamples(uint32_t minibatchSize, uint32_t toIntegerScaler);
 	void EncryptSamples(uint32_t minibatchSize, bool useCompressed);
 
@@ -194,6 +216,11 @@ private:
 		if (m_labels != nullptr) {
 			cout << "Freeing m_labels..." << endl;
 			free(m_labels);
+		}
+		for (float* item : m_onehotLabels) {
+			if (item != nullptr) {
+				free(item);
+			}
 		}
 	}
 

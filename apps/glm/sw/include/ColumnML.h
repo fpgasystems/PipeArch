@@ -59,6 +59,10 @@ struct AdditionalArguments
 	float m_falseLabel;
 
 	bool m_constantStepSize;
+
+	// multi-class
+	bool m_useOnehotLabels;
+	uint32_t m_class;
 };
 
 class ColumnML {
@@ -256,29 +260,32 @@ private:
 #endif
 
 	void updateL2svmGradient(float* gradient, float* x, uint32_t sampleIndex, AdditionalArguments* args) {
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][sampleIndex] : m_cstore->m_labels[sampleIndex];
 		float dot = getDot(x, sampleIndex);
-		float temp = 1 - m_cstore->m_labels[sampleIndex]*dot;
+		float temp = 1 - label*dot;
 		if (temp > 0) {
 			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				if (m_cstore->m_labels[sampleIndex] > 0) {
-					gradient[j] += args->m_costPos*(dot - m_cstore->m_labels[sampleIndex])*m_cstore->m_samples[j][sampleIndex];
+				if (label > 0) {
+					gradient[j] += args->m_costPos*(dot - label)*m_cstore->m_samples[j][sampleIndex];
 				}
 				else {
-					gradient[j] += args->m_costNeg*(dot - m_cstore->m_labels[sampleIndex])*m_cstore->m_samples[j][sampleIndex];
+					gradient[j] += args->m_costNeg*(dot - label)*m_cstore->m_samples[j][sampleIndex];
 				}
 			}
 		}
 	}
 
-	void updateLogregGradient(float* gradient, float* x, uint32_t sampleIndex) {
+	void updateLogregGradient(float* gradient, float* x, uint32_t sampleIndex, AdditionalArguments* args) {
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][sampleIndex] : m_cstore->m_labels[sampleIndex];
 		float dot = getDot(x, sampleIndex);
-		dot = ((1/(1+exp(-dot))) - m_cstore->m_labels[sampleIndex]);
+		dot = ((1/(1+exp(-dot))) - label);
 		for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 			gradient[j] += dot*m_cstore->m_samples[j][sampleIndex];
 		}
 	}
 
-	void updateLinregGradient(float* gradient, float* x, uint32_t sampleIndex) {
+	void updateLinregGradient(float* gradient, float* x, uint32_t sampleIndex, AdditionalArguments* args) {
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][sampleIndex] : m_cstore->m_labels[sampleIndex];
 		// for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 		// 	cout << "x[" << j << "]: " << x[j] << endl;
 		// }
@@ -287,7 +294,7 @@ private:
 		// }
 		float dot = getDot(x, sampleIndex);
 		// cout << sampleIndex << " dot: " << dot << endl;
-		dot -= m_cstore->m_labels[sampleIndex];
+		dot -= label;
 		// cout << sampleIndex << " error: " << dot << endl;
 		for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 			gradient[j] += dot*m_cstore->m_samples[j][sampleIndex];
@@ -302,10 +309,10 @@ private:
 				updateL2svmGradient(gradient, x, sampleIndex, args);
 				break;
 			case logreg:
-				updateLogregGradient(gradient, x, sampleIndex);
+				updateLogregGradient(gradient, x, sampleIndex, args);
 				break;
 			case linreg:
-				updateLinregGradient(gradient, x, sampleIndex);
+				updateLinregGradient(gradient, x, sampleIndex, args);
 				break;
 		}
 	}

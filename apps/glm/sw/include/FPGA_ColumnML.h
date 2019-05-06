@@ -16,14 +16,9 @@ protected:
 	volatile float* m_samples = nullptr;
 	volatile float* m_residual = nullptr;
 	volatile uint32_t* m_accessprops = nullptr;
-	volatile float** m_columns = nullptr;
+	vector<volatile float*> m_columns;
 
-	remoteaccess_t m_modelChunk;
-	remoteaccess_t m_labelsChunk;
-	remoteaccess_t m_samplesChunk;
-	remoteaccess_t m_residualChunk;
-	remoteaccess_t m_accesspropsChunk;
-	remoteaccess_t** m_columnsChunks;
+	vector<remoteaccess_t> m_columnsChunks;
 
 	MemoryFormat m_currentMemoryFormat;
 	bool m_useContextSwitch;
@@ -53,21 +48,61 @@ public:
 	iFPGA_ptr m_outputHandle;
 	iFPGA_ptr m_programMemoryHandle;
 
+	remoteaccess_t m_modelChunk;
+	remoteaccess_t m_labelsChunk;
+	remoteaccess_t m_samplesChunk;
+	remoteaccess_t m_residualChunk;
+	remoteaccess_t m_accesspropsChunk;
+
+	uint32_t m_numSamples;
+	uint32_t m_numFeatures;
 	uint32_t m_numSamplesInCL;
 	uint32_t m_numFeaturesInCL;
-	uint32_t m_alignedNumSamples;
-	uint32_t m_alignedNumFeatures;
 	uint32_t m_partitionSize;
 	uint32_t m_partitionSizeInCL;
+	uint32_t m_alignedNumSamples;
+	uint32_t m_alignedNumFeatures;
 	uint32_t m_alignedPartitionSize;
 	uint32_t m_numPartitions;
 	uint32_t m_rest;
 	uint32_t m_restInCL;
-	uint32_t m_outputSizeInCL;
 	uint32_t m_numEpochs;
+
+	uint32_t m_outputSizeInCL;
 
 	Instruction m_inst[Instruction::MAX_NUM_INSTRUCTIONS];
 	uint32_t m_numInstructions;
+
+	void UseCreatedMemoryLayout(FPGA_ColumnML* baseObj) {
+		if (m_inputHandle != NULL) {
+			cout << "m_inputHandle of FPGA_ColumnML object created as clone is not NULL" << endl;
+			return;
+		}
+
+		m_base = baseObj->GetBase();
+
+		m_inputHandle = baseObj->m_inputHandle;
+
+		m_modelChunk = baseObj->m_modelChunk;
+		m_labelsChunk = baseObj->m_labelsChunk;
+		m_samplesChunk = baseObj->m_samplesChunk;
+		m_residualChunk = baseObj->m_residualChunk;
+		m_accesspropsChunk = baseObj->m_accesspropsChunk;
+
+		m_numSamples = baseObj->m_numSamples;
+		m_numFeatures = baseObj->m_numFeatures;
+		m_numSamplesInCL = baseObj->m_numSamplesInCL;
+		m_numFeaturesInCL = baseObj->m_numFeaturesInCL;
+		m_partitionSize = baseObj->m_partitionSize;
+		m_partitionSizeInCL = baseObj->m_partitionSizeInCL;
+		m_alignedNumSamples = baseObj->m_alignedNumSamples;
+		m_alignedNumFeatures = baseObj->m_alignedNumFeatures;
+		m_alignedPartitionSize = baseObj->m_alignedPartitionSize;
+		m_numPartitions = baseObj->m_numPartitions;
+		m_rest = baseObj->m_rest;
+		m_restInCL = baseObj->m_restInCL;
+		m_numEpochs = baseObj->m_numEpochs;
+	}
 
 	FPGA_ColumnML(iFPGA* ifpga) {
 		m_inputHandle = NULL;
@@ -102,21 +137,27 @@ public:
 	}
 
 	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
-		return CreateMemoryLayout(format, partitionSize, 1);
+		return CreateMemoryLayout(format, partitionSize, 1, false);
 	}
 
-	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize, uint32_t numEpochs) {
+	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize, bool useOnehotLabels) {
+		return CreateMemoryLayout(format, partitionSize, 1, useOnehotLabels);
+	}
+
+	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize, uint32_t numEpochs, bool useOnehotLabels) {
 		m_currentMemoryFormat = format;
 
-		m_numSamplesInCL = (m_cstore->m_numSamples >> 4) + ((m_cstore->m_numSamples&0xF) > 0);
-		m_numFeaturesInCL = (m_cstore->m_numFeatures >> 4) + ((m_cstore->m_numFeatures&0xF) > 0);
-		m_partitionSize = (partitionSize > m_cstore->m_numSamples) ? m_cstore->m_numSamples : partitionSize;
+		m_numSamples = m_cstore->m_numSamples;
+		m_numFeatures = m_cstore->m_numFeatures;
+		m_numSamplesInCL = (m_numSamples >> 4) + ((m_numSamples&0xF) > 0);
+		m_numFeaturesInCL = (m_numFeatures >> 4) + ((m_numFeatures&0xF) > 0);
+		m_partitionSize = (partitionSize > m_numSamples) ? m_numSamples : partitionSize;
 		m_partitionSizeInCL = (m_partitionSize >> 4) + ((m_partitionSize & 0xF) > 0);
 		m_alignedNumSamples = m_numSamplesInCL*16;
 		m_alignedNumFeatures = m_numFeaturesInCL*16;
 		m_alignedPartitionSize = m_partitionSizeInCL*16;
-		m_numPartitions = m_cstore->m_numSamples/m_partitionSize;
-		m_rest = m_cstore->m_numSamples % m_partitionSize;
+		m_numPartitions = m_numSamples/m_partitionSize;
+		m_rest = m_numSamples % m_partitionSize;
 		m_restInCL = (m_rest >> 4) + ((m_rest&0xF) > 0);
 		m_numEpochs = numEpochs;
 
@@ -141,12 +182,12 @@ public:
 
 			// Labels
 			m_labelsChunk.m_offsetInCL = countCL;
-			countCL += m_numSamplesInCL;
+			countCL += useOnehotLabels ? m_cstore->m_onehotLabels.size()*m_numSamplesInCL : m_numSamplesInCL;
 			m_labelsChunk.m_lengthInCL = countCL - m_labelsChunk.m_offsetInCL;
 
 			// Samples
 			m_samplesChunk.m_offsetInCL = countCL;
-			countCL += m_cstore->m_numSamples*m_numFeaturesInCL;
+			countCL += m_numSamples*m_numFeaturesInCL;
 			m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
 
 			m_ifpga->Realloc(m_inputHandle, countCL*64);
@@ -157,13 +198,25 @@ public:
 			m_labels = m_base + m_labelsChunk.m_offsetInCL*16;
 			m_samples = m_base + m_samplesChunk.m_offsetInCL*16;
 
-			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
 				m_model[j] = 0;
 			}
-			for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
-				m_labels[i] = m_cstore->m_labels[i];
-				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+			for (uint32_t i = 0; i < m_numSamples; i++) {
+				
+				for (uint32_t j = 0; j < m_numFeatures; j++) {
 					m_samples[i*m_alignedNumFeatures + j] = m_cstore->m_samples[j][i];
+				}
+			}
+			if (useOnehotLabels) {
+				for (uint32_t c = 0; c < m_cstore->m_onehotLabels.size(); c++) {
+					for (uint32_t i = 0; i < m_numSamples; i++) {
+						m_labels[c*m_alignedNumSamples + i] = m_cstore->m_onehotLabels[c][i];
+					}
+				}
+			}
+			else {
+				for (uint32_t i = 0; i < m_numSamples; i++) {
+					m_labels[i] = m_cstore->m_labels[i];
 				}
 			}
 		}
@@ -201,16 +254,15 @@ public:
 			cout << "m_accesspropsChunk.m_lengthInCL: " << m_accesspropsChunk.m_lengthInCL << endl;
 #endif
 			// Columns
-			m_columnsChunks = new remoteaccess_t*[m_cstore->m_numFeatures];
-			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				m_columnsChunks[j] = new remoteaccess_t[m_numPartitions];
+			m_columnsChunks.resize(m_numFeatures*m_numPartitions);
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
 				for (uint32_t p = 0; p < m_numPartitions; p++) {
-					m_columnsChunks[j][p].m_offsetInCL = countCL;
+					m_columnsChunks[j*m_numPartitions+p].m_offsetInCL = countCL;
 					countCL += m_partitionSizeInCL;
-					m_columnsChunks[j][p].m_lengthInCL = countCL - m_columnsChunks[j][p].m_offsetInCL;
+					m_columnsChunks[j*m_numPartitions+p].m_lengthInCL = countCL - m_columnsChunks[j*m_numPartitions+p].m_offsetInCL;
 #ifdef DEBUG_COPY
-					cout << "m_columnsChunks[" << j << "," << p << "].m_offsetInCL: " << m_columnsChunks[j][p].m_offsetInCL << endl;
-					cout << "m_columnsChunks[" << j << "," << p << "].m_lengthInCL: " << m_columnsChunks[j][p].m_lengthInCL << endl;
+					cout << "m_columnsChunks[" << j << "," << p << "].m_offsetInCL: " << m_columnsChunks[j*m_numPartitions+p].m_offsetInCL << endl;
+					cout << "m_columnsChunks[" << j << "," << p << "].m_lengthInCL: " << m_columnsChunks[j*m_numPartitions+p].m_lengthInCL << endl;
 #endif
 				}
 			}
@@ -223,12 +275,12 @@ public:
 			m_labels = m_base + m_labelsChunk.m_offsetInCL*16;
 			m_model = m_base + m_modelChunk.m_offsetInCL*16;
 			m_accessprops = (uint32_t*)(m_base + m_accesspropsChunk.m_offsetInCL*16);
-			m_columns = new volatile float*[m_cstore->m_numFeatures];
-			for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-				m_columns[j] = m_base + m_columnsChunks[j][0].m_offsetInCL*16;
+			m_columns.resize(m_numFeatures);
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
+				m_columns[j] = m_base + m_columnsChunks[j*m_numPartitions].m_offsetInCL*16;
 			}
 
-			for (uint32_t i = 0; i < m_cstore->m_numSamples; i++) {
+			for (uint32_t i = 0; i < m_numSamples; i++) {
 				m_residual[i] = 0;
 				m_labels[i] = m_cstore->m_labels[i];
 			}
@@ -240,9 +292,9 @@ public:
 				}
 			}
 			for (uint32_t p = 0; p < m_numPartitions; p++) {
-				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-					m_accessprops[p*m_alignedNumFeatures*2 + 2*j] = m_columnsChunks[j][p].m_offsetInCL;
-					m_accessprops[p*m_alignedNumFeatures*2 + 2*j+1] = m_columnsChunks[j][p].m_lengthInCL;
+				for (uint32_t j = 0; j < m_numFeatures; j++) {
+					m_accessprops[p*m_alignedNumFeatures*2 + 2*j] = m_columnsChunks[j*m_numPartitions+p].m_offsetInCL;
+					m_accessprops[p*m_alignedNumFeatures*2 + 2*j+1] = m_columnsChunks[j*m_numPartitions+p].m_lengthInCL;
 					for (uint32_t i = 0; i < m_partitionSize; i++) {
 						m_columns[j][p*m_alignedPartitionSize + i] = m_cstore->m_samples[j][p*m_alignedPartitionSize + i];
 					}
@@ -257,16 +309,20 @@ public:
 		ModelType type,
 		uint32_t numEpochs,
 		float stepSize,
-		float lambda);
+		float lambda,
+		uint32_t whichClass);
 
 	bool fSGD_minibatch(
 		ModelType type,
 		uint32_t numEpochs,
 		uint32_t minibatchSize, 
 		float stepSize,
-		float lambda);
+		float lambda,
+		uint32_t whichClass);
 
 	bool fSCD(
+		uint32_t partitionToStart,
+		uint32_t numPartitions,
 		ModelType type, 
 		uint32_t numEpochs,
 		float stepSize, 

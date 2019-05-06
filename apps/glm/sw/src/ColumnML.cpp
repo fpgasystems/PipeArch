@@ -59,10 +59,12 @@ float ColumnML::L1regularization(float* x, float lambda) {
 float ColumnML::L2svmLoss(float* x, float lambda, AdditionalArguments* args) {
 	float loss = 0;
 	for(uint32_t i = args->m_firstSample; i < args->m_firstSample + args->m_numSamples; i++) {
+
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][i] : m_cstore->m_labels[i];
 		float dot = getDot(x, i);
-		float temp = 1 - m_cstore->m_labels[i]*dot;
+		float temp = 1 - label*dot;
 		if (temp > 0) {
-			if (m_cstore->m_labels[i] > 0) {
+			if (label > 0) {
 				loss += args->m_costPos*temp*temp;
 			}
 			else {
@@ -93,7 +95,8 @@ float ColumnML::LogregLoss(float* x, float lambda, AdditionalArguments* args) {
 			negativeLoss = -std::numeric_limits<float>::max();
 		}
 
-		float temp = m_cstore->m_labels[i]*positiveLoss + (1-m_cstore->m_labels[i])*negativeLoss;
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][i] : m_cstore->m_labels[i];
+		float temp = label*positiveLoss + (1-label)*negativeLoss;
 		loss += temp;
 
 		if(isnan(loss) || isnan(dot) || isnan(prediction) || isnan(log(prediction)) || isnan(log(1 - prediction)) ) {
@@ -102,7 +105,7 @@ float ColumnML::LogregLoss(float* x, float lambda, AdditionalArguments* args) {
 			cout << "loss: " << loss << endl;
 			cout << "dot: " << dot << endl;
 			cout << "prediction: " << prediction << endl;
-			cout << "label: " << m_cstore->m_labels[i] << endl;
+			cout << "label: " << label << endl;
 			cout << "log(prediction): " << log(prediction) << endl;
 			cout << "log(1 - prediction): " << log(1 - prediction) << endl;
 			return 0;
@@ -122,8 +125,9 @@ float ColumnML::LogregLoss(float* x, float lambda, AdditionalArguments* args) {
 float ColumnML::LinregLoss(float* x, float lambda, AdditionalArguments* args) {
 	float loss = 0;
 	for(uint32_t i = args->m_firstSample; i < args->m_firstSample + args->m_numSamples; i++) {
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][i] : m_cstore->m_labels[i];
 		float dot = getDot(x, i);
-		loss += (dot - m_cstore->m_labels[i])*(dot - m_cstore->m_labels[i]);
+		loss += (dot - label)*(dot - label);
 	}
 	loss /= (float)(2*args->m_numSamples);
 	loss += L1regularization(x, lambda);
@@ -134,21 +138,22 @@ float ColumnML::LinregLoss(float* x, float lambda, AdditionalArguments* args) {
 uint32_t ColumnML::LogregAccuracy(float* x, AdditionalArguments* args) {
 	uint32_t corrects = 0;
 	for(uint32_t i = args->m_firstSample; i < args->m_firstSample + args->m_numSamples; i++) {
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][i] : m_cstore->m_labels[i];
 		float dot = getDot(x, i);
 		float prediction = 1/(1+exp(-dot));
-		if ( (prediction > 0.5 && m_cstore->m_labels[i] == 1.0) || (prediction < 0.5 && m_cstore->m_labels[i] == 0) ) {
+		if ( (prediction > 0.5 && label == 1.0) || (prediction < 0.5 && label == 0.0) ) {
 			corrects++;
 		}
 	}
-
 	return corrects;
 }
 
 uint32_t ColumnML::LinregAccuracy(float* x, AdditionalArguments* args) {
 	uint32_t corrects = 0;
 	for(uint32_t i = args->m_firstSample; i < args->m_firstSample + args->m_numSamples; i++) {
+		float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][i] : m_cstore->m_labels[i];
 		float dot = getDot(x, i);
-		if ( (dot > args->m_decisionBoundary && m_cstore->m_labels[i] == args->m_trueLabel) || (dot < args->m_decisionBoundary && m_cstore->m_labels[i] == args->m_falseLabel) ) {
+		if ( (dot > args->m_decisionBoundary && label == args->m_trueLabel) || (dot < args->m_decisionBoundary && label == args->m_falseLabel) ) {
 			corrects++;
 		}
 	}
@@ -206,8 +211,6 @@ void ColumnML::SGD(
 				else {
 					x[j] -= scaledStepSize/(float)(epoch+1)*gradient[j] + scaledLambda/(float)(epoch+1)*x[j];
 				}
-				// cout << "x[" << j << "]: " << x[j] << endl;
-				
 				gradient[j] = 0.0;
 			}
 		}
@@ -255,6 +258,9 @@ void ColumnML::AVX_SGD(
 	cout << "numMinibatches: " << numMinibatches << endl;
 	uint32_t rest = args->m_numSamples - numMinibatches*minibatchSize;
 	cout << "rest: " << rest << endl;
+	if (args->m_useOnehotLabels) {
+		cout << "Using onehot labels. Class: " << args->m_class << endl;
+	}
 
 #ifdef PRINT_LOSS
 	cout << "Initial loss: " << Loss(type, x, lambda, args) << endl;
@@ -287,15 +293,14 @@ void ColumnML::AVX_SGD(
 				if (type == logreg) {
 					dot = 1/(1+exp(-dot));
 				}
-				dot = (dot-m_cstore->m_labels[minibatchOffset]);
+				float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][minibatchOffset] : m_cstore->m_labels[minibatchOffset];
+				dot = (dot-label);
 				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-					float regularizer = (x[j] < 0) ? -scaledLambda : scaledLambda;
 					if (args->m_constantStepSize) {
-						x[j] -= scaledStepSize*dot*m_cstore->m_samples[j][minibatchOffset] + regularizer;
+						x[j] -= (scaledStepSize*dot*m_cstore->m_samples[j][minibatchOffset] + scaledLambda*x[j]);
 					}
 					else {
-						regularizer /= ((float)(epoch+1));
-						x[j] -= scaledStepSize/(float)(epoch+1)*dot*m_cstore->m_samples[j][minibatchOffset] + regularizer;
+						x[j] -= scaledStepSize/(float)(epoch+1)*dot*m_cstore->m_samples[j][minibatchOffset] + scaledLambda/(float)(epoch+1)*x[j];
 					}
 				}
 			}
@@ -309,7 +314,8 @@ void ColumnML::AVX_SGD(
 							AVX_dot = _mm256_add_ps(AVX_ones, AVX_dot);
 							AVX_dot = _mm256_div_ps(AVX_ones, AVX_dot);
 						}
-						__m256 AVX_labels = _mm256_load_ps(m_cstore->m_labels + minibatchOffset + i);
+						float* labels = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class] + minibatchOffset + i : m_cstore->m_labels + minibatchOffset + i;
+						__m256 AVX_labels = _mm256_load_ps(labels);
 						AVX_dot = _mm256_sub_ps(AVX_dot, AVX_labels);
 						for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 							__m256 AVX_samples = _mm256_load_ps(m_cstore->m_samples[j] + minibatchOffset + i);
@@ -325,19 +331,18 @@ void ColumnML::AVX_SGD(
 					if (type == logreg) {
 						dot = 1/(1+exp(-dot));
 					}
-					dot = (dot-m_cstore->m_labels[minibatchOffset + i]);
+					float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][minibatchOffset + i] : m_cstore->m_labels[minibatchOffset + i];
+					dot = (dot-label);
 					for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
 						gradient[j] += dot*m_cstore->m_samples[j][minibatchOffset + i];
 					}
 				}
 				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-					float regularizer = (x[j] < 0) ? -scaledLambda : scaledLambda;
 					if (args->m_constantStepSize) {
-						x[j] -= scaledStepSize*gradient[j] + regularizer;
+						x[j] -= (scaledStepSize*gradient[j] + scaledLambda*x[j]);
 					}
 					else {
-						regularizer /= ((float)(epoch+1));
-						x[j] -= scaledStepSize/(float)(epoch+1)*gradient[j] + regularizer;
+						x[j] -= scaledStepSize/(float)(epoch+1)*gradient[j] + scaledLambda/(float)(epoch+1)*x[j];
 					}
 					gradient[j] = 0.0;
 				}
@@ -410,7 +415,7 @@ void ColumnML::AVXrowwise_SGD(
 	float scaledStepSize = stepSize/minibatchSize;
 	float scaledLambda = stepSize*lambda;
 	__m256 AVX_scaledLambda = _mm256_set1_ps(scaledLambda);
-	__m256 AVX_minusScaledLambda = _mm256_set1_ps(-scaledLambda);
+	// __m256 AVX_minusScaledLambda = _mm256_set1_ps(-scaledLambda);
 	for(uint32_t epoch = 0; epoch < numEpochs; epoch++) {
 
 		double start = get_time();
@@ -442,11 +447,12 @@ void ColumnML::AVXrowwise_SGD(
 			if (type == logreg) {
 				dot = 1/(1+exp(-dot));
 			}
+			float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][m] : m_cstore->m_labels[m];
 			if (args->m_constantStepSize) {
-				dot = scaledStepSize*(dot-m_cstore->m_labels[m]);
+				dot = scaledStepSize*(dot-label);
 			}
 			else {
-				dot = scaledStepSize/(float)(epoch+1)*(dot-m_cstore->m_labels[m]);
+				dot = scaledStepSize/(float)(epoch+1)*(dot-label);
 			}
 
 			if (m_cstore->m_numFeatures >= 8) {
@@ -455,9 +461,8 @@ void ColumnML::AVXrowwise_SGD(
 					__m256 AVX_samples = _mm256_load_ps(samples + m*m_cstore->m_numFeatures + j);
 
 					__m256 AVX_x = _mm256_load_ps(x + j);
-					__m256 AVX_regularizer = _mm256_and_ps(_mm256_cmp_ps(AVX_x, AVX_zeros, 1), AVX_minusScaledLambda);
-					AVX_regularizer = _mm256_or_ps(AVX_regularizer, _mm256_and_ps(_mm256_cmp_ps(AVX_x, AVX_zeros, 13), AVX_scaledLambda) );
 
+					__m256 AVX_regularizer = _mm256_mul_ps(AVX_scaledLambda, AVX_x);
 					if (!args->m_constantStepSize) {
 						__m256 AVX_temp = _mm256_set1_ps((float)(epoch+1));
 						AVX_regularizer = _mm256_div_ps(AVX_regularizer, AVX_temp);
@@ -561,7 +566,8 @@ static inline void DoStep(
 	float scaledStepSize,
 	float scaledLambda,
 	double &dotTime,
-	double &residualUpdateTime)
+	double &residualUpdateTime,
+	AdditionalArguments* args)
 {
 	double timeStamp1, timeStamp2, timeStamp3;
 
@@ -573,7 +579,11 @@ static inline void DoStep(
 			if (type == logreg) {
 				dot = 1/(1+exp(-dot));
 			}
-			gradient += (dot - cstore->m_labels[minibatchIndex[l]*minibatchSize + i])*transformedColumn[l*minibatchSize + i];
+
+			float label = (args->m_useOnehotLabels) ?
+			cstore->m_onehotLabels[args->m_class][minibatchIndex[l]*minibatchSize + i] : cstore->m_labels[minibatchIndex[l]*minibatchSize + i];
+
+			gradient += (dot - label)*transformedColumn[l*minibatchSize + i];
 		}
 	}
 	timeStamp2 = get_time();
@@ -620,7 +630,8 @@ static inline float AVX_GetStep(
 	ColumnStore* cstore,
 	float* transformedColumn,
 	float scaledStepSize,
-	double &dotTime)
+	double &dotTime,
+	AdditionalArguments* args)
 {
 	double timeStamp1, timeStamp2;
 	__m256 AVX_ones = _mm256_set1_ps(1.0);
@@ -632,7 +643,11 @@ static inline float AVX_GetStep(
 	for (uint32_t i = 0; i < minibatchSize; i+=8) {
 
 		__m256 AVX_samples = _mm256_load_ps(transformedColumn + i);
-		__m256 AVX_labels = _mm256_load_ps(cstore->m_labels + minibatchIndex*minibatchSize + i);
+
+		float* labels = (args->m_useOnehotLabels) ?
+			cstore->m_onehotLabels[args->m_class] + minibatchIndex*minibatchSize + i : cstore->m_labels + minibatchIndex*minibatchSize + i;
+
+		__m256 AVX_labels = _mm256_load_ps(labels);
 		__m256 AVX_residual = _mm256_load_ps(residual + minibatchIndex*minibatchSize + i);
 
 		if (type == logreg) {
@@ -755,7 +770,7 @@ void ColumnML::SCD(
 					UpdateResidual(residual, j, &m, 1, minibatchSize, transformedColumn2, xFinal);
 				}
 				else {
-					DoStep(type, residual, j, &m, 1, minibatchSize, m_cstore, transformedColumn2, x, scaledStepSize, scaledLambda, dotTime, residualUpdateTime);
+					DoStep(type, residual, j, &m, 1, minibatchSize, m_cstore, transformedColumn2, x, scaledStepSize, scaledLambda, dotTime, residualUpdateTime, args);
 				}
 			}
 		}
@@ -886,7 +901,7 @@ void ColumnML::AVX_SCD(
 					AVX_UpdateResidual(residual, coordinate, m, minibatchSize, transformedColumn2, xFinal);
 				}
 				else {
-					float step = AVX_GetStep(type, residual, j, m, minibatchSize, m_cstore, transformedColumn2, scaledStepSize, dotTime);
+					float step = AVX_GetStep(type, residual, j, m, minibatchSize, m_cstore, transformedColumn2, scaledStepSize, dotTime, args);
 
 					if (x[m*m_cstore->m_numFeatures + coordinate] + step > -scaledLambda) {
 						step += scaledLambda;
@@ -1038,7 +1053,7 @@ void* batchThread(void* args) {
 				for (uint32_t m = r->m_startingBatch; m < r->m_startingBatch + r->m_numBatchesToProcess; m++) {
 					cstore->ReturnDecompressedAndDecrypted(transformedColumn1, transformedColumn2, j, &m, 1, r->m_minibatchSize, r->m_useEncrypted, r->m_useCompressed, r->m_toIntegerScaler, r->m_decryptionTime, r->m_decompressionTime);
 
-					float step = AVX_GetStep(r->m_type, r->m_residual, j, m, r->m_minibatchSize, cstore, transformedColumn2, scaledStepSize, r->m_dotTime);
+					float step = AVX_GetStep(r->m_type, r->m_residual, j, m, r->m_minibatchSize, cstore, transformedColumn2, scaledStepSize, r->m_dotTime, r->m_args);
 					r->m_stepsFromThreads[r->m_tid] += step;
 				}
 				
@@ -1114,7 +1129,7 @@ void* batchThread(void* args) {
 #endif
 						cstore->ReturnDecompressedAndDecrypted(transformedColumn1, transformedColumn2, coordinate, &m, 1, r->m_minibatchSize, r->m_useEncrypted, r->m_useCompressed, r->m_toIntegerScaler, r->m_decryptionTime, r->m_decompressionTime);
 						
-						float step = AVX_GetStep(r->m_type, r->m_residual, coordinate, m, r->m_minibatchSize, cstore, transformedColumn2, scaledStepSize, r->m_dotTime);
+						float step = AVX_GetStep(r->m_type, r->m_residual, coordinate, m, r->m_minibatchSize, cstore, transformedColumn2, scaledStepSize, r->m_dotTime, r->m_args);
 						
 						if (r->m_x[m*cstore->m_numFeatures + coordinate] + step > -scaledLambda) {
 							step += scaledLambda;
