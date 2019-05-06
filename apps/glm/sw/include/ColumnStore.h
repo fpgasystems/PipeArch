@@ -68,6 +68,9 @@ public:
 		m_compressedSamplesSizes = nullptr;
 		m_encryptedSamples = nullptr;
 
+		m_samplesRange = nullptr;
+		m_samplesMin = nullptr;
+
 		for (uint32_t i = 0; i < 32; i++) {
 			m_initKey[i] = (unsigned char)i;
 		}
@@ -84,6 +87,13 @@ public:
 
 		free(m_KEYS_enc);
 		free(m_KEYS_dec);
+
+		if (m_samplesRange != nullptr) {
+			free(m_samplesRange);
+		}
+		if (m_samplesMin != nullptr) {
+			free(m_samplesMin);
+		}
 	}
 
 	void PrintSamples(uint32_t num) {

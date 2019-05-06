@@ -382,17 +382,16 @@ void ColumnML::AVXrowwise_SGD(
 	float lambda, 
 	AdditionalArguments* args) 
 {
-	if (minibatchSize != 1) {
-		cout << "For AVXrowwise_SGD minibatchSize must be 1!" << endl;
-		exit(1);
-	}
-
-	cout << "AVXrowwise_SGD ---------------------------------------" << endl;
-
 	float* x = (float*)aligned_alloc(64, m_cstore->m_numFeatures*sizeof(float));
 	memset(x, 0, m_cstore->m_numFeatures*sizeof(float));
 	float* gradient = (float*)aligned_alloc(64, m_cstore->m_numFeatures*sizeof(float));
 	memset(gradient, 0, m_cstore->m_numFeatures*sizeof(float));
+
+	cout << "AVXrowwise_SGD ---------------------------------------" << endl;
+	uint32_t numMinibatches = args->m_numSamples/minibatchSize;
+	cout << "numMinibatches: " << numMinibatches << endl;
+	uint32_t rest = args->m_numSamples - numMinibatches*minibatchSize;
+	cout << "rest: " << rest << endl;
 
 	float* samples = (float*)aligned_alloc(64, args->m_numSamples*m_cstore->m_numFeatures*sizeof(float));
 	for (uint32_t i = 0; i < args->m_numSamples; i++) {
@@ -414,74 +413,95 @@ void ColumnML::AVXrowwise_SGD(
 
 	float scaledStepSize = stepSize/minibatchSize;
 	float scaledLambda = stepSize*lambda;
-	__m256 AVX_scaledLambda = _mm256_set1_ps(scaledLambda);
-	// __m256 AVX_minusScaledLambda = _mm256_set1_ps(-scaledLambda);
+	__m256 AVX_scaledStepSize;
+	__m256 AVX_scaledLambda;
+	double total = 0.0;
 	for(uint32_t epoch = 0; epoch < numEpochs; epoch++) {
 
 		double start = get_time();
 
-		for (uint32_t k = 0; k < args->m_numSamples; k++) {
+		if (args->m_constantStepSize) {
+			AVX_scaledStepSize = _mm256_set1_ps(scaledStepSize);
+			AVX_scaledLambda = _mm256_set1_ps(scaledLambda);
+		}
+		else {
+			AVX_scaledStepSize = _mm256_set1_ps(scaledStepSize/(float)(epoch+1));
+			AVX_scaledLambda = _mm256_set1_ps(scaledLambda/(float)(epoch+1));
+		}
+
+		for (uint32_t k = 0; k < numMinibatches; k++) {
+
 #ifdef SGD_SHUFFLE
-			uint32_t rand = 0;
-			_rdrand32_step(&rand);
-			uint32_t m = args->m_numSamples*((float)(rand-1)/(float)UINT_MAX);
+				uint32_t rand = 0;
+				_rdrand32_step(&rand);
+				uint32_t m = numMinibatches*((float)(rand-1)/(float)UINT_MAX);
 #else
-			uint32_t m = k;
+				uint32_t m = k;
 #endif
 
-			float dot = 0.0;
-			if (m_cstore->m_numFeatures >= 8) {
-				__m256 AVX_dot = _mm256_set1_ps(0.0);
-				for (uint32_t j = 0; j < m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j+=8) {
-					__m256 AVX_x = _mm256_load_ps(x + j);
-					__m256 AVX_samples = _mm256_load_ps(samples + m*m_cstore->m_numFeatures + j);
-					AVX_dot = _mm256_fmadd_ps(AVX_x, AVX_samples, AVX_dot);
-				}
-				float gather[8];
-				_mm256_store_ps(gather, AVX_dot);
-				dot = gather[0] + gather[1] + gather[2] + gather[3] + gather[4] + gather[5] + gather[6] + gather[7];
-			}
-			for (uint32_t j = m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j < m_cstore->m_numFeatures; j++) {
-				dot += x[j]*samples[m*m_cstore->m_numFeatures + j];
-			}
-			if (type == logreg) {
-				dot = 1/(1+exp(-dot));
-			}
-			float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][m] : m_cstore->m_labels[m];
-			if (args->m_constantStepSize) {
-				dot = scaledStepSize*(dot-label);
-			}
-			else {
-				dot = scaledStepSize/(float)(epoch+1)*(dot-label);
-			}
+			for (uint32_t i = 0; i < minibatchSize; i++) {
 
-			if (m_cstore->m_numFeatures >= 8) {
-				__m256 AVX_dot = _mm256_set1_ps(dot);
-				for (uint32_t j = 0; j < m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j+=8) {
-					__m256 AVX_samples = _mm256_load_ps(samples + m*m_cstore->m_numFeatures + j);
+				uint32_t sampleIndex = m*minibatchSize + i;
 
-					__m256 AVX_x = _mm256_load_ps(x + j);
-
-					__m256 AVX_regularizer = _mm256_mul_ps(AVX_scaledLambda, AVX_x);
-					if (!args->m_constantStepSize) {
-						__m256 AVX_temp = _mm256_set1_ps((float)(epoch+1));
-						AVX_regularizer = _mm256_div_ps(AVX_regularizer, AVX_temp);
+				float dot = 0.0;
+				if (m_cstore->m_numFeatures >= 8) {
+					__m256 AVX_dot = _mm256_set1_ps(0.0);
+					for (uint32_t j = 0; j < m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j+=8) {
+						__m256 AVX_x = _mm256_load_ps(x + j);
+						__m256 AVX_samples = _mm256_load_ps(samples + sampleIndex*m_cstore->m_numFeatures + j);
+						AVX_dot = _mm256_fmadd_ps(AVX_x, AVX_samples, AVX_dot);
 					}
+					float gather[8];
+					_mm256_store_ps(gather, AVX_dot);
+					dot = gather[0] + gather[1] + gather[2] + gather[3] + gather[4] + gather[5] + gather[6] + gather[7];
+				}
+				for (uint32_t j = m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j < m_cstore->m_numFeatures; j++) {
+					dot += x[j]*samples[sampleIndex*m_cstore->m_numFeatures + j];
+				}
+				if (type == logreg) {
+					dot = 1/(1+exp(-dot));
+				}
+				float label = (args->m_useOnehotLabels) ? m_cstore->m_onehotLabels[args->m_class][sampleIndex] : m_cstore->m_labels[sampleIndex];
+				dot = dot - label;
 
-					AVX_x = _mm256_sub_ps(AVX_x, _mm256_add_ps(_mm256_mul_ps(AVX_dot, AVX_samples), AVX_regularizer));
+				// if (m_cstore->m_numFeatures >= 8) {
+				// 	__m256 AVX_dot = _mm256_set1_ps(dot);
+				// 	for (uint32_t j = 0; j < m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j+=8) {
+				// 		// cout << "j " << j << endl;
+				// 		__m256 AVX_samples = _mm256_load_ps(samples + sampleIndex*m_cstore->m_numFeatures + j);
+				// 		__m256 AVX_gradient = _mm256_load_ps(gradient + j);
+				// 		AVX_gradient = _mm256_fmadd_ps(AVX_dot, AVX_samples, AVX_gradient);
+				// 		_mm256_store_ps(gradient + j, AVX_gradient);
+				// 	}
+				// }
+				// for (uint32_t j = m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j < m_cstore->m_numFeatures; j++) {
+				// 	gradient[j] += dot*samples[sampleIndex*m_cstore->m_numFeatures + j];
+				// }
+
+				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
+					gradient[j] += dot*samples[sampleIndex*m_cstore->m_numFeatures + j];
+				}
+			}
+
+			if (m_cstore->m_numFeatures >= 8) {
+				for (uint32_t j = 0; j < m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j+=8) {
+					__m256 AVX_x = _mm256_load_ps(x + j);
+					__m256 AVX_gradient = _mm256_load_ps(gradient + j);
+					AVX_gradient = _mm256_add_ps(_mm256_mul_ps(AVX_scaledStepSize, AVX_gradient), _mm256_mul_ps(AVX_scaledLambda, AVX_x));
+					AVX_x = _mm256_sub_ps(AVX_x, AVX_gradient);
+					AVX_gradient = _mm256_set1_ps(0.0);
 					_mm256_store_ps(x+j, AVX_x);
+					_mm256_store_ps(gradient + j, AVX_gradient);
 				}
 			}
 			for (uint32_t j = m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j < m_cstore->m_numFeatures; j++) {
-				float regularizer = (x[j] < 0) ? -scaledLambda : scaledLambda;
-				if (!args->m_constantStepSize) {
-					regularizer /= (float)(epoch+1);
-				}
-				x[j] -= dot*m_cstore->m_samples[j][m] + regularizer;
+				x[j] -= (scaledStepSize*gradient[j] + scaledLambda*x[j]);
+				gradient[j] = 0.0;
 			}
 		}
 
 		double end = get_time();
+		total += (end-start);
 #ifdef PRINT_TIMING
 		cout << "time for one epoch: " << end-start << endl;
 #endif
@@ -499,6 +519,8 @@ void ColumnML::AVXrowwise_SGD(
 #endif
 		}
 	}
+
+	cout << "avg epoch time: " << total/numEpochs << endl;
 
 	free(x);
 	free(gradient);
