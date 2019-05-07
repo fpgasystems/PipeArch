@@ -9,7 +9,7 @@ from random import shuffle
 
 import numpy as np
 
-def reformat_features(directory, file_numbers, label):
+def reformat_features(directory, file_numbers, label, num_samples):
 	samples = []
 
 	processed_samples = 0
@@ -29,8 +29,8 @@ def reformat_features(directory, file_numbers, label):
 
 				# print(len(samples))
 				# print(samples)
-				# if processed_samples == 100:
-				# 	break
+				if processed_samples == num_samples-1:
+					break
 
 				print(processed_samples)
 				processed_samples += 1
@@ -52,6 +52,12 @@ parser.add_argument(
 	default=8,
 	required=True,
 	help='num_classes')
+parser.add_argument(
+	'--num_samples',
+	type=int,
+	default=8,
+	required=True,
+	help='num_samples per class')
 parser.add_argument(
 	'--shuffle',
 	required=True,
@@ -80,7 +86,7 @@ classes = [
 ,4		#'hammerhead, hammerhead shark',
 ]
 for c in range(0, args.num_classes):
-	samples.extend( reformat_features(args.features_dir, [classes[c]], c) )
+	samples.extend( reformat_features(args.features_dir, [classes[c]], c, args.num_samples) )
 
 if args.shuffle == 1:
 	print('Shuffling...')
