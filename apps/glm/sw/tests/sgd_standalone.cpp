@@ -6,7 +6,7 @@
 
 #define VALUE_TO_INT_SCALER 10
 
-#define FPGA
+// #define FPGA
 
 void thread_SGD(
 	uint32_t threadId,
@@ -20,6 +20,17 @@ void thread_SGD(
 	AdditionalArguments args)
 {
 	columnML->AVXrowwise_SGD(type, xHistory, numEpochs, minibatchSize, stepSize, lambda, &args);
+}
+
+void thread_Loss(
+	float* loss,
+	ColumnML* columnML,
+	ModelType type,
+	float* x,
+	float lambda,
+	AdditionalArguments args)
+{
+	*loss = columnML->Loss(type, x, lambda, &args);
 }
 
 int main(int argc, char* argv[]) {
@@ -85,6 +96,7 @@ int main(int argc, char* argv[]) {
 			columnML[0]->m_cstore->NormalizeSamples(ZeroToOne, column);
 			type = linreg;
 		}
+		columnML[0]->m_cstore->PopulateRowSamples();
 	}
 
 	AdditionalArguments args;
@@ -106,13 +118,13 @@ int main(int argc, char* argv[]) {
 			for (uint32_t c = 0; c < numClasses; c++) {
 				xHistories[c] = (float*)malloc(numEpochs*columnML[0]->m_cstore->m_numFeatures*sizeof(float));
 			}
-			vector<thread*> threads;
+			vector<thread*> threads(numClasses);
 
 			double start = get_time();
 			for (uint32_t c = 0; c < numClasses; c++) {
 				args.m_useOnehotLabels = true;
 				args.m_class = c;
-				threads.push_back(
+				threads[c] =
 					new thread(
 						thread_SGD,
 						c,
@@ -123,7 +135,7 @@ int main(int argc, char* argv[]) {
 						minibatchSize,
 						stepSize,
 						lambda,
-						args));
+						args);
 			}
 			for (uint32_t c = 0; c < numClasses; c++) {
 				threads[c]->join();
@@ -133,13 +145,28 @@ int main(int argc, char* argv[]) {
 			cout << "Avg time per epoch: " << total/numEpochs << endl;
 			cout << "Processing rate: " << (numClasses*numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;
 
+			// Verify
 			for (uint32_t e = 0; e < numEpochs; e++) {
-				float loss = 0.0;
+				vector<float> losses(numClasses);
 				for (uint32_t c = 0; c < numClasses; c++) {
 					float* xHistory = xHistories[c];
 					args.m_useOnehotLabels = true;
 					args.m_class = c;
-					loss += columnML[0]->Loss(type, xHistory + e*columnML[0]->m_cstore->m_numFeatures, lambda, &args);
+					threads[c] =
+						new thread(
+							thread_Loss,
+							&losses[c],
+							columnML[0],
+							type,
+							xHistory + e*columnML[0]->m_cstore->m_numFeatures,
+							lambda,
+							args);
+				}
+				float loss = 0.0;
+				for (uint32_t c = 0; c < numClasses; c++) {
+					threads[c]->join();
+					delete threads[c];
+					loss += losses[c];
 				}
 				cout << loss/numClasses << endl;
 			}
@@ -205,13 +232,27 @@ int main(int argc, char* argv[]) {
 
 			// Verify
 			for (uint32_t e = 0; e < numEpochs; e++) {
-				float loss = 0.0;
+				vector<float> losses(numClasses);
 				for (uint32_t c = 0; c < numClasses; c++) {
 					auto output = iFPGA::CastToFloat(columnML[c]->m_outputHandle);
 					float* xHistory = (float*)(output + 16);
 					args.m_useOnehotLabels = true;
 					args.m_class = c;
-					loss += columnML[0]->Loss(type, xHistory + e*columnML[0]->m_alignedNumFeatures, lambda, &args);
+					threads[c] =
+						new thread(
+							thread_Loss,
+							&losses[c],
+							columnML[0],
+							type,
+							xHistory + e*columnML[0]->m_cstore->m_numFeatures,
+							lambda,
+							args);
+				}
+				float loss = 0.0;
+				for (uint32_t c = 0; c < numClasses; c++) {
+					threads[c]->join();
+					delete threads[c];
+					loss += losses[c];
 				}
 				cout << loss/numClasses << endl;
 			}

@@ -386,6 +386,11 @@ void ColumnML::AVXrowwise_SGD(
 	float lambda, 
 	AdditionalArguments* args) 
 {
+	if (m_cstore->m_rowSamples == nullptr) {
+		cout << "m_rowSamples is not populated yet." << endl;
+		return;
+	}
+
 	float* x = (float*)aligned_alloc(64, m_cstore->m_numFeatures*sizeof(float));
 	memset(x, 0, m_cstore->m_numFeatures*sizeof(float));
 	float* gradient = (float*)aligned_alloc(64, m_cstore->m_numFeatures*sizeof(float));
@@ -396,13 +401,6 @@ void ColumnML::AVXrowwise_SGD(
 	cout << "numMinibatches: " << numMinibatches << endl;
 	uint32_t rest = args->m_numSamples - numMinibatches*minibatchSize;
 	cout << "rest: " << rest << endl;
-
-	float* samples = (float*)aligned_alloc(64, args->m_numSamples*m_cstore->m_numFeatures*sizeof(float));
-	for (uint32_t i = 0; i < args->m_numSamples; i++) {
-		for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-			samples[i*m_cstore->m_numFeatures + j] = m_cstore->m_samples[j][i];
-		}
-	}
 
 #ifdef PRINT_LOSS
 	cout << "Initial loss: " << Loss(type, x, lambda, args) << endl;
@@ -452,7 +450,7 @@ void ColumnML::AVXrowwise_SGD(
 					__m256 AVX_dot = _mm256_set1_ps(0.0);
 					for (uint32_t j = 0; j < m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j+=8) {
 						__m256 AVX_x = _mm256_load_ps(x + j);
-						__m256 AVX_samples = _mm256_load_ps(samples + sampleIndex*m_cstore->m_numFeatures + j);
+						__m256 AVX_samples = _mm256_load_ps(m_cstore->m_rowSamples + sampleIndex*m_cstore->m_numFeatures + j);
 						AVX_dot = _mm256_fmadd_ps(AVX_x, AVX_samples, AVX_dot);
 					}
 					float gather[8];
@@ -460,7 +458,7 @@ void ColumnML::AVXrowwise_SGD(
 					dot = gather[0] + gather[1] + gather[2] + gather[3] + gather[4] + gather[5] + gather[6] + gather[7];
 				}
 				for (uint32_t j = m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j < m_cstore->m_numFeatures; j++) {
-					dot += x[j]*samples[sampleIndex*m_cstore->m_numFeatures + j];
+					dot += x[j]*m_cstore->m_rowSamples[sampleIndex*m_cstore->m_numFeatures + j];
 				}
 				if (type == logreg) {
 					dot = 1/(1+exp(-dot));
@@ -472,18 +470,18 @@ void ColumnML::AVXrowwise_SGD(
 				// 	__m256 AVX_dot = _mm256_set1_ps(dot);
 				// 	for (uint32_t j = 0; j < m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j+=8) {
 				// 		// cout << "j " << j << endl;
-				// 		__m256 AVX_samples = _mm256_load_ps(samples + sampleIndex*m_cstore->m_numFeatures + j);
+				// 		__m256 AVX_samples = _mm256_load_ps(m_cstore->m_rowSamples + sampleIndex*m_cstore->m_numFeatures + j);
 				// 		__m256 AVX_gradient = _mm256_load_ps(gradient + j);
 				// 		AVX_gradient = _mm256_fmadd_ps(AVX_dot, AVX_samples, AVX_gradient);
 				// 		_mm256_store_ps(gradient + j, AVX_gradient);
 				// 	}
 				// }
 				// for (uint32_t j = m_cstore->m_numFeatures-(m_cstore->m_numFeatures%8); j < m_cstore->m_numFeatures; j++) {
-				// 	gradient[j] += dot*samples[sampleIndex*m_cstore->m_numFeatures + j];
+				// 	gradient[j] += dot*m_cstore->m_rowSamples[sampleIndex*m_cstore->m_numFeatures + j];
 				// }
 
 				for (uint32_t j = 0; j < m_cstore->m_numFeatures; j++) {
-					gradient[j] += dot*samples[sampleIndex*m_cstore->m_numFeatures + j];
+					gradient[j] += dot*m_cstore->m_rowSamples[sampleIndex*m_cstore->m_numFeatures + j];
 				}
 			}
 
@@ -528,7 +526,6 @@ void ColumnML::AVXrowwise_SGD(
 
 	free(x);
 	free(gradient);
-	free(samples);
 }
 #endif
 

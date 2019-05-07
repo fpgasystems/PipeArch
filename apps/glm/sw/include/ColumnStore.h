@@ -43,6 +43,7 @@ public:
 	float** m_samples;
 	float* m_labels;
 	vector<float*> m_onehotLabels;
+	float* m_rowSamples;
 
 	uint32_t** m_compressedSamples;
 	uint32_t** m_compressedSamplesSizes;
@@ -63,6 +64,7 @@ public:
 	ColumnStore() {
 		m_samples = nullptr;
 		m_labels = nullptr;
+		m_rowSamples = nullptr;
 
 		m_compressedSamples = nullptr;
 		m_compressedSamplesSizes = nullptr;
@@ -104,6 +106,15 @@ public:
 			}
 			cout << endl;
 			cout << "label " << i << ": " << m_labels[i] << endl;
+		}
+	}
+
+	void PopulateRowSamples() {
+		m_rowSamples = (float*)aligned_alloc(64, m_numSamples*m_numFeatures*sizeof(float));
+		for (uint32_t i = 0; i < m_numSamples; i++) {
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
+				m_rowSamples[i*m_numFeatures + j] = m_samples[j][i];
+			}
 		}
 	}
 
@@ -231,6 +242,9 @@ private:
 			if (item != nullptr) {
 				free(item);
 			}
+		}
+		if (m_rowSamples != nullptr) {
+			free(m_rowSamples);
 		}
 	}
 
