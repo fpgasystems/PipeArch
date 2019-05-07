@@ -120,7 +120,9 @@ with tf.Session() as sess:
 	initial_loss = initial_loss/len(data)
 	print('Inital loss: ' + str(initial_loss))
 
-	for epoch in range(0, 10):
+	num_epochs = 10
+	total = 0.0
+	for epoch in range(0, num_epochs):
 		start = time.time()
 		for i in range(0, int(len(data)/minibatch_size) ):
 			_ = sess.run(optimizer, feed_dict={
@@ -130,8 +132,10 @@ with tf.Session() as sess:
 				learning_rate:lr,
 				regularization:reg})
 		end = time.time()
-		print('time per epoch: ' + str(end-start))
+		total += (end-start)
 
 		epoch_loss = sess.run(loss, feed_dict={m_indexes:row, u_indexes:col, values:data, learning_rate:0, regularization:reg})
 		epoch_loss = epoch_loss/len(data)
-		print('epoch ' + str(epoch) + ': ' + str(epoch_loss))
+		print(str(epoch_loss))
+
+	print('avg time per epoch: ' + str(total/num_epochs))
