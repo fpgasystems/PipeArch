@@ -6,7 +6,7 @@
 
 #define VALUE_TO_INT_SCALER 10
 
-// #define FPGA
+#define FPGA
 
 void thread_SGD(
 	uint32_t threadId,
@@ -231,6 +231,7 @@ int main(int argc, char* argv[]) {
 			cout << "Processing rate: " << (numClasses*numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;
 
 			// Verify
+			vector<thread*> threads(numClasses);
 			for (uint32_t e = 0; e < numEpochs; e++) {
 				vector<float> losses(numClasses);
 				for (uint32_t c = 0; c < numClasses; c++) {
@@ -244,7 +245,7 @@ int main(int argc, char* argv[]) {
 							&losses[c],
 							columnML[0],
 							type,
-							xHistory + e*columnML[0]->m_cstore->m_numFeatures,
+							xHistory + e*columnML[0]->m_alignedNumFeatures,
 							lambda,
 							args);
 				}
