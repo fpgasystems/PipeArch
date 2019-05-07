@@ -29,6 +29,7 @@
 #include <dirent.h>
 #include <cmath>
 #include <algorithm>
+#include <thread>
 #include "ColumnStore.h"
 
 using namespace std;
@@ -43,6 +44,66 @@ struct LabelB {
 	int m_Mindex;
 	int m_value;
 };
+
+static float Dot(float* vector1, float* vector2, uint32_t numFeatures) {
+	float dot = 0.0;
+	for (uint32_t j = 0; j < numFeatures; j++) {
+		dot += vector1[j]*vector2[j];
+	}
+	return dot;
+}
+
+static void UpdateTile(
+		uint32_t threadId,
+		float* m_M,
+		float* m_U,
+		vector< vector<LabelB> >* m_LBTiled,
+		float* M_tile_new,
+		float* U_tile_new,
+		uint32_t MtileToStart,
+		uint32_t numTilesM,
+		uint32_t UtileToStart,
+		uint32_t numTilesU,
+		uint32_t totalNumTilesU,
+		uint32_t m_numFeatures,
+		uint32_t m_tileSize,
+		float stepSize,
+		float lambda)
+{
+	for (uint32_t tm = MtileToStart; tm < MtileToStart+numTilesM; tm++) {
+		for (uint32_t tu = UtileToStart; tu < UtileToStart+numTilesU; tu++) {
+
+			vector<LabelB> LTile = (*m_LBTiled)[tm*totalNumTilesU+tu];
+			float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
+			float* U_tile_offset = m_U + tu*m_tileSize*m_numFeatures;
+			uint32_t M_min = tm*m_tileSize;
+			uint32_t U_min = tu*m_tileSize;
+
+			memcpy(M_tile_new, M_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
+			memcpy(U_tile_new, U_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
+
+			for (uint32_t i = 0; i < LTile.size(); i++) {
+
+				float* M_vector = M_tile_offset + (LTile[i].m_Mindex-M_min)*m_numFeatures;
+				float* U_vector = U_tile_offset + (LTile[i].m_Uindex-U_min)*m_numFeatures;
+
+				float dot = Dot(M_vector, U_vector, m_numFeatures);
+				float error = dot - LTile[i].m_value;
+
+				float* M_vector_new = M_tile_new + (LTile[i].m_Mindex-M_min)*m_numFeatures;
+				float* U_vector_new = U_tile_new + (LTile[i].m_Uindex-U_min)*m_numFeatures;
+
+				for (uint32_t j = 0; j < m_numFeatures; j++) {
+					M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector[j]);
+					U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector[j]);
+				}
+			}
+
+			memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));
+			memcpy(U_tile_offset, U_tile_new, m_tileSize*m_numFeatures*sizeof(float));
+		}
+	}
+}
 
 class LRMF {
 protected:
@@ -296,14 +357,6 @@ public:
 		m_U = (float*)aligned_alloc(64, m_numTilesU*m_tileSize*m_numFeatures*sizeof(float));
 	}
 
-	float Dot(float* vector1, float* vector2, uint32_t numFeatures) {
-		float dot = 0.0;
-		for (uint32_t j = 0; j < m_numFeatures; j++) {
-			dot += vector1[j]*vector2[j];
-		}
-		return dot;
-	}
-
 	float Loss(float lambda) {
 		float loss = 0.0;
 		for (uint32_t m = 0; m < m_Mdim; m++) {
@@ -548,5 +601,121 @@ public:
 
 		free(M_tile_new);
 		free(U_tile_new);
+	}
+
+	void DivideWorkByThread(
+		uint32_t numThreads,
+		vector<uint32_t>& MtileToStart,
+		vector<uint32_t>& numTilesM,
+		vector<uint32_t>& UtileToStart,
+		vector<uint32_t>& numTilesU)
+	{
+		vector<uint32_t> MtilesPermutation(numThreads*numThreads);
+		vector<uint32_t> UtilesPermutation(numThreads*numThreads);
+		for (uint32_t i = 0; i < numThreads; i++) {
+			for (uint32_t j = 0; j < numThreads; j++) {
+				MtilesPermutation[i*numThreads+j] = j;
+				UtilesPermutation[i*numThreads+j] = (i+j)%numThreads;
+			}
+		}
+
+		MtileToStart.resize(numThreads*numThreads);
+		numTilesM.resize(numThreads*numThreads);
+		UtileToStart.resize(numThreads*numThreads);
+		numTilesU.resize(numThreads*numThreads);
+		uint32_t MtilesPerInstance = GetNumTilesM()/numThreads;
+		uint32_t UtilesPerInstance = GetNumTilesU()/numThreads;
+
+		for (uint32_t i = 0; i < numThreads; i++) {
+			for (uint32_t j = 0; j < numThreads; j++) {
+				MtileToStart[i*numThreads+j] = MtilesPermutation[i*numThreads+j]*MtilesPerInstance;
+				if (MtilesPermutation[i*numThreads+j] == numThreads-1)
+					numTilesM[i*numThreads+j] = GetNumTilesM() - MtileToStart[i*numThreads+j];
+				else
+					numTilesM[i*numThreads+j] = MtilesPerInstance;
+
+				UtileToStart[i*numThreads+j] = UtilesPermutation[i*numThreads+j]*UtilesPerInstance;
+				if (UtilesPermutation[i*numThreads+j] == numThreads-1)
+					numTilesU[i*numThreads+j] = GetNumTilesU() - UtileToStart[i*numThreads+j];
+				else
+					numTilesU[i*numThreads+j] = UtilesPerInstance;
+
+				// cout << "MtileToStart " << i << " " << j << ": " << MtileToStart[i*numThreads+j] << endl;
+				cout << "numTilesM " << i << " " << j << ": " << numTilesM[i*numThreads+j] << endl;
+				// cout << "UtileToStart " << i << " " << j << ": " << UtileToStart[i*numThreads+j] << endl;
+				cout << "numTilesU " << i << " " << j << ": " << numTilesU[i*numThreads+j] << endl;
+			}
+		}
+	}
+
+	void OptimizeRoundStaleMulti(float stepSize, float lambda, uint32_t numEpochs, uint32_t numThreads) {
+
+		if (m_LBTiled.size() == 0) {
+			cout << "m_LBTiled is empty" << endl;
+			return;
+		}
+
+		float loss = RMSE();
+		cout << "Initial Loss: " << loss << endl;
+
+		vector<uint32_t> MtileToStart;
+		vector<uint32_t> numTilesM;
+		vector<uint32_t> UtileToStart;
+		vector<uint32_t> numTilesU;
+		DivideWorkByThread(numThreads, MtileToStart, numTilesM, UtileToStart, numTilesU);
+
+		vector<float*> M_tile_new(numThreads);
+		vector<float*> U_tile_new(numThreads);
+		for (uint32_t t = 0; t < numThreads; t++) {
+			M_tile_new[t] = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
+			U_tile_new[t] = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
+		}
+
+		double total = 0.0;
+		vector<thread*> threads(numThreads);
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			double start = get_time();
+
+			for (uint32_t i = 0; i < numThreads; i++) {
+				for (uint32_t j = 0; j < numThreads; j++) {
+					threads[j] =
+						new thread(
+							UpdateTile,
+							j,
+							m_M,
+							m_U,
+							&m_LBTiled,
+							M_tile_new[j],
+							U_tile_new[j],
+							MtileToStart[i*numThreads+j],
+							numTilesM[i*numThreads+j],
+							UtileToStart[i*numThreads+j],
+							numTilesU[i*numThreads+j],
+							m_numTilesU,
+							m_numFeatures,
+							m_tileSize,
+							stepSize,
+							lambda);
+				}
+				for (uint32_t j = 0; j < numThreads; j++) {
+					threads[j]->join();
+					delete threads[j];
+				}
+			}
+
+			double end = get_time();
+			total += (end-start);
+
+			loss = RMSE();
+			cout << loss << endl;
+		}
+
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*GetDataSize())/total/1e9 << " GB/s" << endl;
+
+		for (uint32_t t = 0; t < numThreads; t++) {
+			free(M_tile_new[t]);
+			free(U_tile_new[t]);
+		}
 	}
 };

@@ -112,7 +112,18 @@ int main(int argc, char* argv[]) {
 			for (uint32_t c = 0; c < numClasses; c++) {
 				args.m_useOnehotLabels = true;
 				args.m_class = c;
-				threads.push_back(new thread(thread_SGD, c, columnML[0], type, xHistories[c], numEpochs, minibatchSize, stepSize, lambda, args));
+				threads.push_back(
+					new thread(
+						thread_SGD,
+						c,
+						columnML[0],
+						type,
+						xHistories[c],
+						numEpochs,
+						minibatchSize,
+						stepSize,
+						lambda,
+						args));
 			}
 			for (uint32_t c = 0; c < numClasses; c++) {
 				threads[c]->join();

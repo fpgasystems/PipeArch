@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define FPGA
+// #define FPGA
 
 int main(int argc, char* argv[]) {
 
@@ -66,6 +66,9 @@ int main(int argc, char* argv[]) {
 
 		lrmf[0]->RandInitMU();
 		lrmf[0]->OptimizeRoundStale(stepSize, lambda, numEpochs);
+
+		lrmf[0]->RandInitMU();
+		lrmf[0]->OptimizeRoundStaleMulti(stepSize, lambda, numEpochs, numInstances);
 	}
 	else {
 #ifdef FPGA
@@ -81,42 +84,11 @@ int main(int argc, char* argv[]) {
 			lrmf[i]->UseCreatedMemoryLayout(lrmf[0]);
 		}
 
-		vector<uint32_t> MtilesPermutation(numInstances*numInstances);
-		vector<uint32_t> UtilesPermutation(numInstances*numInstances);
-		for (uint32_t i = 0; i < numInstances; i++) {
-			for (uint32_t j = 0; j < numInstances; j++) {
-				MtilesPermutation[i*numInstances+j] = j;
-				UtilesPermutation[i*numInstances+j] = (i+j)%numInstances;
-			}
-		}
-
-		vector<uint32_t> MtileToStart(numInstances*numInstances);
-		vector<uint32_t> numTilesM(numInstances*numInstances);
-		vector<uint32_t> UtileToStart(numInstances*numInstances);
-		vector<uint32_t> numTilesU(numInstances*numInstances);
-		uint32_t MtilesPerInstance = lrmf[0]->GetNumTilesM()/numInstances;
-		uint32_t UtilesPerInstance = lrmf[0]->GetNumTilesU()/numInstances;
-
-		for (uint32_t i = 0; i < numInstances; i++) {
-			for (uint32_t j = 0; j < numInstances; j++) {
-				MtileToStart[i*numInstances+j] = MtilesPermutation[i*numInstances+j]*MtilesPerInstance;
-				if (MtilesPermutation[i*numInstances+j] == numInstances-1)
-					numTilesM[i*numInstances+j] = lrmf[0]->GetNumTilesM() - MtileToStart[i*numInstances+j];
-				else
-					numTilesM[i*numInstances+j] = MtilesPerInstance;
-
-				UtileToStart[i*numInstances+j] = UtilesPermutation[i*numInstances+j]*UtilesPerInstance;
-				if (UtilesPermutation[i*numInstances+j] == numInstances-1)
-					numTilesU[i*numInstances+j] = lrmf[0]->GetNumTilesU() - UtileToStart[i*numInstances+j];
-				else
-					numTilesU[i*numInstances+j] = UtilesPerInstance;
-
-				cout << "MtileToStart " << i << " " << j << ": " << MtileToStart[i*numInstances+j] << endl;
-				cout << "numTilesM " << i << " " << j << ": " << numTilesM[i*numInstances+j] << endl;
-				cout << "UtileToStart " << i << " " << j << ": " << UtileToStart[i*numInstances+j] << endl;
-				cout << "numTilesU " << i << " " << j << ": " << numTilesU[i*numInstances+j] << endl;
-			}
-		}
+		vector<uint32_t> MtileToStart;
+		vector<uint32_t> numTilesM;
+		vector<uint32_t> UtileToStart;
+		vector<uint32_t> numTilesU;
+		DivideWorkByThread(numInstances, MtileToStart, numTilesM, UtileToStart, numTilesU);
 
 		for (uint32_t i = 0; i < numInstances; i++) {
 			for (uint32_t j = 0; j < numInstances; j++) {
