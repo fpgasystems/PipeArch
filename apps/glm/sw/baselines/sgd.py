@@ -26,15 +26,20 @@ parser.add_argument(
 	type=int,
 	required=1,
 	help='num_features')
+parser.add_argument(
+	'--num_classes',
+	type=int,
+	required=1,
+	help='num_classes')
 
 args = parser.parse_args()
 
 samples = np.fromfile(args.train_file, dtype=float)
 
 print('len(samples): ' + str(len(samples)) )
-print('len(samples)/(args.num_features+1): ' + str(len(samples)/(args.num_features+1)) )
 num_samples = int(len(samples)/(args.num_features+1))
 print('num_samples: ' + str(num_samples))
+num_classes = int(args.num_classes)
 
 samples = np.reshape(samples, (num_samples, args.num_features+1))
 
@@ -64,23 +69,29 @@ for i in range(0,2):
 
 logreg = SGDClassifier(
 	loss='log', 
-	penalty='l1', 
-	alpha=0.001,
+	penalty='l2', 
+	alpha=0.0001,
 	fit_intercept=False, 
-	max_iter=10, 
-	shuffle=True, 
-	verbose=2, 
-	n_jobs=1, 
+	max_iter=10,
+	tol=0.01,
+	shuffle=False, 
+	verbose=0, 
+	n_jobs=num_classes, 
 	random_state=1, 
-	learning_rate='constant', 
+	learning_rate='optimal', 
 	eta0=0.001, 
 	warm_start=True, 
 	average=False)
 
-for epoch in range(0,1):
+num_epochs = 10
+
+total = 0.0
+for epoch in range(0,num_epochs):
 	start = time.time()
-	logreg.fit(X_norm, y)
+	logreg.partial_fit(X_norm, y, classes=np.unique(y))
 	end = time.time()
-	loss = log_loss(y, logreg.predict_proba(X_norm))
-	print('epoch' + str(epoch) + ', loss: ' + str(loss))
-	print('time per epoch: ' + str(end-start))
+	total += (end-start)
+	loss = log_loss(y, logreg.predict_proba(X_norm), labels=np.unique(y))
+	print(str(loss))
+
+print('avg time per epoch: ' + str(total/num_epochs))
