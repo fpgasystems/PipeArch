@@ -91,7 +91,7 @@ for epoch in range(0,num_epochs):
 	logreg.partial_fit(X_norm, y, classes=np.unique(y))
 	end = time.time()
 	total += (end-start)
-	loss = log_loss(y, logreg.predict_proba(X_norm), labels=np.unique(y))
+	loss = log_loss(y, logreg.predict_proba(X_norm), labels=np.unique(y)) + lmdba*np.dot( logreg.coef_, logreg.coef_ )
 	print(str(loss))
 
 print('avg time per epoch: ' + str(total/num_epochs))

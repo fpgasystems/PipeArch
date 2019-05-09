@@ -94,13 +94,24 @@ print("U shape" + str(U.shape))
 loss = RMSE(M, np.transpose(U), X)
 print("initial loss: " + str(loss))
 
-model = NMF(n_components=args.num_features, init='custom', random_state=0, verbose=False, max_iter=10, solver='mu')
+model = NMF(
+	n_components=args.num_features,
+	init='custom',
+	random_state=0,
+	verbose=False,
+	max_iter=10,
+	solver='cd')
 
-for e in range(0, 10):
+num_epochs = 10
+total = 0.0
+for e in range(0, num_epochs):
 	start = time.time()
 	M = model.fit_transform(X, W=M, H=U)
 	U = model.components_
 	end = time.time()
-	print("time per epoch: " + str(end-start))
+	total += (end-start)
+	
 	loss = RMSE(M, np.transpose(U), X)
-	print("loss: " + str(loss))
+	print(str(loss))
+
+print("avg time per epoch: " + str(total/num_epochs))
