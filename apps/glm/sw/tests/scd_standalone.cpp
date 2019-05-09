@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
 	}
 #endif
 
-	float stepSize = 1;
+	float stepSize = 4;
 	float lambda = 0.001;
 
 	ModelType type;
