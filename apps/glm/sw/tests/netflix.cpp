@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
 	numInstances = atoi(argv[7]);
 	sw0hw1 = atoi(argv[8]);
 
-	float stepSize = 0.0008;
+	float stepSize = 0.01;
 	float lambda = 0;
 
 #ifdef FPGA
@@ -59,7 +59,13 @@ int main(int argc, char* argv[]) {
 
 	if (sw0hw1 == 0) {
 		// lrmf[0]->RandInitMU();
+		// lrmf[0]->OptimizeLR(stepSize, lambda, numEpochs);
+
+		// lrmf[0]->RandInitMU();
 		// lrmf[0]->Optimize(stepSize, lambda, numEpochs);
+
+		lrmf[0]->RandInitMU();
+		lrmf[0]->OptimizeNaive(stepSize, lambda, numEpochs);
 
 		// lrmf[0]->RandInitMU();
 		// lrmf[0]->OptimizeRound(stepSize, lambda, numEpochs);
@@ -67,8 +73,8 @@ int main(int argc, char* argv[]) {
 		// lrmf[0]->RandInitMU();
 		// lrmf[0]->OptimizeRoundStale(stepSize, lambda, numEpochs);
 
-		lrmf[0]->RandInitMU();
-		lrmf[0]->OptimizeRoundStaleMulti(stepSize, lambda, numEpochs, numInstances);
+		// lrmf[0]->RandInitMU();
+		// lrmf[0]->OptimizeRoundStaleMulti(stepSize, lambda, numEpochs, numInstances);
 	}
 	else {
 #ifdef FPGA

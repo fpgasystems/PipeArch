@@ -182,7 +182,9 @@ public:
 	void RandInitMU() {
 		srand(3);
 		RandInit(m_M, m_Mdim*m_numFeatures);
-		RandInit(m_U, m_Udim*m_numFeatures);
+		// memset(m_M, 0, m_Mdim*m_numFeatures*sizeof(float));
+		// RandInit(m_U, m_Udim*m_numFeatures);
+		memset(m_U, 0, m_Udim*m_numFeatures*sizeof(float));
 	}
 
 	void PrintLB() {
@@ -362,7 +364,6 @@ public:
 		for (uint32_t m = 0; m < m_Mdim; m++) {
 			float temploss = 0.0;
 			for (uint32_t u = 0; u < m_L[m].size(); u++) {
-				// cout << "m_L[" << m << "][" << u << "]: " << m_L[m][u].m_Uindex << " " << m_L[m][u].m_value << endl;
 				float* M_vector = m_M + m*m_numFeatures;
 				float* U_vector = m_U + m_L[m][u].m_Uindex*m_numFeatures;
 
@@ -419,12 +420,107 @@ public:
 				}
 			}
 
-			if (m_L[m].size() > 0) {
-				loss += temploss/m_L[m].size();
-			}
+			loss += temploss;
 		}
-		loss /= m_Mdim;
+		loss /= m_LB.size();
 		return sqrt(loss);
+	}
+
+	void OptimizeLR(float stepSize, float lambda, uint32_t numEpochs) {
+
+		vector<float> G(m_Mdim, 1);
+		vector<float> H(m_Udim, 1);
+
+		float loss = RMSE();
+		cout << "Initial Loss: " << loss << endl;
+
+		double total = 0.0;
+
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			double start = get_time();
+
+			for (uint32_t m = 0; m < m_Mdim; m++) {
+				float* M_vector = m_M + m*m_numFeatures;
+
+				for (uint32_t u = 0; u < m_L[m].size(); u++) {
+					float* U_vector = m_U + m_L[m][u].m_Uindex*m_numFeatures;
+					float dot = Dot(M_vector, U_vector, m_numFeatures);
+					float error = dot - m_L[m][u].m_value;
+
+					float G_ = 0;
+					float H_ = 0;
+					float stepSizeG = stepSize*1.0/sqrt(G[m]);
+					float stepSizeH = stepSize*1.0/sqrt(H[u]);
+
+					for (uint32_t j = 0; j < m_numFeatures; j++) {
+						float M_temp = M_vector[j];
+						float U_temp = U_vector[j];
+
+						float gradientM = (error*U_temp + lambda*M_temp);
+						float gradientU = (error*M_temp + lambda*U_temp);
+
+						G_ += gradientM*gradientM;
+						H_ += gradientU*gradientU;
+
+						M_vector[j] = M_temp - stepSizeG*gradientM;
+						U_vector[j] = U_temp - stepSizeH*gradientU;
+					}
+
+					G[m] += G_/m_numFeatures;
+					H[u] += H_/m_numFeatures;
+				}
+			}
+
+			double end = get_time();
+			total += (end-start);
+
+			loss = RMSE();
+			cout << "Loss " << e << ": " << loss << endl;
+		}
+
+		cout << "m_LB.size(): " << m_LB.size() << endl;
+		cout << "GetDataSize()/1e9: " << GetDataSize()/1e9 << endl;
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*GetDataSize())/total/1e9 << " GB/s" << endl;
+	}
+
+	void OptimizeNaive(float stepSize, float lambda, uint32_t numEpochs) {
+
+		float loss = RMSE();
+		cout << "Initial Loss: " << loss << endl;
+
+		double total = 0.0;
+
+		random_shuffle(m_LB.begin(), m_LB.end());
+
+		for (uint32_t e = 0; e < numEpochs; e++) {
+			double start = get_time();
+
+			for (uint32_t i = 0; i < m_LB.size(); i++ ) {
+				float* M_vector = m_M + m_LB[i].m_Mindex*m_numFeatures;
+				float* U_vector = m_U + m_LB[i].m_Uindex*m_numFeatures;
+				float dot = Dot(M_vector, U_vector, m_numFeatures);
+				float error = dot - m_LB[i].m_value;
+
+				for (uint32_t j = 0; j < m_numFeatures; j++) {
+					float M_temp = M_vector[j];
+					float U_temp = U_vector[j];
+					M_vector[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
+					U_vector[j] = U_temp - stepSize*(error*M_temp + lambda*U_temp);
+				}
+			}
+
+			double end = get_time();
+			total += (end-start);
+
+			loss = RMSE();
+			cout << "Loss " << e << ": " << loss << endl;
+		}
+
+		cout << "m_LB.size(): " << m_LB.size() << endl;
+		cout << "GetDataSize()/1e9: " << GetDataSize()/1e9 << endl;
+		cout << "Avg time per epoch: " << total/numEpochs << endl;
+		cout << "Processing rate: " << (numEpochs*GetDataSize())/total/1e9 << " GB/s" << endl;
 	}
 
 	void Optimize(float stepSize, float lambda, uint32_t numEpochs) {
@@ -479,6 +575,8 @@ public:
 
 		double total = 0.0;
 
+		// random_shuffle(m_LBTiled.begin(), m_LBTiled.end());
+
 		for (uint32_t e = 0; e < numEpochs; e++) {
 
 			double start = get_time();
@@ -486,16 +584,28 @@ public:
 			for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
 				for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
 
-					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+tu];
+					uint32_t temp_tu = m_numTilesU*((float)rand()/(float)RAND_MAX);
+					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+temp_tu];
 					float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
-					float* U_tile_offset = m_U + tu*m_tileSize*m_numFeatures;
+					float* U_tile_offset = m_U + temp_tu*m_tileSize*m_numFeatures;
 					uint32_t M_min = tm*m_tileSize;
-					uint32_t U_min = tu*m_tileSize;
+					uint32_t U_min = temp_tu*m_tileSize;
+
+					// cout << "------------------------------------------------------------------------------------------" << endl;
+					// cout << tm << " " << temp_tu << " LTile.size(): " << LTile.size() << endl;
 
 					for (uint32_t i = 0; i < LTile.size(); i++) {
 
+						// cout << "-----------------------" << endl;
+						// cout << "m_Mindex: " << LTile[i].m_Mindex << endl;
+						// cout << "m_Uindex: " << LTile[i].m_Uindex << endl;
+						// cout << "m_value: " << LTile[i].m_value << endl;
+
 						float* M_vector = M_tile_offset + (LTile[i].m_Mindex-M_min)*m_numFeatures;
 						float* U_vector = U_tile_offset + (LTile[i].m_Uindex-U_min)*m_numFeatures;
+
+						// float* M_vector = m_M + LTile[i].m_Mindex*m_numFeatures;
+						// float* U_vector = m_U + LTile[i].m_Uindex*m_numFeatures;
 
 						float dot = Dot(M_vector, U_vector, m_numFeatures);
 						float error = dot - LTile[i].m_value;
@@ -543,17 +653,18 @@ public:
 			for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
 				for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
 
-					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+tu];
+					uint32_t temp_tu = m_numTilesU*((float)rand()/(float)RAND_MAX);
+					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+temp_tu];
 					float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
-					float* U_tile_offset = m_U + tu*m_tileSize*m_numFeatures;
+					float* U_tile_offset = m_U + temp_tu*m_tileSize*m_numFeatures;
 					uint32_t M_min = tm*m_tileSize;
-					uint32_t U_min = tu*m_tileSize;
+					uint32_t U_min = temp_tu*m_tileSize;
 
 					memcpy(M_tile_new, M_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 					memcpy(U_tile_new, U_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
 
 					// cout << "------------------------------------------------------------------------------------------" << endl;
-					// cout << tm << " " << tu << " LTile.size(): " << LTile.size() << endl;
+					// cout << tm << " " << temp_tu << " LTile.size(): " << LTile.size() << endl;
 
 					for (uint32_t i = 0; i < LTile.size(); i++) {
 
@@ -581,6 +692,11 @@ public:
 							// cout << "error*U_vector[" << j << "]: " << stepSize*error*U_vector[j] << endl;
 							M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector[j]);
 							U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector[j]);
+						}
+
+						if ((i+1)%32 == 0) {
+							memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));
+							memcpy(U_tile_offset, U_tile_new, m_tileSize*m_numFeatures*sizeof(float));
 						}
 					}
 
@@ -641,9 +757,9 @@ public:
 					numTilesU[i*numThreads+j] = UtilesPerInstance;
 
 				// cout << "MtileToStart " << i << " " << j << ": " << MtileToStart[i*numThreads+j] << endl;
-				cout << "numTilesM " << i << " " << j << ": " << numTilesM[i*numThreads+j] << endl;
+				// cout << "numTilesM " << i << " " << j << ": " << numTilesM[i*numThreads+j] << endl;
 				// cout << "UtileToStart " << i << " " << j << ": " << UtileToStart[i*numThreads+j] << endl;
-				cout << "numTilesU " << i << " " << j << ": " << numTilesU[i*numThreads+j] << endl;
+				// cout << "numTilesU " << i << " " << j << ": " << numTilesU[i*numThreads+j] << endl;
 			}
 		}
 	}
