@@ -64,17 +64,17 @@ int main(int argc, char* argv[]) {
 		// lrmf[0]->RandInitMU();
 		// lrmf[0]->Optimize(stepSize, lambda, numEpochs);
 
-		lrmf[0]->RandInitMU();
-		lrmf[0]->OptimizeNaive(stepSize, lambda, numEpochs);
-
 		// lrmf[0]->RandInitMU();
-		// lrmf[0]->OptimizeRound(stepSize, lambda, numEpochs);
+		// lrmf[0]->OptimizeNaive(stepSize, lambda, numEpochs);
+
+		lrmf[0]->RandInitMU();
+		lrmf[0]->OptimizeRound(stepSize, lambda, numEpochs);
 
 		// lrmf[0]->RandInitMU();
 		// lrmf[0]->OptimizeRoundStale(stepSize, lambda, numEpochs);
 
 		// lrmf[0]->RandInitMU();
-		// lrmf[0]->OptimizeRoundStaleMulti(stepSize, lambda, numEpochs, numInstances);
+		// lrmf[0]->OptimizeRoundMulti(stepSize, lambda, numEpochs, numInstances);
 	}
 	else {
 #ifdef FPGA

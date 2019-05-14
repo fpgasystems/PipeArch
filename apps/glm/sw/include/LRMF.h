@@ -45,69 +45,8 @@ struct LabelB {
 	int m_value;
 };
 
-static float Dot(float* vector1, float* vector2, uint32_t numFeatures) {
-	float dot = 0.0;
-	for (uint32_t j = 0; j < numFeatures; j++) {
-		dot += vector1[j]*vector2[j];
-	}
-	return dot;
-}
-
-static void UpdateTile(
-		uint32_t threadId,
-		float* m_M,
-		float* m_U,
-		vector< vector<LabelB> >* m_LBTiled,
-		float* M_tile_new,
-		float* U_tile_new,
-		uint32_t MtileToStart,
-		uint32_t numTilesM,
-		uint32_t UtileToStart,
-		uint32_t numTilesU,
-		uint32_t totalNumTilesU,
-		uint32_t m_numFeatures,
-		uint32_t m_tileSize,
-		float stepSize,
-		float lambda)
-{
-	for (uint32_t tm = MtileToStart; tm < MtileToStart+numTilesM; tm++) {
-		for (uint32_t tu = UtileToStart; tu < UtileToStart+numTilesU; tu++) {
-
-			vector<LabelB> LTile = (*m_LBTiled)[tm*totalNumTilesU+tu];
-			float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
-			float* U_tile_offset = m_U + tu*m_tileSize*m_numFeatures;
-			uint32_t M_min = tm*m_tileSize;
-			uint32_t U_min = tu*m_tileSize;
-
-			memcpy(M_tile_new, M_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
-			memcpy(U_tile_new, U_tile_offset, m_tileSize*m_numFeatures*sizeof(float));
-
-			for (uint32_t i = 0; i < LTile.size(); i++) {
-
-				float* M_vector = M_tile_offset + (LTile[i].m_Mindex-M_min)*m_numFeatures;
-				float* U_vector = U_tile_offset + (LTile[i].m_Uindex-U_min)*m_numFeatures;
-
-				float dot = Dot(M_vector, U_vector, m_numFeatures);
-				float error = dot - LTile[i].m_value;
-
-				float* M_vector_new = M_tile_new + (LTile[i].m_Mindex-M_min)*m_numFeatures;
-				float* U_vector_new = U_tile_new + (LTile[i].m_Uindex-U_min)*m_numFeatures;
-
-				for (uint32_t j = 0; j < m_numFeatures; j++) {
-					M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector[j]);
-					U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector[j]);
-				}
-			}
-
-			memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));
-			memcpy(U_tile_offset, U_tile_new, m_tileSize*m_numFeatures*sizeof(float));
-		}
-	}
-}
-
 class LRMF {
 protected:
-
 	uint32_t m_numFeatures;
 	uint32_t m_Mdim;
 	uint32_t m_Udim;
@@ -485,7 +424,6 @@ public:
 	}
 
 	void OptimizeNaive(float stepSize, float lambda, uint32_t numEpochs) {
-
 		float loss = RMSE();
 		cout << "Initial Loss: " << loss << endl;
 
@@ -524,7 +462,6 @@ public:
 	}
 
 	void Optimize(float stepSize, float lambda, uint32_t numEpochs) {
-
 		float loss = RMSE();
 		cout << "Initial Loss: " << loss << endl;
 
@@ -583,8 +520,9 @@ public:
 
 			for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
 				for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
+					// uint32_t temp_tu = m_numTilesU*((float)rand()/(float)RAND_MAX);
+					uint32_t temp_tu = m_numTilesU-tu-1;
 
-					uint32_t temp_tu = m_numTilesU*((float)rand()/(float)RAND_MAX);
 					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+temp_tu];
 					float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
 					float* U_tile_offset = m_U + temp_tu*m_tileSize*m_numFeatures;
@@ -653,7 +591,9 @@ public:
 			for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
 				for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
 
-					uint32_t temp_tu = m_numTilesU*((float)rand()/(float)RAND_MAX);
+					// uint32_t temp_tu = m_numTilesU*((float)rand()/(float)RAND_MAX);
+					uint32_t temp_tu = m_numTilesU - tu - 1;
+
 					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+temp_tu];
 					float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
 					float* U_tile_offset = m_U + temp_tu*m_tileSize*m_numFeatures;
@@ -692,11 +632,6 @@ public:
 							// cout << "error*U_vector[" << j << "]: " << stepSize*error*U_vector[j] << endl;
 							M_vector_new[j] = M_vector_new[j] - stepSize*(error*U_vector[j] + lambda*M_vector[j]);
 							U_vector_new[j] = U_vector_new[j] - stepSize*(error*M_vector[j] + lambda*U_vector[j]);
-						}
-
-						if ((i+1)%32 == 0) {
-							memcpy(M_tile_offset, M_tile_new, m_tileSize*m_numFeatures*sizeof(float));
-							memcpy(U_tile_offset, U_tile_new, m_tileSize*m_numFeatures*sizeof(float));
 						}
 					}
 
@@ -764,7 +699,60 @@ public:
 		}
 	}
 
-	void OptimizeRoundStaleMulti(float stepSize, float lambda, uint32_t numEpochs, uint32_t numThreads) {
+	static float Dot(float* vector1, float* vector2, uint32_t numFeatures) {
+		float dot = 0.0;
+		for (uint32_t j = 0; j < numFeatures; j++) {
+			dot += vector1[j]*vector2[j];
+		}
+		return dot;
+	}
+
+	static void UpdateTile(
+			uint32_t threadId,
+			float* m_M,
+			float* m_U,
+			vector< vector<LabelB> >* m_LBTiled,
+			uint32_t MtileToStart,
+			uint32_t numTilesM,
+			uint32_t UtileToStart,
+			uint32_t numTilesU,
+			uint32_t totalNumTilesU,
+			uint32_t m_numFeatures,
+			uint32_t m_tileSize,
+			float stepSize,
+			float lambda)
+	{
+		for (uint32_t tm = MtileToStart; tm < MtileToStart+numTilesM; tm++) {
+			for (uint32_t tu = UtileToStart; tu < UtileToStart+numTilesU; tu++) {
+				// uint32_t temp_tu = UtileToStart+numTilesU - tu - 1;
+				uint32_t temp_tu = tu;
+
+				vector<LabelB> LTile = (*m_LBTiled)[tm*totalNumTilesU+temp_tu];
+				float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
+				float* U_tile_offset = m_U + temp_tu*m_tileSize*m_numFeatures;
+				uint32_t M_min = tm*m_tileSize;
+				uint32_t U_min = temp_tu*m_tileSize;
+
+				for (uint32_t i = 0; i < LTile.size(); i++) {
+
+					float* M_vector = M_tile_offset + (LTile[i].m_Mindex-M_min)*m_numFeatures;
+					float* U_vector = U_tile_offset + (LTile[i].m_Uindex-U_min)*m_numFeatures;
+
+					float dot = Dot(M_vector, U_vector, m_numFeatures);
+					float error = dot - LTile[i].m_value;
+
+					for (uint32_t j = 0; j < m_numFeatures; j++) {
+						float M_temp = M_vector[j];
+						float U_temp = U_vector[j];
+						M_vector[j] = M_temp - stepSize*(error*U_temp + lambda*M_temp);
+						U_vector[j] = U_temp - stepSize*(error*M_temp + lambda*U_temp);
+					}
+				}
+			}
+		}
+	}
+
+	void OptimizeRoundMulti(float stepSize, float lambda, uint32_t numEpochs, uint32_t numThreads) {
 
 		if (m_LBTiled.size() == 0) {
 			cout << "m_LBTiled is empty" << endl;
@@ -780,13 +768,6 @@ public:
 		vector<uint32_t> numTilesU;
 		DivideWorkByThread(numThreads, MtileToStart, numTilesM, UtileToStart, numTilesU);
 
-		vector<float*> M_tile_new(numThreads);
-		vector<float*> U_tile_new(numThreads);
-		for (uint32_t t = 0; t < numThreads; t++) {
-			M_tile_new[t] = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
-			U_tile_new[t] = (float*)malloc(m_tileSize*m_numFeatures*sizeof(float));
-		}
-
 		double total = 0.0;
 		vector<thread*> threads(numThreads);
 		for (uint32_t e = 0; e < numEpochs; e++) {
@@ -801,8 +782,6 @@ public:
 							m_M,
 							m_U,
 							&m_LBTiled,
-							M_tile_new[j],
-							U_tile_new[j],
 							MtileToStart[i*numThreads+j],
 							numTilesM[i*numThreads+j],
 							UtileToStart[i*numThreads+j],
@@ -828,10 +807,5 @@ public:
 
 		cout << "Avg time per epoch: " << total/numEpochs << endl;
 		cout << "Processing rate: " << (numEpochs*GetDataSize())/total/1e9 << " GB/s" << endl;
-
-		for (uint32_t t = 0; t < numThreads; t++) {
-			free(M_tile_new[t]);
-			free(U_tile_new[t]);
-		}
 	}
 };
