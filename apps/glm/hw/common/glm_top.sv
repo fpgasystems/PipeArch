@@ -1105,6 +1105,7 @@ module glm_top
         .REGION2_write(REGION_labels_write[2].write)
     );
 
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model_forward();
     pipearch_writeforward
     MEM_model_forward
     (
@@ -1113,10 +1114,15 @@ module glm_top
         .op_start(op_start[12]),
         .op_done(op_done[12]),
         .regs(forward1_regs),
-        .REGION_writeforward(REGION_model2_interface[1].writeforward),
+        .REGION_writeforward(REGION_model_forward.writeforward),
         .REGION_write(REGION_model1_write[2].write)
     );
+    assign REGION_model_forward.we = REGION_model2_interface[1].we;
+    assign REGION_model_forward.waddr = REGION_model2_interface[1].waddr;
+    assign REGION_model_forward.wdata = REGION_model2_interface[1].wdata;
+    assign REGION_model_forward.wfifobram = REGION_model2_interface[1].wfifobram;
 
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_inputcopy_forward();
     pipearch_writeforward
     MEM_input_forward
     (
@@ -1125,9 +1131,13 @@ module glm_top
         .op_start(op_start[13]),
         .op_done(op_done[13]),
         .regs(forward2_regs),
-        .REGION_writeforward(REGION_inputcopy_write[1].writeforward),
+        .REGION_writeforward(REGION_inputcopy_forward.writeforward),
         .REGION_write(REGION_input_write[1].write)
     );
+    assign REGION_inputcopy_forward.we = REGION_inputcopy_write[1].we;
+    assign REGION_inputcopy_forward.waddr = REGION_inputcopy_write[1].waddr;
+    assign REGION_inputcopy_forward.wdata = REGION_inputcopy_write[1].wdata;
+    assign REGION_inputcopy_forward.wfifobram = REGION_inputcopy_write[1].wfifobram;
 
     pipearch_loadreg
     execute_loadreg
