@@ -25,6 +25,7 @@ module region_exclusive
 
     genvar index;
 
+// synthesis translate_off
     function automatic int ReadCheck(logic access_re[NUM_READ_CHANNELS]);
         int result = 0;
         for (int i = 0; i < NUM_READ_CHANNELS; i=i+1) begin
@@ -42,6 +43,7 @@ module region_exclusive
         end
         return result;
     endfunction
+// synthesis translate_on
 
     // *************************************************************************
     //
@@ -93,11 +95,12 @@ module region_exclusive
                     FIFOBRAM_region_interface.raddr = 0;
                     FIFOBRAM_region_interface.rfifobram = 0;
                 end
-
+// synthesis translate_off
                 if (read_access[0].re || read_access[1].re) begin
                     assert ( ReadCheck({read_access[0].re, read_access[1].re}) <= 1 )
                     else $fatal("NUM_READ_CHANNELS == 2, read_access channels are reading from FIFOBRAM_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_READ_CHANNELS == 3) begin
@@ -123,11 +126,12 @@ module region_exclusive
                     FIFOBRAM_region_interface.raddr = 0;
                     FIFOBRAM_region_interface.rfifobram = 0;
                 end
-
+// synthesis translate_off
                 if (read_access[0].re || read_access[1].re || read_access[2].re) begin
                     assert ( ReadCheck({read_access[0].re, read_access[1].re, read_access[2].re}) <= 1 )
                     else $fatal("NUM_READ_CHANNELS == 3, read_access channels are reading from FIFOBRAM_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_READ_CHANNELS == 4) begin
@@ -158,11 +162,12 @@ module region_exclusive
                     FIFOBRAM_region_interface.raddr = 0;
                     FIFOBRAM_region_interface.rfifobram = 0;
                 end
-
+// synthesis translate_off
                 if (read_access[0].re || read_access[1].re || read_access[2].re || read_access[3].re) begin
                     assert ( ReadCheck({read_access[0].re, read_access[1].re, read_access[2].re, read_access[3].re}) <= 1 )
                     else $fatal("NUM_READ_CHANNELS == 4, read_access channels are reading from FIFOBRAM_region");
                 end
+// synthesis translate_on
             end
         end
     endgenerate
@@ -209,11 +214,12 @@ module region_exclusive
                     FIFOBRAM_region_interface.wdata <= write_access[1].wdata;
                     FIFOBRAM_region_interface.wfifobram <= write_access[1].wfifobram;
                 end
-
+// synthesis translate_off
                 if (write_access[0].we || write_access[1].we) begin
                     assert( WriteCheck( {write_access[0].we, write_access[1].we} ) <= 1)
                     else $fatal("NUM_WRITE_CHANNELS == 2, write_access channels are writing to MEM_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_WRITE_CHANNELS == 3) begin
@@ -239,11 +245,12 @@ module region_exclusive
                     FIFOBRAM_region_interface.wdata <= write_access[2].wdata;
                     FIFOBRAM_region_interface.wfifobram <= write_access[2].wfifobram;
                 end
-
+// synthesis translate_off
                 if (write_access[0].we || write_access[1].we || write_access[2].we) begin
                     assert( WriteCheck( {write_access[0].we, write_access[1].we, write_access[2].we} ) <= 1)
                     else $fatal("NUM_WRITE_CHANNELS == 3, write_access channels are writing to MEM_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_WRITE_CHANNELS == 4) begin
@@ -275,11 +282,12 @@ module region_exclusive
                     FIFOBRAM_region_interface.wdata <= write_access[3].wdata;
                     FIFOBRAM_region_interface.wfifobram <= write_access[3].wfifobram;
                 end
-
+// synthesis translate_off
                 if (write_access[0].we || write_access[1].we || write_access[2].we || write_access[3].we) begin
                     assert( WriteCheck( {write_access[0].we, write_access[1].we, write_access[2].we, write_access[3].we} ) <= 1)
                     else $fatal("NUM_WRITE_CHANNELS == 4, write_access channels are writing to MEM_region");
                 end
+// synthesis translate_on
             end
         end
     endgenerate

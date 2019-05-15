@@ -15,6 +15,7 @@ module region_exclusive_replicate
     fifobram_interface.read_source read_access[NUM_READ_CHANNELS]
 );
 
+// synthesis translate_off
     function automatic int WriteCheck(logic access_we[NUM_WRITE_CHANNELS]);
         int result = 0;
         for (int i = 0; i < NUM_WRITE_CHANNELS; i=i+1) begin
@@ -23,6 +24,7 @@ module region_exclusive_replicate
         end
         return result;
     endfunction
+// synthesis translate_on
 
     logic re [NUM_READ_CHANNELS];
     logic [1:0] rfifobram [NUM_READ_CHANNELS];
@@ -84,11 +86,12 @@ module region_exclusive_replicate
                         FIFOBRAM_region_interface[index].wdata <= write_access[1].wdata;
                         FIFOBRAM_region_interface[index].wfifobram <= write_access[1].wfifobram;
                     end
-
+// synthesis translate_off
                     if (write_access[0].we || write_access[1].we) begin
                         assert( WriteCheck( {write_access[0].we, write_access[1].we} ) <= 1)
                         else $fatal("NUM_WRITE_CHANNELS == 2, write_access channels are writing to MEM_region");
                     end
+// synthesis translate_off
                 end
             end
             else if (NUM_WRITE_CHANNELS == 3) begin
@@ -114,11 +117,12 @@ module region_exclusive_replicate
                         FIFOBRAM_region_interface[index].wdata <= write_access[2].wdata;
                         FIFOBRAM_region_interface[index].wfifobram <= write_access[2].wfifobram;
                     end
-
+// synthesis translate_off
                     if (write_access[0].we || write_access[1].we || write_access[2].we) begin
                         assert( WriteCheck( {write_access[0].we, write_access[1].we, write_access[2].we} ) <= 1)
                         else $fatal("NUM_WRITE_CHANNELS == 3, write_access channels are writing to MEM_region");
                     end
+// synthesis translate_on
                 end
             end
         end

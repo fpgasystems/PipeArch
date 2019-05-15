@@ -14,7 +14,7 @@ module bram_replicate
     fifobram_interface.write_source write_access[NUM_WRITE_CHANNELS],
     fifobram_interface.read_source read_access[NUM_READ_CHANNELS]
 );
-
+// synthesis translate_off
     function automatic int WriteCheck(logic access_we[NUM_WRITE_CHANNELS], logic access_wfifobram[NUM_WRITE_CHANNELS]);
         int result = 0;
         for (int i = 0; i < NUM_WRITE_CHANNELS; i=i+1) begin
@@ -23,6 +23,7 @@ module bram_replicate
         end
         return result;
     endfunction
+// synthesis translate_on
 
     logic re [NUM_READ_CHANNELS];
     logic [1:0] rfifobram [NUM_READ_CHANNELS];
@@ -76,12 +77,13 @@ module bram_replicate
                         MEM_region_interface[index].waddr <= write_access[1].waddr;
                         MEM_region_interface[index].wdata <= write_access[1].wdata;
                     end
-
+// synthesis translate_off
                     if (write_access[0].we || write_access[1].we) begin
-                    assert( WriteCheck( {write_access[0].we, write_access[1].we},
-                                        {write_access[0].wfifobram[0], write_access[1].wfifobram[0]} ) <= 1)
-                    else $fatal("NUM_CHANNELS == 2, access channels are writing to MEM_region");
-                end
+                        assert( WriteCheck( {write_access[0].we, write_access[1].we},
+                                            {write_access[0].wfifobram[0], write_access[1].wfifobram[0]} ) <= 1)
+                        else $fatal("NUM_CHANNELS == 2, access channels are writing to MEM_region");
+                    end
+// synthesis translate_on
                 end
             end
         end

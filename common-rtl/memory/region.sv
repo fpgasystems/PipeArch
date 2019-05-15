@@ -31,6 +31,7 @@ module region
 
     genvar index;
 
+// synthesis translate_off
     function automatic int ReadCheck(logic access_re[NUM_CHANNELS], logic [1:0] access_rfifobram[NUM_CHANNELS], logic[1:0] rfifobram_check);
         int result = 0;
         for (int i = 0; i < NUM_CHANNELS; i=i+1) begin
@@ -48,6 +49,7 @@ module region
         end
         return result;
     endfunction
+// synthesis translate_on
 
     // *************************************************************************
     //
@@ -118,7 +120,7 @@ module region
                 else begin
                     FIFO_region_interface.re = 1'b0;
                 end
-                
+// synthesis translate_off
                 if (access[0].re || access[1].re) begin
                     assert ( ReadCheck( {access[0].re, access[1].re},
                                         {access[0].rfifobram, access[1].rfifobram}, 2'b01 ) <=1 )
@@ -127,6 +129,7 @@ module region
                                         {access[0].rfifobram, access[1].rfifobram}, 2'b10 ) <=1 )
                     else $fatal("NUM_CHANNELS == 2, access channels are reading from FIFO_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_CHANNELS == 3) begin
@@ -161,7 +164,7 @@ module region
                 else begin
                     FIFO_region_interface.re = 1'b0;
                 end
-
+// synthesis translate_off
                 if (access[0].re || access[1].re || access[2].re) begin
                     assert ( ReadCheck( {access[0].re, access[1].re, access[2].re},
                                         {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram}, 2'b01 ) <=1 )
@@ -170,6 +173,7 @@ module region
                                         {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram}, 2'b10 ) <=1 )
                     else $fatal("NUM_CHANNELS == 3, access channels are reading from FIFO_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_CHANNELS == 4) begin
@@ -211,7 +215,7 @@ module region
                 else begin
                     FIFO_region_interface.re = 1'b0;
                 end
-
+// synthesis translate_off
                 if (access[0].re || access[1].re || access[2].re || access[3].re) begin
                     assert ( ReadCheck( {access[0].re, access[1].re, access[2].re, access[3].re},
                                         {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram, access[3].rfifobram}, 2'b01 ) <=1 )
@@ -220,6 +224,7 @@ module region
                                         {access[0].rfifobram, access[1].rfifobram, access[2].rfifobram, access[3].rfifobram}, 2'b10 ) <=1 )
                     else $fatal("NUM_CHANNELS == 4, access channels are reading from FIFO_region");
                 end
+// synthesis translate_on
             end
         end
     endgenerate
@@ -281,7 +286,7 @@ module region
                     FIFO_region_interface.we <= 1'b1;
                     FIFO_region_interface.wdata <= access[1].wdata;
                 end
-
+// synthesis translate_off
                 if (access[0].we || access[1].we) begin
                     assert( WriteCheck( {access[0].we, access[1].we},
                                         {access[0].wfifobram[0], access[1].wfifobram[0]} ) <= 1)
@@ -290,6 +295,7 @@ module region
                                         {access[0].wfifobram[1], access[1].wfifobram[1]} ) <= 1)
                     else $fatal("NUM_CHANNELS == 2, access channels are writing to FIFO_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_CHANNELS == 3) begin
@@ -327,7 +333,7 @@ module region
                     FIFO_region_interface.we <= 1'b1;
                     FIFO_region_interface.wdata <= access[2].wdata;
                 end
-
+// synthesis translate_off
                 if (access[0].we || access[1].we || access[2].we) begin
                     assert( WriteCheck( {access[0].we, access[1].we, access[2].we},
                                         {access[0].wfifobram[0], access[1].wfifobram[0], access[2].wfifobram[0]} ) <= 1)
@@ -336,6 +342,7 @@ module region
                                         {access[0].wfifobram[1], access[1].wfifobram[1], access[2].wfifobram[1]} ) <= 1)
                     else $fatal("NUM_CHANNELS == 3, access channels are writing to FIFO_region");
                 end
+// synthesis translate_on
             end
         end
         else if (NUM_CHANNELS == 4) begin
@@ -382,17 +389,16 @@ module region
                     FIFO_region_interface.we <= 1'b1;
                     FIFO_region_interface.wdata <= access[3].wdata;
                 end
-
+// synthesis translate_off
                 if (access[0].we || access[1].we || access[2].we || access[3].we) begin
-
                     assert( WriteCheck( {access[0].we, access[1].we, access[2].we, access[3].we},
                                         {access[0].wfifobram[0], access[1].wfifobram[0], access[2].wfifobram[0], access[3].wfifobram[0]} ) <= 1)
                     else $fatal("NUM_CHANNELS == 4, access channels are writing to MEM_region");
                     assert( WriteCheck( {access[0].we, access[1].we, access[2].we, access[3].we},
                                         {access[0].wfifobram[1], access[1].wfifobram[1], access[2].wfifobram[1], access[3].wfifobram[1]} ) <= 1)
                     else $fatal("NUM_CHANNELS == 4, access channels are writing to FIFO_region");
-
                 end
+// synthesis translate_on
             end
         end
     endgenerate
