@@ -4,7 +4,7 @@
 
 using namespace std;
 
-// #define FPGA
+#define FPGA
 
 int main(int argc, char* argv[]) {
 
@@ -29,6 +29,7 @@ int main(int argc, char* argv[]) {
 	numInstances = atoi(argv[7]);
 	sw0hw1 = atoi(argv[8]);
 
+	bool staleRead = false;
 	float stepSize = 0.01;
 	float lambda = 0;
 
@@ -68,10 +69,12 @@ int main(int argc, char* argv[]) {
 		// lrmf[0]->OptimizeNaive(stepSize, lambda, numEpochs);
 
 		lrmf[0]->RandInitMU();
-		lrmf[0]->OptimizeRound(stepSize, lambda, numEpochs);
-
-		// lrmf[0]->RandInitMU();
-		// lrmf[0]->OptimizeRoundStale(stepSize, lambda, numEpochs);
+		if (!staleRead) {
+			lrmf[0]->OptimizeRound(stepSize, lambda, numEpochs);
+		}
+		else {
+			lrmf[0]->OptimizeRoundStale(stepSize, lambda, numEpochs);
+		}
 
 		// lrmf[0]->RandInitMU();
 		// lrmf[0]->OptimizeRoundMulti(stepSize, lambda, numEpochs, numInstances);
@@ -94,14 +97,14 @@ int main(int argc, char* argv[]) {
 		vector<uint32_t> numTilesM;
 		vector<uint32_t> UtileToStart;
 		vector<uint32_t> numTilesU;
-		DivideWorkByThread(numInstances, MtileToStart, numTilesM, UtileToStart, numTilesU);
+		lrmf[0]->DivideWorkByThread(numInstances, MtileToStart, numTilesM, UtileToStart, numTilesU);
 
 		for (uint32_t i = 0; i < numInstances; i++) {
 			for (uint32_t j = 0; j < numInstances; j++) {
-				lrmf[i*numInstances+j]->fOptimizeRound(
+				lrmf[i*numInstances+j]->fOptimizeRound2(
 					MtileToStart[i*numInstances+j], numTilesM[i*numInstances+j],
 					UtileToStart[i*numInstances+j], numTilesU[i*numInstances+j],
-					stepSize, lambda, asyncUpdate, 1);
+					stepSize, lambda, asyncUpdate, staleRead, 1);
 			}
 		}
 

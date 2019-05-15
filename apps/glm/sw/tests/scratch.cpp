@@ -64,10 +64,10 @@ int main(int argc, char* argv[]) {
 #ifdef FPGA
 		columnML.CreateMemoryLayout(format, partitionSize);
 		if (minibatchSize == 1) {
-			columnML.fSGD(type, numEpochs, stepSize, lambda);
+			columnML.fSGD(type, numEpochs, stepSize, lambda, 0);
 		}
 		else {
-			columnML.fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda);
+			columnML.fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda, 0);
 		}
 #endif
 	}
@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef FPGA
 		columnML.CreateMemoryLayout(format, partitionSize, numEpochs);
-		columnML.fSCD(type, numEpochs, stepSize, lambda);
+		columnML.fSCD(0, columnML.m_numPartitions, type, numEpochs, stepSize, lambda);
 #endif
 	}
 

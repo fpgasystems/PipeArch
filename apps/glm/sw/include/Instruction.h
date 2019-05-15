@@ -108,17 +108,20 @@ public:
 	static const uint32_t NUM_BYTES = NUM_WORDS*4;
 	uint32_t m_data[NUM_WORDS];
 
-	static const uint32_t NUM_LOAD_CHANNELS = 5;
-	static const uint32_t LOAD_REGION_INPUT_CHANNEL = 0;
-	static const uint32_t LOAD_REGION_MODEL_CHANNEL = 1;
-	static const uint32_t LOAD_REGION_LABELS_CHANNEL = 2;
-	static const uint32_t LOAD_MEM_ACCESSPROPS_CHANNEL = 3;
-	static const uint32_t LOAD_MEM_LOCALPROPS_CHANNEL = 4;
+	static const uint32_t LOAD_REGION_INPUT_CHANNEL = 1;
+	static const uint32_t LOAD_REGION_MODEL_CHANNEL = (1 << 1);
+	static const uint32_t LOAD_REGION_LABELS_CHANNEL = (1 << 2);
+	static const uint32_t LOAD_MEM_ACCESSPROPS_CHANNEL = (1 << 3);
+	static const uint32_t LOAD_MEM_LOCALPROPS_CHANNEL = (1 << 4);
+	static const uint32_t LOAD_REGION_PREFETCH_CHANNEL = (1 << 5);
 
-	static const uint32_t NUM_WRITEBACK_CHANNELS = 3;
 	static const uint32_t WRITEBACK_MODEL_CHANNEL = 0;
 	static const uint32_t WRITEBACK_LABELS_CHANNEL = 1;
 	static const uint32_t WRITEBACK_INPUT_CHANNEL = 2;
+
+	static const uint32_t PREFETCH_REGION_INPUT_CHANNEL = 1;
+	static const uint32_t PREFETCH_REGION_INPUTCOPY_CHANNEL = (1 << 1);
+	static const uint32_t PREFETCH_REGION_LABELS_CHANNEL = (1 << 2);
 
 	static const uint32_t USE_REG = 0xFFFFFFFF;
 
@@ -210,7 +213,8 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		vector<localaccess_t> loadAccess)
+		localaccess_t loadAccess,
+		uint32_t channelSelection)
 	{
 		uint32_t enableMultiline = 1;
 		m_data[15] |= (2 << 4);
@@ -219,9 +223,8 @@ public:
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
-		for (uint32_t i = 0; i < loadAccess.size(); i++) {
-			m_data[5+i] = loadAccess[i].GetReg();
-		}
+		m_data[5] = loadAccess.GetReg();
+		m_data[6] = channelSelection;
 	}
 
 	void LocalLoad(
@@ -229,7 +232,8 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		vector<localaccess_t> loadAccess)
+		localaccess_t loadAccess,
+		uint32_t channelSelection)
 	{
 		uint32_t enableMultiline = 1;
 		uint32_t useLocalAccessProps = 1;
@@ -239,9 +243,8 @@ public:
 		m_data[10] = offsetByIndex0;
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
-		for (uint32_t i = 0; i < loadAccess.size(); i++) {
-			m_data[5+i] = loadAccess[i].GetReg();
-		}
+		m_data[5] = loadAccess.GetReg();
+		m_data[6] = channelSelection;
 	}
 
 	void WriteBack(
@@ -251,9 +254,9 @@ public:
 		uint32_t offsetByIndex0,
 		uint32_t offsetByIndex1,
 		uint32_t offsetByIndex2,
-		uint32_t whichChannel,
 		bool writeFence,
-		vector<localaccess_t> writebackAccess)
+		localaccess_t writebackAccess,
+		uint32_t whichChannel)
 	{
 		m_data[15] |= (3 << 4);
 		m_data[3] = ((uint32_t)useInputSpace << 31) | storeOffsetDRAM;
@@ -262,15 +265,17 @@ public:
 		m_data[11] = offsetByIndex1;
 		m_data[12] = offsetByIndex2;
 		m_data[5] = ((uint32_t)writeFence << 4) | (whichChannel & 0xFFFF);
-		for (uint32_t i = 0; i < writebackAccess.size(); i++) {
-			m_data[6+i] = writebackAccess[i].GetReg();
-		}
+		m_data[6] = writebackAccess.GetReg();
 	}
 
 	void BlockOnInstruction(string name) {
 		m_data[15] |= (1 << 10) | (1 << 8);
 		
-		if (name.compare("Dot") == 0)
+		if (name.compare("Load") == 0)
+			m_data[15] |= (2 << 4);
+		else if (name.compare("WriteBack") == 0)
+			m_data[15] |= (3 << 4);
+		else if (name.compare("Dot") == 0)
 			m_data[15] |= (4 << 4);
 		else if (name.compare("Delta") == 0)
 			m_data[15] |= (9 << 4);
@@ -284,7 +289,7 @@ public:
 			m_data[15] |= (12 << 4);
 		else if (name.compare("Copy") == 0)
 			m_data[15] |= (12 << 4);
-		else if (name.compare("Copy2") == 0)
+		else if (name.compare("CopyPrefetch") == 0)
 			m_data[15] |= (7 << 4);
 	}
 
@@ -508,13 +513,25 @@ public:
 		m_data[8] = 0;
 	}
 
-	void Copy2(
+	void CopyPrefetch(
 		localaccess_t sourceInputAccess,
-		localaccess_t destinationOutputAccess)
+		localaccess_t destinationOutputAccess,
+		uint32_t channelSelection)
 	{
 		m_data[15] |= (7 << 4);
 		m_data[3] = sourceInputAccess.GetReg();
 		m_data[4] = destinationOutputAccess.GetReg();
+		m_data[5] = channelSelection;
+	}
+
+	void WriteForward1(uint32_t numIterations, uint32_t numLinesToProcess) {
+		m_data[15] |= (13 << 4);
+		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
+	}
+
+	void WriteForward2(uint32_t numIterations, uint32_t numLinesToProcess) {
+		m_data[15] |= (14 << 4);
+		m_data[3] = (numIterations << 16) | (numLinesToProcess & 0xFFFF);
 	}
 
 	void LoadReg(

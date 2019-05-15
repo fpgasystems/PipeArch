@@ -194,6 +194,12 @@ interface fifobram_interface
         input almostfull,
         input count);
 
+    modport writeforward(
+        input we,
+        input waddr,
+        input wdata,
+        input wfifobram);
+
     modport read(
         output re,
         output raddr,

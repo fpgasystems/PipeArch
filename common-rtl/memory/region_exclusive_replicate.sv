@@ -91,6 +91,36 @@ module region_exclusive_replicate
                     end
                 end
             end
+            else if (NUM_WRITE_CHANNELS == 3) begin
+                always_ff @(posedge clk)
+                begin
+                    // FIFOBRAM_region write arbitration
+                    FIFOBRAM_region_interface[index].we <= 1'b0;
+                    if (write_access[0].we) begin
+                        FIFOBRAM_region_interface[index].we <= 1'b1;
+                        FIFOBRAM_region_interface[index].waddr <= write_access[0].waddr;
+                        FIFOBRAM_region_interface[index].wdata <= write_access[0].wdata;
+                        FIFOBRAM_region_interface[index].wfifobram <= write_access[0].wfifobram;
+                    end
+                    else if (write_access[1].we) begin
+                        FIFOBRAM_region_interface[index].we <= 1'b1;
+                        FIFOBRAM_region_interface[index].waddr <= write_access[1].waddr;
+                        FIFOBRAM_region_interface[index].wdata <= write_access[1].wdata;
+                        FIFOBRAM_region_interface[index].wfifobram <= write_access[1].wfifobram;
+                    end
+                    else if (write_access[2].we) begin
+                        FIFOBRAM_region_interface[index].we <= 1'b1;
+                        FIFOBRAM_region_interface[index].waddr <= write_access[2].waddr;
+                        FIFOBRAM_region_interface[index].wdata <= write_access[2].wdata;
+                        FIFOBRAM_region_interface[index].wfifobram <= write_access[2].wfifobram;
+                    end
+
+                    if (write_access[0].we || write_access[1].we || write_access[2].we) begin
+                        assert( WriteCheck( {write_access[0].we, write_access[1].we, write_access[2].we} ) <= 1)
+                        else $fatal("NUM_WRITE_CHANNELS == 3, write_access channels are writing to MEM_region");
+                    end
+                end
+            end
         end
     endgenerate
 

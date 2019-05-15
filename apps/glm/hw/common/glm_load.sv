@@ -10,7 +10,7 @@ module glm_load
     output logic op_done,
 
     input logic in_trigger_dma,
-    input logic [31:0] regs [5+NUM_LOAD_CHANNELS],
+    input logic [31:0] regs [7],
     input t_claddr in_addr,
 
     // request/response
@@ -19,6 +19,7 @@ module glm_load
     fifobram_interface.write REGION0_write,
     fifobram_interface.write REGION1_write,
     fifobram_interface.write REGION2_write,
+    fifobram_interface.write REGION_prefetch_write,
     fifobram_interface.write MEM_localprops_write,
     fifobram_interface.write MEM_accessprops_write,
     fifobram_interface.read MEM_accessprops_read
@@ -66,6 +67,7 @@ module glm_load
     logic [31:0] REGION2_accessproperties;
     logic [31:0] MEM_accessprops_accessproperties;
     logic [31:0] MEM_localprops_accessproperties;
+    logic [31:0] REGION_prefetch_accessproperties;
 
     // *************************************************************************
     //
@@ -74,7 +76,7 @@ module glm_load
     // *************************************************************************
     logic write_trigger;
     internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load();
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_props_access[5]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(1)) dummy_props_access[6]();
 
     internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION0();
     write_region
@@ -136,6 +138,18 @@ module glm_load
         .region_access(MEM_localprops_write)
     );
 
+    internal_interface #(.WIDTH(CLDATA_WIDTH)) from_load_to_REGION_prefetch();
+    write_region
+    write_REGION_prefetch (
+        .clk, .reset(internal_reset),
+        .op_start(write_trigger),
+        .configreg(REGION_prefetch_accessproperties),
+        .iterations(16'd1),
+        .into_write(from_load_to_REGION_prefetch.commonwrite_source),
+        .props_access(dummy_props_access[5].read),
+        .region_access(REGION_prefetch_write)
+    );
+
     always_ff @(posedge clk)
     begin
         from_load_to_REGION0.we <= from_load.we;
@@ -148,11 +162,14 @@ module glm_load
         from_load_to_MEM_accessprops.wdata <= from_load.wdata;
         from_load_to_MEM_localprops.we <= from_load.we;
         from_load_to_MEM_localprops.wdata <= from_load.wdata;
+        from_load_to_REGION_prefetch.we <= from_load.we;
+        from_load_to_REGION_prefetch.wdata <= from_load.wdata;
         from_load.almostfull <= from_load_to_REGION0.almostfull |
                                 from_load_to_REGION1.almostfull |
                                 from_load_to_REGION2.almostfull |
                                 from_load_to_MEM_accessprops.almostfull |
-                                from_load_to_MEM_localprops.almostfull;
+                                from_load_to_MEM_localprops.almostfull |
+                                from_load_to_REGION_prefetch.almostfull;
     end 
 
     // *************************************************************************
@@ -247,11 +264,12 @@ module glm_load
                     enable_multiline <= regs[4][31];
                     use_accessprops <= regs[3][31];
                     accessprops_raddr <= {regs[3][LOG2_MEMORY_SIZE-1:0], 3'b000};
-                    REGION0_accessproperties <= regs[5];
-                    REGION1_accessproperties <= regs[6];
-                    REGION2_accessproperties <= regs[7];
-                    MEM_accessprops_accessproperties <= regs[8];
-                    MEM_localprops_accessproperties <= regs[9];
+                    REGION0_accessproperties <= regs[6][0] ? regs[5] : 0;
+                    REGION1_accessproperties <= regs[6][1] ? regs[5] : 0;
+                    REGION2_accessproperties <= regs[6][2] ? regs[5] : 0;
+                    MEM_accessprops_accessproperties <= regs[6][3] ? regs[5] : 0;
+                    MEM_localprops_accessproperties <= regs[6][4] ? regs[5] : 0;
+                    REGION_prefetch_accessproperties <= regs[6][5] ? regs[5] : 0;
                     // *************************************************************************
                     accessprops_position <= 0;
                     offset_accumulate <= 2'b0;
@@ -318,6 +336,7 @@ module glm_load
                 REGION2_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
                 MEM_accessprops_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
                 MEM_localprops_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
+                REGION_prefetch_accessproperties[29:16] <= accessprops_DRAM_length[13:0];
                 request_state <= trigger_dma ? STATE_DMA_TRIGGER : STATE_WRITE_TRIGGER;
             end
 

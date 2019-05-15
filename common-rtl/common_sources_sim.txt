@@ -2,6 +2,7 @@ C:../opae/base/hw/rtl/base_sources.txt
 
 +incdir+.
 pipearch_copy.sv
+pipearch_writeforward.sv
 pipearch_loadreg.sv
 intel_dma/pipearch_dma_read.sv
 intel_dma/pipearch_dma_write.sv

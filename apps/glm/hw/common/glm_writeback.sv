@@ -9,7 +9,7 @@ module glm_writeback
     input  logic op_start,
     output logic op_done,
 
-    input logic [31:0] regs [6+NUM_WRITEBACK_CHANNELS],
+    input logic [31:0] regs [7],
     input t_claddr in_addr,
     input t_claddr out_addr,
 
@@ -45,6 +45,9 @@ module glm_writeback
     logic [32:0] DRAM_store_length;
     logic [3:0] select_channel;
     logic write_fence;
+    logic [31:0] REGION0_accessproperties;
+    logic [31:0] REGION1_accessproperties;
+    logic [31:0] REGION2_accessproperties;
 
     internal_interface #(.WIDTH(CLDATA_WIDTH)) to_writeback();
     // *************************************************************************
@@ -59,7 +62,7 @@ module glm_writeback
     read_REGION0 (
         .clk, .reset,
         .op_start(DMA_write.control.start),
-        .configreg(regs[6]),
+        .configreg(REGION0_accessproperties),
         .iterations(16'd1),
         .region_access(REGION0_read),
         .props_access(dummy_accessprops_read[0].read),
@@ -71,7 +74,7 @@ module glm_writeback
     read_REGION1 (
         .clk, .reset,
         .op_start(DMA_write.control.start),
-        .configreg(regs[7]),
+        .configreg(REGION1_accessproperties),
         .iterations(16'd1),
         .region_access(REGION1_read),
         .props_access(dummy_accessprops_read[1].read),
@@ -83,7 +86,7 @@ module glm_writeback
     read_REGION2 (
         .clk, .reset,
         .op_start(DMA_write.control.start),
-        .configreg(regs[8]),
+        .configreg(REGION2_accessproperties),
         .iterations(16'd1),
         .region_access(REGION2_read),
         .props_access(dummy_accessprops_read[1].read),
@@ -147,6 +150,9 @@ module glm_writeback
                     DRAM_store_length <= regs[4];
                     select_channel <= regs[5][3:0];
                     write_fence <= regs[5][4];
+                    REGION0_accessproperties <= (regs[5][3:0] == 0) ? regs[6] : 0;
+                    REGION1_accessproperties <= (regs[5][3:0] == 1) ? regs[6] : 0;
+                    REGION2_accessproperties <= (regs[5][3:0] == 2) ? regs[6] : 0;
                     // *************************************************************************
                     offset_accumulate <= 2'b0;
                     num_sent_lines <= 32'b0;

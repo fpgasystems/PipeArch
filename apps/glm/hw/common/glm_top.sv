@@ -407,7 +407,8 @@ module glm_top
     // reg[2] = reg[2]*instruction[12]                  // instruction[12]: read offset change per index2
     // reg[3] = instruction[3]                          // DRAM read offset in cachelines
     // reg[4] = instruction[4]                          // DRAM read length in cachelines
-    // reg[x] = instruction[x]                          // Output access properties
+    // reg[5] = instruction[5]                          // output access properties
+    // reg[6] = instruction[6]                          // output channel selection
 
     // if opcode == 0x3N ---- writeback
     // reg[0] = reg[0]*instruction[10]                  // instruction[10]: read offset change per index0
@@ -418,7 +419,7 @@ module glm_top
     // reg[4] = instruction[4]                          // DRAM store length in cachelines
     // reg[5] = instruction[5]                          // [3:0] internal read channel select
                                                         // [4] write Fence
-    // reg[x] = instruction[x]                          // input access properties
+    // reg[6] = instruction[6]                          // input access properties
 
     // if opcode == 0x4N ---- dot
     // reg[0] = instruction[3]                          // [15:0] num lines to process
@@ -450,6 +451,7 @@ module glm_top
     // if opcode == 0x7N ---- copy
     // reg[0] = instruction[3]                          // source access properties
     // reg[1] = instruction[4]                          // destination access properties
+    // reg[2] = instruction[5]                          // destination channel select
 
     // if opcode == 0x8N ---- synchronize
 
@@ -484,6 +486,14 @@ module glm_top
     // reg[4] = instruction[7]                          // modelnew write access properties
     // reg[5] = instruction[8]                          // lambda
 
+    // if opcode = 0xdN ---- writeforward1
+    // reg[0] = instruction[3]                          // [15:0] num lines to process
+                                                        // [31:16] num iterations
+
+    // if opcode = 0xeN ---- writeforward2
+    // reg[0] = instruction[3]                          // [15:0] num lines to process
+                                                        // [31:16] num iterations
+
     logic [31:0] instruction [16];
     logic [LOG2_PROGRAM_SIZE-1:0] program_counter;
     t_reg [NUM_REGS-1:0] regs;
@@ -497,17 +507,19 @@ module glm_top
     logic [NUM_OPS-1:0] op_active;
 
     t_dma_reg prefetch_regs;
-    logic [31:0] load_regs [5+NUM_LOAD_CHANNELS];
-    logic [31:0] writeback_regs [6+NUM_WRITEBACK_CHANNELS];
+    logic [31:0] load_regs [7];
+    logic [31:0] writeback_regs [7];
     logic [31:0] dot_regs [5];
     logic [31:0] delta_regs [5];
     logic [31:0] modify_regs [7];
     logic [31:0] update1_regs [6];
     logic [31:0] update2_regs [6];
-    logic [31:0] copy_regs [2];
+    logic [31:0] copy_regs [3];
     logic [31:0] loadreg_regs[3];
     logic [31:0] loadreg_outregs [NUM_REGS];
     logic [31:0] l2reg_regs[6];
+    logic [31:0] forward1_regs[1];
+    logic [31:0] forward2_regs[1];
 
     always_ff @(posedge clk)
     begin
@@ -612,10 +624,8 @@ module glm_top
                             load_regs[2] <= DSP27Mult(temp_regs[2],instruction[12]);
                             load_regs[3] <= instruction[3]; // read offset
                             load_regs[4] <= instruction[4]; // read length in cachelines
-                            for (int i = 0; i < NUM_LOAD_CHANNELS; i++)
-                            begin
-                                load_regs[5+i] <= instruction[5+i];
-                            end
+                            load_regs[5] <= instruction[5];
+                            load_regs[6] <= instruction[6];
                         end
 
                         4'h3: // writeback
@@ -627,10 +637,7 @@ module glm_top
                             writeback_regs[3] <= instruction[3]; // store offset
                             writeback_regs[4] <= instruction[4]; // store length in cachelines
                             writeback_regs[5] <= instruction[5]; // channel select
-                            for (int i = 0; i < NUM_WRITEBACK_CHANNELS; i++)
-                            begin
-                                writeback_regs[6+i] <= instruction[6+i];
-                            end
+                            writeback_regs[6] <= instruction[6];
                         end
 
                         // *************************************************************************
@@ -687,6 +694,7 @@ module glm_top
                             op_start[6] <= !instruction[15][10];
                             copy_regs[0] <= instruction[3];
                             copy_regs[1] <= instruction[4];
+                            copy_regs[2] <= instruction[5];
                         end
 
                         4'h8: // synchronize
@@ -723,6 +731,17 @@ module glm_top
                             l2reg_regs[5] <= instruction[8];
                         end
 
+                        4'hd:
+                        begin
+                            op_start[12] <= !instruction[15][10];
+                            forward1_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
+                        end
+
+                        4'he:
+                        begin
+                            op_start[13] <= !instruction[15][10];
+                            forward2_regs[0] <= (instruction[3][31:16] == 16'hFFFF) ? temp_regs[3] : instruction[3];
+                        end
                     endcase
 
                     case(instruction[15][3:0])
@@ -839,10 +858,20 @@ module glm_top
     //   Local Memories
     //
     // *************************************************************************
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_write[1]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_BUFFER_SIZE)) REGION_prefetch_write[1]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_PREFETCH_BUFFER_SIZE)) REGION_prefetch_read[1]();
+    region_exclusive
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_PREFETCH_BUFFER_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(1))
+    REGION_prefetch (
+        .clk, .reset,
+        .write_access(REGION_prefetch_write),
+        .read_access(REGION_prefetch_read)
+    );
+
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_write[3]();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_input_read[3]();
     region_exclusive_replicate
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(1), .NUM_READ_CHANNELS(3))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(3), .NUM_READ_CHANNELS(3))
     REGION_input (
         .clk, .reset,
         .write_access(REGION_input_write),
@@ -859,10 +888,10 @@ module glm_top
         .read_access(REGION_inputcopy_read)
     );
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model1_write[2]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model1_write[3]();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_model1_read[3]();
     region_exclusive_replicate
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(2), .NUM_READ_CHANNELS(3))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(3), .NUM_READ_CHANNELS(3))
     REGION_model1 (
         .clk, .reset,
         .write_access(REGION_model1_write),
@@ -877,10 +906,10 @@ module glm_top
         .access(REGION_model2_interface)
     );
 
-    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_labels_write[2]();
+    fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_labels_write[3]();
     fifobram_interface #(.WIDTH(512), .LOG2_DEPTH(LOG2_MEMORY_SIZE)) REGION_labels_read[3]();
     region_exclusive
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(2), .NUM_READ_CHANNELS(3))
+    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(LOG2_MEMORY_SIZE), .NUM_WRITE_CHANNELS(3), .NUM_READ_CHANNELS(3))
     REGION_labels (
         .clk, .reset,
         .write_access(REGION_labels_write),
@@ -947,6 +976,7 @@ module glm_top
         .REGION0_write(REGION_input_write[0].write),
         .REGION1_write(REGION_model2_interface[0].write),
         .REGION2_write(REGION_labels_write[0].write),
+        .REGION_prefetch_write(REGION_prefetch_write[0].write),
         .MEM_localprops_write(MEM_localprops_write[0].write),
         .MEM_accessprops_write(MEM_accessprops_write[0].write),
         .MEM_accessprops_read(MEM_accessprops_read[0].read)
@@ -1069,8 +1099,34 @@ module glm_top
         .op_start(op_start[6]),
         .op_done(op_done[6]),
         .regs(copy_regs),
-        .REGION_read(REGION_input_read[2].read),
-        .REGION_write(REGION_inputcopy_write[0].write)
+        .REGION_read(REGION_prefetch_read[0].read),
+        .REGION0_write(REGION_input_write[2].write),
+        .REGION1_write(REGION_inputcopy_write[0].write),
+        .REGION2_write(REGION_labels_write[2].write)
+    );
+
+    pipearch_writeforward
+    MEM_model_forward
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[12]),
+        .op_done(op_done[12]),
+        .regs(forward1_regs),
+        .REGION_writeforward(REGION_model2_interface[1].writeforward),
+        .REGION_write(REGION_model1_write[2].write)
+    );
+
+    pipearch_writeforward
+    MEM_input_forward
+    (
+        .clk,
+        .reset,
+        .op_start(op_start[13]),
+        .op_done(op_done[13]),
+        .regs(forward2_regs),
+        .REGION_writeforward(REGION_inputcopy_write[1].writeforward),
+        .REGION_write(REGION_input_write[1].write)
     );
 
     pipearch_loadreg
