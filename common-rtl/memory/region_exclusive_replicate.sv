@@ -91,7 +91,7 @@ module region_exclusive_replicate
                         assert( WriteCheck( {write_access[0].we, write_access[1].we} ) <= 1)
                         else $fatal("NUM_WRITE_CHANNELS == 2, write_access channels are writing to MEM_region");
                     end
-// synthesis translate_off
+// synthesis translate_on
                 end
             end
             else if (NUM_WRITE_CHANNELS == 3) begin
