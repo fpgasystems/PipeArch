@@ -733,13 +733,6 @@ public:
 			localaccess_t loadUindexesWrite(BRAM, UindexesOffsetInBRAM, 0);
 			m_inst[pc].LocalLoad(accessUindexesOffsetInBRAM,
 				1, 0, 0, loadUindexesWrite, Instruction::LOAD_MEM_LOCALPROPS_CHANNEL);
-			m_inst[pc].IncrementIndex(0);
-			pc++;
-
-			m_inst[pc].Load(m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
-				m_tileSize*m_numFeaturesInCL, 0, 0, loadUTileWrite, Instruction::LOAD_REGION_PREFETCH_CHANNEL);
-			m_inst[pc].MakeNonBlocking();
-			m_inst[pc].DecrementIndex(0);
 			pc++;
 
 			localaccess_t dotLeftRead(BRAM, UindexesOffsetInBRAM, 1, true, true);
@@ -776,16 +769,24 @@ public:
 
 			m_inst[pc].Update2(Instruction::USE_REG, m_numFeaturesInCL, updateMRead, modifyWrite, updateURead, updateUWrite, asyncUpdate);
 			m_inst[pc].MakeNonBlocking();
+			pc++;
+
+			m_inst[pc].Jump(0, UtileToStart+numTilesU-1, pc+1, pc+3);
 			m_inst[pc].IncrementIndex(0);
+			pc++;
+
+			m_inst[pc].Load(m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
+				m_tileSize*m_numFeaturesInCL, 0, 0, loadUTileWrite, Instruction::LOAD_REGION_PREFETCH_CHANNEL);
+			m_inst[pc].MakeNonBlocking();
 			pc++;
 
 			m_inst[pc].LocalLoad(accessValuesOffsetInBRAM,
 				1, 0, 0, loadValuesWrite, Instruction::LOAD_REGION_PREFETCH_CHANNEL);
 			m_inst[pc].MakeNonBlocking();
-			m_inst[pc].DecrementIndex(0);
 			pc++;
 
 			m_inst[pc].BlockOnInstruction("Update2");
+			m_inst[pc].DecrementIndex(0);
 			pc++;
 
 			localaccess_t writebackURead(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
