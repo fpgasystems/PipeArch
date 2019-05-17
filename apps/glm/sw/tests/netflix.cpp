@@ -16,8 +16,9 @@ int main(int argc, char* argv[]) {
 	uint32_t numEpochs = 10;
 	uint32_t numInstances = 1;
 	uint32_t sw0hw1 = 0;
-	if (!(argc == 9)) {
-		cout << "Usage: ./app <pathToDataset> <Mdim> <numFeatures> <tileSize> <asyncUpdate> <numEpochs> <numInstances> <sw0hw1>" << endl;
+	bool staleRead = false;
+	if (!(argc == 10)) {
+		cout << "Usage: ./app <pathToDataset> <Mdim> <numFeatures> <tileSize> <asyncUpdate> <staleRead> <numEpochs> <numInstances> <sw0hw1>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
@@ -25,12 +26,12 @@ int main(int argc, char* argv[]) {
 	numFeatures = atoi(argv[3]);
 	tileSize = atoi(argv[4]);
 	asyncUpdate = (strcmp(argv[5], "y") == 0);
-	numEpochs = atoi(argv[6]);
-	numInstances = atoi(argv[7]);
-	sw0hw1 = atoi(argv[8]);
+	staleRead = (strcmp(argv[6], "y") == 0);
+	numEpochs = atoi(argv[7]);
+	numInstances = atoi(argv[8]);
+	sw0hw1 = atoi(argv[9]);
 
-	bool staleRead = false;
-	float stepSize = 0.01;
+	float stepSize = 0.0001;
 	float lambda = 0;
 
 #ifdef FPGA
@@ -108,9 +109,10 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		double start = get_time();
+		double total = 0.0;
 
 		for (uint32_t e = 0; e < numEpochs; e++) {
+			double start = get_time();
 			for (uint32_t i = 0; i < numInstances; i++) {
 				vector<FThread*> fthreads;
 				for (uint32_t j = 0; j < numInstances; j++) {
@@ -123,15 +125,16 @@ int main(int argc, char* argv[]) {
 					fthreads[j]->WaitUntilFinished();
 				}
 			}
+			double end = get_time();
+			total += (end - start);
+
+			// Verify
+			lrmf[0]->CopyModel();
+			cout << lrmf[0]->RMSE() << endl;
 		}
 
-		double total = get_time() - start;
 		cout << "Avg time per epoch: " << total/numEpochs << endl;
 		cout << "Processing rate: " << (numEpochs*((LRMF*)lrmf[0])->GetDataSize())/total/1e9 << "GB/s" << endl;
-
-		// Verify
-		lrmf[0]->CopyModel();
-		cout << lrmf[0]->RMSE() << endl;
 #endif
 	}
 

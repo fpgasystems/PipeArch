@@ -521,7 +521,8 @@ public:
 			for (uint32_t tm = 0; tm < m_numTilesM; tm++) {
 				for (uint32_t tu = 0; tu < m_numTilesU; tu++) {
 					// uint32_t temp_tu = m_numTilesU*((float)rand()/(float)RAND_MAX);
-					uint32_t temp_tu = m_numTilesU-tu-1;
+					// uint32_t temp_tu = m_numTilesU-tu-1;
+					uint32_t temp_tu = tu;
 
 					vector<LabelB> LTile = m_LBTiled[tm*m_numTilesU+temp_tu];
 					float* M_tile_offset = m_M + tm*m_tileSize*m_numFeatures;
