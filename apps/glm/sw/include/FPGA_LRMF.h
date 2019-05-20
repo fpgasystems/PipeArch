@@ -708,12 +708,6 @@ public:
 			uint32_t jumpIfSizeIsZero = pc;
 			pc++;
 
-			localaccess_t inputRead(BRAM, PrefetchUtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
-			localaccess_t inputWrite(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
-			m_inst[pc].CopyPrefetch(inputRead, inputWrite, Instruction::PREFETCH_REGION_INPUT_CHANNEL | Instruction::PREFETCH_REGION_INPUTCOPY_CHANNEL);
-			m_inst[pc].MakeNonBlocking();
-			pc++;
-
 			localaccess_t copyModelRead(BRAM, MtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
 			m_inst[pc].Copy(copyModelRead, copyModelRead);
 			m_inst[pc].MakeNonBlocking();
@@ -722,6 +716,7 @@ public:
 			localaccess_t loadMindexesWrite(BRAM, MindexesOffsetInBRAM, 0);
 			m_inst[pc].LocalLoad(accessMindexesOffsetInBRAM,
 				1, 0, 0, loadMindexesWrite, Instruction::LOAD_MEM_LOCALPROPS_CHANNEL);
+			m_inst[pc].MakeNonBlocking();
 			pc++;
 
 			localaccess_t valuesRead(BRAM, PrefetchValuesOffsetInBRAM, ConvertNumWordToNumCL(m_maxBatchSize, sizeof(float)));
@@ -733,6 +728,18 @@ public:
 			localaccess_t loadUindexesWrite(BRAM, UindexesOffsetInBRAM, 0);
 			m_inst[pc].LocalLoad(accessUindexesOffsetInBRAM,
 				1, 0, 0, loadUindexesWrite, Instruction::LOAD_MEM_LOCALPROPS_CHANNEL);
+			m_inst[pc].MakeNonBlocking();
+			pc++;
+
+			m_inst[pc].BlockOnInstruction("WriteBack");
+			pc++;
+
+			localaccess_t inputRead(BRAM, PrefetchUtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+			localaccess_t inputWrite(BRAM, UtileOffsetInBRAM, m_tileSize*m_numFeaturesInCL);
+			m_inst[pc].CopyPrefetch(inputRead, inputWrite, Instruction::PREFETCH_REGION_INPUT_CHANNEL | Instruction::PREFETCH_REGION_INPUTCOPY_CHANNEL);
+			pc++;
+
+			m_inst[pc].BlockOnInstruction("Load");
 			pc++;
 
 			localaccess_t dotLeftRead(BRAM, UindexesOffsetInBRAM, 1, true, true);
@@ -794,6 +801,7 @@ public:
 			m_inst[pc].WriteBack(true, m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
 				m_tileSize*m_numFeaturesInCL, 0, 0,
 				false, writebackURead, Instruction::WRITEBACK_INPUT_CHANNEL);
+			m_inst[pc].MakeNonBlocking();
 			pc++;
 
 			uint32_t endInnerMost = pc;
