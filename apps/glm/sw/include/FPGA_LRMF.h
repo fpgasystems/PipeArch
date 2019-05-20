@@ -794,7 +794,6 @@ public:
 			m_inst[pc].WriteBack(true, m_Uchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
 				m_tileSize*m_numFeaturesInCL, 0, 0,
 				false, writebackURead, Instruction::WRITEBACK_INPUT_CHANNEL);
-			m_inst[pc].MakeNonBlocking();
 			pc++;
 
 			uint32_t endInnerMost = pc;

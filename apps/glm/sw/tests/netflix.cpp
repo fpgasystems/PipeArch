@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
 	numInstances = atoi(argv[8]);
 	sw0hw1 = atoi(argv[9]);
 
-	float stepSize = 0.0001;
+	float stepSize = 0.01;
 	float lambda = 0;
 
 #ifdef FPGA
@@ -82,11 +82,6 @@ int main(int argc, char* argv[]) {
 	}
 	else {
 #ifdef FPGA
-		if (numInstances > iFPGA::MAX_NUM_INSTANCES) {
-			cout << "numInstances is larger than iFPGA::MAX_NUM_INSTANCES (" << iFPGA::MAX_NUM_INSTANCES << ")" << endl;
-			return 1;
-		}
-
 		lrmf[0]->RandInitMU();
 
 		lrmf[0]->CreateMemoryLayout();
@@ -113,18 +108,17 @@ int main(int argc, char* argv[]) {
 
 		for (uint32_t e = 0; e < numEpochs; e++) {
 			double start = get_time();
+
 			for (uint32_t i = 0; i < numInstances; i++) {
 				vector<FThread*> fthreads;
 				for (uint32_t j = 0; j < numInstances; j++) {
 					fthreads.push_back( server.Request(lrmf[i*numInstances+j]) );
-					
-					// FThread* fthread = server.Request(lrmf[i*numInstances+j]);
-					// fthread->WaitUntilFinished();
 				}
 				for (uint32_t j = 0; j < numInstances; j++) {
 					fthreads[j]->WaitUntilFinished();
 				}
 			}
+
 			double end = get_time();
 			total += (end - start);
 
