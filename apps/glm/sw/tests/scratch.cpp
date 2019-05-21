@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
 	ModelType type;
 	if ( strcmp(pathToDataset, "syn") == 0) {
 		columnML.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
-		type = linreg;
+		type = logreg;
 	}
 	else {
 		columnML.m_cstore->LoadRawData(pathToDataset, numSamples, numFeatures, true);
@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
 		columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
 
 #ifdef FPGA
-		columnML.CreateMemoryLayout(format, partitionSize, numEpochs);
+		columnML.CreateMemoryLayout(format, partitionSize, numEpochs, false);
 		columnML.fSCD(0, columnML.m_numPartitions, type, numEpochs, stepSize, lambda);
 #endif
 	}
@@ -95,6 +95,9 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	else {
+#ifdef XILINX
+		columnML.CopyInputHandleFromFPGA();
+#endif
 		for (uint32_t e = 0; e < numEpochs; e++) {
 			float loss = columnML.Loss(type, columnML.GetModelSCD(e).data(), lambda, &args);
 			cout << "loss " << e << ": " << loss << endl;

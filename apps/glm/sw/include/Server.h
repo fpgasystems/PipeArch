@@ -141,11 +141,11 @@ public:
 
 	void AddThread(FThread* fthread) {
 #ifdef XILINX
-		m_ifpga->UpdateBank(fthread->m_cML->m_inputHandle, m_id);
-		m_ifpga->UpdateBank(fthread->m_cML->m_outputHandle, m_id);
-		m_ifpga->UpdateBank(fthread->m_cML->m_programMemoryHandle, m_id);
+		// m_ifpga->UpdateBank(fthread->m_cML->m_inputHandle, m_id);
+		// m_ifpga->UpdateBank(fthread->m_cML->m_outputHandle, m_id);
+		// m_ifpga->UpdateBank(fthread->m_cML->m_programMemoryHandle, m_id);
 		vector<cl::Memory> buffersToCopy;
-		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_inputHandle));
+		// buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_inputHandle));
 		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_outputHandle));
 		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_programMemoryHandle));
 		m_ifpga->CopyToFPGA(buffersToCopy);
@@ -335,7 +335,6 @@ private:
 		iFPGA::WriteConfigReg(whichInstance*4 + 2, inputMemory);
 		iFPGA::WriteConfigReg(whichInstance*4 + 3, outputMemory);
 #endif
-
 	}
 
 	void PauseThread(FThread* fthread, uint32_t whichInstance) {

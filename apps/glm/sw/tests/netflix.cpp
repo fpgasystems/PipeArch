@@ -123,6 +123,9 @@ int main(int argc, char* argv[]) {
 			total += (end - start);
 
 			// Verify
+#ifdef XILINX
+			lrmf[0]->CopyInputHandleFromFPGA();
+#endif
 			lrmf[0]->CopyModel();
 			cout << lrmf[0]->RMSE() << endl;
 		}

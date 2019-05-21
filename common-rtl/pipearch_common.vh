@@ -1,7 +1,7 @@
 `ifndef PIPEARCH_COMMON
 `define PIPEARCH_COMMON
 
-// `define XILINX
+`define XILINX
 
 parameter LOG2_PREFETCH_SIZE = 9;
 parameter PREFETCH_SIZE = 2**LOG2_PREFETCH_SIZE - 16;

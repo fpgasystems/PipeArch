@@ -10,8 +10,6 @@ module float_sigmoid
     output logic q_valid
 );
 
-`ifdef XILINX
-`else
     logic [31:0] one = 32'h3f800000;
     logic [31:0] minus_one = 32'hbf800000;
     logic [31:0] exp_input;
@@ -19,6 +17,37 @@ module float_sigmoid
     logic [31:0] denom_output;
     assign exp_input = {!in[31], in[30:0]};
 
+`ifdef XILINX
+    logic exp_output_valid;
+    xlnx_fp_exp
+    mult (
+        .aclk(clk),
+        .s_axis_a_tvalid(in_valid),
+        .s_axis_a_tdata(exp_input),
+        .m_axis_result_tvalid(exp_output_valid),
+        .m_axis_result_tdata(exp_output));
+
+    logic denom_output_valid;
+    xlnx_fp_subtract
+    subtract (
+        .aclk(clk),
+        .s_axis_a_tvalid(exp_output_valid),
+        .s_axis_a_tdata(exp_output),
+        .s_axis_b_tvalid(exp_output_valid),
+        .s_axis_b_tdata(minus_one),
+        .m_axis_result_tvalid(denom_output_valid),
+        .m_axis_result_tdata(denom_output));
+
+    xlnx_fp_div
+    div (
+        .aclk(clk),
+        .s_axis_a_tvalid(denom_output_valid),
+        .s_axis_a_tdata(one),
+        .s_axis_b_tvalid(denom_output_valid),
+        .s_axis_b_tdata(denom_output),
+        .m_axis_result_tvalid(q_valid),
+        .m_axis_result_tdata(q));
+`else
     fp_exp_arria10_nohard
     exp (
         .clk(clk),

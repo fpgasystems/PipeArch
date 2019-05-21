@@ -67,9 +67,13 @@ IP/intel_IP/fp_lt_arria10/sim/fp_lt_arria10.v
 IP/intel_IP/fp_subtract_arria10/altera_fp_functions_160/sim/fp_subtract_arria10_altera_fp_functions_160_m3dr3hq.vhd
 IP/intel_IP/fp_subtract_arria10/sim/fp_subtract_arria10.v
 
+IP/xilinx_IP/xlnx_dec23_to_fp_convert/sim/xlnx_dec23_to_fp_convert.vhd
+IP/xilinx_IP/xlnx_fp_div/sim/xlnx_fp_div.vhd
+IP/xilinx_IP/xlnx_fp_exp/sim/xlnx_fp_exp.vhd
+IP/xilinx_IP/xlnx_fp_gt/sim/xlnx_fp_gt.vhd
+IP/xilinx_IP/xlnx_fp_lt/sim/xlnx_fp_lt.vhd
 IP/xilinx_IP/xlnx_fp_mult/sim/xlnx_fp_mult.vhd
 IP/xilinx_IP/xlnx_fp_subtract/sim/xlnx_fp_subtract.vhd
-IP/xilinx_IP/xlnx_dec23_to_fp_convert/sim/xlnx_dec23_to_fp_convert.vhd
 
 memory/normal2axis_fifo.vhd
 memory/simple_dual_port_ram.vhd

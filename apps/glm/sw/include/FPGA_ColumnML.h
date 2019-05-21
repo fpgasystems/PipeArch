@@ -136,6 +136,18 @@ public:
 		output[3] = 0; // reg 2;
 	}
 
+#ifdef XILINX
+	void CopyInputHandleToFPGA() {
+		vector<cl::Memory> buffersToCopy;
+		buffersToCopy.push_back(iFPGA::CastToPtr(m_inputHandle));
+		m_ifpga->CopyToFPGA(buffersToCopy);
+	}
+
+	void CopyInputHandleFromFPGA() {
+		m_ifpga->CopyFromFPGA(m_inputHandle, 0);
+	}
+#endif
+
 	uint32_t CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize) {
 		return CreateMemoryLayout(format, partitionSize, 1, false);
 	}
@@ -161,16 +173,17 @@ public:
 		m_restInCL = (m_rest >> 4) + ((m_rest&0xF) > 0);
 		m_numEpochs = numEpochs;
 
-		std::cout << "m_numSamplesInCL: " << m_numSamplesInCL << std::endl;
-		std::cout << "m_numFeaturesInCL: " << m_numFeaturesInCL << std::endl;
-		std::cout << "m_partitionSize: " << m_partitionSize << std::endl;
-		std::cout << "m_partitionSizeInCL: " << m_partitionSizeInCL << std::endl;
-		std::cout << "m_alignedNumSamples: " << m_alignedNumSamples << std::endl;
-		std::cout << "m_alignedNumFeatures: " << m_alignedNumFeatures << std::endl;
-		std::cout << "m_alignedPartitionSize: " << m_alignedPartitionSize << std::endl;
-		std::cout << "m_numPartitions: " << m_numPartitions << std::endl;
-		std::cout << "m_rest: " << m_rest << std::endl;
-		std::cout << "m_restInCL: " << m_restInCL << std::endl;
+		cout << "m_numSamplesInCL: " << m_numSamplesInCL << endl;
+		cout << "m_numFeaturesInCL: " << m_numFeaturesInCL << endl;
+		cout << "m_partitionSize: " << m_partitionSize << endl;
+		cout << "m_partitionSizeInCL: " << m_partitionSizeInCL << endl;
+		cout << "m_alignedNumSamples: " << m_alignedNumSamples << endl;
+		cout << "m_alignedNumFeatures: " << m_alignedNumFeatures << endl;
+		cout << "m_alignedPartitionSize: " << m_alignedPartitionSize << endl;
+		cout << "m_numPartitions: " << m_numPartitions << endl;
+		cout << "m_rest: " << m_rest << endl;
+		cout << "m_restInCL: " << m_restInCL << endl;
+		cout << "m_numEpochs: " << m_numEpochs << endl;
 
 		uint32_t countCL = 0;
 
@@ -301,7 +314,9 @@ public:
 				}
 			}
 		}
-
+#ifdef XILINX
+		CopyInputHandleToFPGA();
+#endif
 		return countCL;
 	}
 

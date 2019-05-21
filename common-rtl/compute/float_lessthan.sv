@@ -12,7 +12,16 @@ module float_lessthan
 );
 
 `ifdef XILINX
-    
+    logic [7:0] temp_q;
+    xlnx_fp_lt
+    mult (
+        .s_axis_a_tvalid(in_valid),
+        .s_axis_a_tdata(in1),
+        .s_axis_b_tvalid(in_valid),
+        .s_axis_b_tdata(in2),
+        .m_axis_result_tvalid(q_valid),
+        .m_axis_result_tdata(temp_q));
+    assign q = temp_q[0];
 `else
     fp_lt_arria10
     gt (
@@ -22,17 +31,6 @@ module float_lessthan
         .b(in2),
         .q(q));
     assign q_valid = in_valid;
-    // localparam LATENCY = 3;
-    // logic [LATENCY-1:0] status = 0;
-    // always_ff @(posedge clk)
-    // begin
-    //     status[0] <= in_valid;
-    //     for (int i = 1; i < LATENCY; i++)
-    //     begin
-    //         status[i] <= status[i-1];
-    //     end
-    // end
-    // assign q_valid = status[LATENCY-1];
 `endif
 
 endmodule // float_lessthan

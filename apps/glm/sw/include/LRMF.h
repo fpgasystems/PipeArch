@@ -200,7 +200,7 @@ public:
 				tempV.push_back(temp[j]);
 				// cout << j << " User: " << m_L[i][j].m_Uindex << ", Rating: " << m_L[i][j].m_value << endl;
 
-				if ((temp[j].m_Uindex+1) > m_Udim) {
+				if ((uint32_t)(temp[j].m_Uindex+1) > m_Udim) {
 					m_Udim = (temp[j].m_Uindex+1);
 				}
 

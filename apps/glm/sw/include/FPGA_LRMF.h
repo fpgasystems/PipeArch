@@ -248,7 +248,9 @@ public:
 				}
 			}
 		}
-
+#ifdef XILINX
+		CopyInputHandleToFPGA();
+#endif
 		return countCL;
 	}
 

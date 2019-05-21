@@ -251,13 +251,21 @@ public:
 	void CopyToFPGA(vector<cl::Memory>& buffersToCopy) {
 		cout << "CopyToFPGA" << endl;
 		cl_int err = m_queue[0].enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
-		// err = m_queue.finish();
+		// err = m_queue[0].finish();
 	}
 
 	void CopyFromFPGA(vector<cl::Memory>& buffersToCopy, uint32_t whichInstance) {
 		cout << "CopyFromFPGA" << endl;
 		cl_int err = m_queue[whichInstance].enqueueMigrateMemObjects(buffersToCopy, CL_MIGRATE_MEM_OBJECT_HOST);
-		// err = m_queue.finish();
+		// err = m_queue[whichInstance].finish();
+	}
+
+	void CopyFromFPGA(iFPGA_ptr& bufferToCopy, uint32_t whichInstance) {
+		cout << "CopyFromFPGA single buffer" << endl;
+		vector<cl::Memory> temp;
+		temp.push_back(CastToPtr(bufferToCopy));
+		cl_int err = m_queue[whichInstance].enqueueMigrateMemObjects(temp, CL_MIGRATE_MEM_OBJECT_HOST);
+		err = m_queue[whichInstance].finish();
 	}
 
 	void StartKernel(uint32_t whichInstance) {
