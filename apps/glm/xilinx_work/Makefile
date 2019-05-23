@@ -9,7 +9,7 @@ include $(COMMON_REPO)/libs/xcl2/xcl2.mk
 include $(COMMON_REPO)/libs/opencl/opencl.mk
 
 # Host Application
-TEST=netflix
+TEST=scratch
 
 LOCAL_SRCS=$(wildcard $(sw_path)/src/*.cpp)
 LOCAL_TESTS=$(sw_path)/tests/$(TEST).cpp
@@ -18,7 +18,7 @@ LOCAL_DEPS=$(wildcard $(sw_path)/include/*.h)
 host_SRCS=$(LOCAL_SRCS) $(LOCAL_TESTS) $(xcl2_SRCS)
 host_HDRS=$(LOCAL_DEPS) $(xcl2_HDRS)
 host_CXXFLAGS=-I$(sw_path)/include $(opencl_CXXFLAGS) $(xcl2_CXXFLAGS) -march=native -DXILINX -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
-host_CXXFLAGS+=-DMAKEFILE_MAX_NUM_INSTANCES=4 -DMAKEFILE_NUM_INSTANCES_PER_BANK=4
+host_CXXFLAGS+=-DMAKEFILE_MAX_NUM_INSTANCES=2 -DMAKEFILE_NUM_INSTANCES_PER_BANK=2
 host_LDFLAGS=$(opencl_LDFLAGS)
 EXES=host
 
@@ -53,7 +53,7 @@ $(warning WARNING:RTL Kernels do not support sw_emu TARGETS. Please use hw_emu f
 endif
 
 # For waveform debugging
-LDCLFLAGS+=-g --nk $(mytop_KERNEL):4 #--sp $(mytop_KERNEL)_1.m_axi_gmem:bank0 --sp $(mytop_KERNEL)_2.m_axi_gmem:bank1
+LDCLFLAGS+=-g --nk $(mytop_KERNEL):2 #--sp $(mytop_KERNEL)_1.m_axi_gmem:bank0 --sp $(mytop_KERNEL)_2.m_axi_gmem:bank1
 
 include $(COMMON_REPO)/utility/rules.mk
 

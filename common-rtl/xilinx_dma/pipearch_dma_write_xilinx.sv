@@ -105,7 +105,7 @@ module pipearch_dma_write_xilinx
     )
     inst_axi_write_master ( 
         .aclk        (clk),
-        .areset      (reset),
+        .areset      (reset | DMA_write.control.start),
 
         .ctrl_start  (krnl_ctrl_start),
         .ctrl_offset (krnl_ctrl_addr),

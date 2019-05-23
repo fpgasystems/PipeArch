@@ -1,4 +1,4 @@
-source /opt/xilinx/xrt/setup.sh
+source $TOOLS/Xilinx/XRT/build/Release/opt/xilinx/xrt/setup.sh
 export SDACCEL_EXAMPLES=$HOME/Tools/Xilinx/sdaccel-examples
 source $TOOLS/Xilinx/SDx/2018.2/settings64.sh
 
