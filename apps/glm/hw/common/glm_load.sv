@@ -342,7 +342,11 @@ module glm_load
 
             STATE_DMA_TRIGGER:
             begin
-                if (DMA_read.status.idle)
+                if (DRAM_load_length == 0)
+                begin
+                    request_state <= STATE_DONE;
+                end
+                else if (DMA_read.status.idle)
                 begin
                     DMA_read.control.start <= 1'b1;
                     DMA_read.control.regs <= t_dma_reg'(0);

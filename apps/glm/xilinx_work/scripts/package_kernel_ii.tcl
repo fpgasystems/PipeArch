@@ -33,18 +33,18 @@
 # *******************************************************************************/
 
 set path_to_hdl1    "../hw/common"
-set path_to_hdl2    "../hw/xilinx_top"
+set path_to_hdl2    "../hw/xilinx_top/"
 set path_to_hdl3    "../../../common-rtl/"
 set path_to_hdl4    "../../../common-rtl/xilinx_dma"
 set path_to_hdl5    "../../../common-rtl/compute"
 set path_to_hdl6    "../../../common-rtl/memory"
 set path_to_ip      "../../../common-rtl/IP/xilinx_IP/"
-set path_to_packaged "./packaged_kernel_${suffix}"
-set path_to_tmp_project "./tmp_kernel_pack_${suffix}"
+set path_to_packaged "./packaged_kernel_ii_${suffix}"
+set path_to_tmp_project "./tmp_kernel_pack_ii_${suffix}"
 
 create_project -force kernel_pack $path_to_tmp_project -part xcvu9p-fsgd2104-2-i
 add_files -norecurse [glob $path_to_hdl1/*.v $path_to_hdl1/*.sv $path_to_hdl1/*.vhd $path_to_hdl1/*.vh]
-add_files -norecurse [glob $path_to_hdl2/xilinx_top.v $path_to_hdl2/xilinx_glm_top.sv]
+add_files -norecurse [glob $path_to_hdl2/xilinx_top_ii.v $path_to_hdl2/xilinx_glm_top.sv]
 add_files -norecurse [glob $path_to_hdl3/*.v $path_to_hdl3/*.sv $path_to_hdl3/*.vhd $path_to_hdl3/*.vh]
 add_files -norecurse [glob $path_to_hdl4/*.v $path_to_hdl4/*.sv $path_to_hdl4/*.vhd $path_to_hdl4/*.vh]
 add_files -norecurse [glob $path_to_hdl5/*.v $path_to_hdl5/*.sv $path_to_hdl5/*.vhd $path_to_hdl5/*.vh]
