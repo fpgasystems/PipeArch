@@ -254,16 +254,6 @@ public:
 		return countCL;
 	}
 
-	bool CheckMemoryFit(uint32_t requestedSize, uint32_t onchipSize, const char* name) {
-		if (requestedSize > onchipSize) {
-			cout << "requestedSize for memory " << name << " (" << requestedSize << ")";
-			cout << " is larger than onchipSize (" << onchipSize << endl;
-			return false;
-		}
-		else {
-			return true;
-		}
-	}
 /*
 	bool fOptimizeRound(
 		uint32_t MtileToStart,

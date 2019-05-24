@@ -19,7 +19,11 @@ void thread_SGD(
 	float lambda, 
 	AdditionalArguments args)
 {
+#ifdef AVX2
 	columnML->AVXrowwise_SGD(type, xHistory, numEpochs, minibatchSize, stepSize, lambda, &args);
+#else
+	columnML->SGD(type, xHistory, numEpochs, minibatchSize, stepSize, lambda, &args);
+#endif
 }
 
 void thread_Loss(
@@ -110,7 +114,11 @@ int main(int argc, char* argv[]) {
 
 	if (sw0hw1 == 0) {
 		if (numClasses < 2) {
+#ifdef AVX2
 			columnML[0]->AVXrowwise_SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+#else
+			columnML[0]->SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+#endif
 		}
 		else {
 			vector<float*> xHistories;
@@ -222,10 +230,11 @@ int main(int argc, char* argv[]) {
 			vector<FThread*> fthreads(numClasses);
 			for (uint32_t c = 0; c < numClasses; c++) {
 				fthreads[c] = server.Request(columnML[c]);
-			}
-			for (uint32_t c = 0; c < numClasses; c++) {
 				fthreads[c]->WaitUntilFinished();
 			}
+			// for (uint32_t c = 0; c < numClasses; c++) {
+			// 	fthreads[c]->WaitUntilFinished();
+			// }
 			double total = get_time() - start;
 			cout << "Avg time per epoch: " << total/numEpochs << endl;
 			cout << "Processing rate: " << (numClasses*numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;

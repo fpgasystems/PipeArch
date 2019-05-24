@@ -10,6 +10,7 @@ int main(int argc, char* argv[]) {
 
 	char* pathToDataset;
 	int Mdim = -1;
+	int Udim = -1;
 	uint32_t numFeatures = 0;
 	uint32_t tileSize = 0;
 	bool asyncUpdate = false;
@@ -17,21 +18,22 @@ int main(int argc, char* argv[]) {
 	uint32_t numInstances = 1;
 	uint32_t sw0hw1 = 0;
 	bool staleRead = false;
-	if (!(argc == 10)) {
-		cout << "Usage: ./app <pathToDataset> <Mdim> <numFeatures> <tileSize> <asyncUpdate> <staleRead> <numEpochs> <numInstances> <sw0hw1>" << endl;
+	if (!(argc == 11)) {
+		cout << "Usage: ./app <pathToDataset> <Mdim> <Udim> <numFeatures> <tileSize> <asyncUpdate> <staleRead> <numEpochs> <numInstances> <sw0hw1>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
 	Mdim = atoi(argv[2]);
-	numFeatures = atoi(argv[3]);
-	tileSize = atoi(argv[4]);
-	asyncUpdate = (strcmp(argv[5], "y") == 0);
-	staleRead = (strcmp(argv[6], "y") == 0);
-	numEpochs = atoi(argv[7]);
-	numInstances = atoi(argv[8]);
-	sw0hw1 = atoi(argv[9]);
+	Udim = atoi(argv[3]);
+	numFeatures = atoi(argv[4]);
+	tileSize = atoi(argv[5]);
+	asyncUpdate = (strcmp(argv[6], "y") == 0);
+	staleRead = (strcmp(argv[7], "y") == 0);
+	numEpochs = atoi(argv[8]);
+	numInstances = atoi(argv[9]);
+	sw0hw1 = atoi(argv[10]);
 
-	float stepSize = 0.01;
+	float stepSize = 0.0001;
 	float lambda = 0;
 
 #ifdef FPGA
@@ -51,10 +53,10 @@ int main(int argc, char* argv[]) {
 #endif
 
 	if ( strcmp(pathToDataset, "syn") == 0) {
-		lrmf[0]->GenerateSyntheticData(Mdim, 2*Mdim);
+		lrmf[0]->GenerateSyntheticData(Mdim, Udim);
 	}
 	else {
-		lrmf[0]->ReadNetflixData(pathToDataset, Mdim);
+		lrmf[0]->ReadNetflixData(pathToDataset, Mdim, Udim);
 	}
 
 	lrmf[0]->DivideLBIntoTiles(tileSize);

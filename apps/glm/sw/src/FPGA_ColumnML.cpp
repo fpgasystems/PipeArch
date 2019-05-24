@@ -666,70 +666,83 @@ bool FPGA_ColumnML::fSGD_blocking(
 
 	return true;
 }
+*/
 
-void FPGA_ColumnML::ReadBandwidth(uint32_t numIterations) {
-	uint32_t numLines = 2048;
+bool FPGA_ColumnML::ReadBandwidth(uint32_t numLinesToRead, uint32_t numLinesToWrite, uint32_t numIterations) {
 
-	AccessProperties accessSamples(5);
-	accessSamples.Set(2, 0, numLines);
+	bool fit = true;
+	fit &= CheckMemoryFit(numLinesToRead, iFPGA::MEMORY_SIZE_IN_CL, "REGION_INPUT");
+	if (fit == false) {
+		return false;
+	}
 
+	m_ifpga->Realloc(m_inputHandle, numIterations*(numLinesToRead+numLinesToWrite)*64);
+	m_base = iFPGA::CastToFloat(m_inputHandle);
+	for (uint32_t i = 0; i < numIterations*numLinesToRead*16; i++) {
+		m_base[i] = i;
+	}
+	uint32_t offset = numIterations*numLinesToRead*16;
+	for (uint32_t i = 0; i < numIterations*numLinesToWrite*16; i++) {
+		m_base[offset+i] = 0;
+	}
+
+#ifdef XILINX
+	CopyInputHandleToFPGA();
+#endif
+
+	// *************************************************************************
+	//
+	//   START Program
+	//
+	// *************************************************************************
 	uint32_t pc = 0;
 
-	m_inst[pc].Prefetch(0, numIterations*numLines, 0, 0, 0);
+	m_inst[pc].Prefetch(0, numIterations*numLinesToRead, 0, 0, 0);
+	m_inst[pc].ResetIndex(2);
 	m_inst[pc].MakeNonBlocking();
 	pc++;
 
-	m_inst[pc].Load(0, numLines, 0, 0, 0, accessSamples);
 	uint32_t pcLoad = pc;
-	pc++;
+
+	localaccess_t readLines(0, numLinesToRead);
+	localaccess_t writeLines(0, numLinesToWrite);
+	if (numLinesToWrite == 0) {
+		m_inst[pc].Load(0, numLinesToRead, 0, 0, numLinesToRead, readLines, Instruction::LOAD_REGION_LABELS_CHANNEL);
+		pc++;
+	}
+	else if (numLinesToWrite == numLinesToRead) {
+		readLines.Set(FIFO, numLinesToRead);
+		writeLines.Set(FIFO, numLinesToWrite);
+
+		m_inst[pc].Load(0, numLinesToRead, 0, 0, numLinesToRead, readLines, Instruction::LOAD_REGION_LABELS_CHANNEL);
+		m_inst[pc].MakeNonBlocking();
+		pc++;
+
+		m_inst[pc].WriteBack(true, numIterations*numLinesToRead, numLinesToWrite, 0, 0, numLinesToWrite, true, writeLines, Instruction::WRITEBACK_LABELS_CHANNEL);
+		pc++;
+	}
+	else {
+		m_inst[pc].Load(0, numLinesToRead, 0, 0, numLinesToRead, readLines, Instruction::LOAD_REGION_LABELS_CHANNEL);
+		pc++;
+
+		m_inst[pc].WriteBack(true, numIterations*numLinesToRead, numLinesToWrite, 0, 0, numLinesToWrite, true, writeLines, Instruction::WRITEBACK_LABELS_CHANNEL);
+		pc++;
+	}
 
 	m_inst[pc].Jump(2, numIterations-1, pcLoad, 0xFFFFFFFF);
 	m_inst[pc].IncrementIndex(2);
 	pc++;
+	// *************************************************************************
+	//
+	//   END Program
+	//
+	// *************************************************************************
 
-	m_ifpga->Realloc(m_inputHandle, numIterations*numLines*64);
 	m_outputSizeInCL = 1;
 	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
 	WriteProgramMemory(0, 0);
+
+	return true;
 }
-
-void FPGA_ColumnML::Correctness() {
-	uint32_t numLines = 4;
-
-	AccessProperties accessRead(5);
-	accessRead.Set(2, 0, numLines);
-
-	AccessProperties accessWriteback(2);
-	accessWriteback.Set(0, 0, numLines);
-
-	uint32_t pc = 0;
-
-	m_inst[pc].Load(0, numLines, 0, 0, 0, accessRead);
-	uint32_t pcLoad = pc;
-	pc++;
-
-	m_inst[pc].WriteBack(0, 1, numLines, 0, 0, 0, 0, true, accessWriteback);
-	pc++;
-
-	m_inst[pc].Jump(2, 0, pcLoad, 0xFFFFFFFF);
-	pc++;
-
-	m_ifpga->Realloc(m_inputHandle, numLines*64);
-	auto input = iFPGA::CastToInt(m_inputHandle);
-	for (uint32_t i = 0; i < numLines*16; i++) {
-		input[i] = i+1;
-	}
-
-	m_outputSizeInCL = (numLines+1);
-	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
-	auto output = iFPGA::CastToInt(m_outputHandle);
-	for (uint32_t i = 0; i < (numLines+1)*16; i++) {
-		output[i] = 0;
-	}
-
-	m_numInstructions = pc;
-	WriteProgramMemory(0, 0);
-}
-*/

@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
 	sw0hw1 = atoi(argv[7]);
 
 #ifdef FPGA
-	Server server(false, true);
+	Server server(false, false);
 	vector<FPGA_ColumnML*> columnML;
 	for (uint32_t i = 0; i < numInstances; i++) {
 		columnML.push_back( new FPGA_ColumnML(&server) );
@@ -61,13 +61,14 @@ int main(int argc, char* argv[]) {
 	args.m_firstSample = 0;
 	args.m_numSamples = columnML[0]->m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
+	args.m_useOnehotLabels = false;
 
 	// Set memory format / decide on SGD or SCD
 	MemoryFormat format = ColumnStore;
 
 	if (sw0hw1 == 0) {
-		// columnML[0]->SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
-		columnML[0]->AVXmulti_SCD(type, false, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args, numInstances);
+		columnML[0]->SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
+		// columnML[0]->AVXmulti_SCD(type, false, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args, numInstances);
 	}
 	else {
 #ifdef FPGA
@@ -101,8 +102,9 @@ int main(int argc, char* argv[]) {
 
 		vector<FThread*> fthreads(numInstances);
 
-		double start = get_time();
+		double total = 0.0;
 		for (uint32_t e = 0; e < numEpochs; e++) {
+			double start = get_time();
 			for (uint32_t i = 0; i < numInstances; i++) {
 				if (numPartitionsPerInstance[i] > 0) {
 					fthreads[i] = server.Request(columnML[i]);
@@ -113,9 +115,13 @@ int main(int argc, char* argv[]) {
 					fthreads[i]->WaitUntilFinished();
 				}
 			}
+			double end = get_time();
+			total += end - start;
+#ifdef XILINX
+			columnML[0]->CopyInputHandleFromFPGA();
+#endif
 			modelsPerEpoch.push_back(columnML[0]->GetModelSCD(0));
 		}
-		double total = get_time() - start;
 		cout << "Avg time per epoch: " << total/numEpochs << endl;
 		cout << "Processing rate: " << (numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;
 

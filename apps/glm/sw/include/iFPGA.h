@@ -89,7 +89,7 @@ public:
 
 	iFPGA_ptr Malloc(size_t size) {
 #ifdef XILINX
-		char* temp = (char*)aligned_alloc(64, size);
+		char* temp = (char*)aligned_alloc(4096, size);
 		cl_int err;
 		cl_mem_ext_ptr_t ext_ptr;
 		ext_ptr.flags = XCL_MEM_DDR_BANK0;
@@ -251,32 +251,43 @@ public:
 	void CopyToFPGA(vector<cl::Memory>& buffersToCopy) {
 		cout << "CopyToFPGA" << endl;
 		cl_int err = m_queue[0].enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
-		// err = m_queue[0].finish();
+		err = m_queue[0].finish();
 	}
 
 	void CopyFromFPGA(vector<cl::Memory>& buffersToCopy, uint32_t whichInstance) {
+		cl_int err = m_queue[whichInstance].finish();
 		cout << "CopyFromFPGA" << endl;
-		cl_int err = m_queue[whichInstance].enqueueMigrateMemObjects(buffersToCopy, CL_MIGRATE_MEM_OBJECT_HOST);
+
+		err = m_queue[whichInstance].enqueueMigrateMemObjects(buffersToCopy, CL_MIGRATE_MEM_OBJECT_HOST);
 		// err = m_queue[whichInstance].finish();
 	}
 
 	void CopyFromFPGA(iFPGA_ptr& bufferToCopy, uint32_t whichInstance) {
+		cl_int err = m_queue[whichInstance].finish();
 		cout << "CopyFromFPGA single buffer" << endl;
+
 		vector<cl::Memory> temp;
 		temp.push_back(CastToPtr(bufferToCopy));
-		cl_int err = m_queue[whichInstance].enqueueMigrateMemObjects(temp, CL_MIGRATE_MEM_OBJECT_HOST);
+		err = m_queue[whichInstance].enqueueMigrateMemObjects(temp, CL_MIGRATE_MEM_OBJECT_HOST);
 		err = m_queue[whichInstance].finish();
 	}
 
 	void StartKernel(uint32_t whichInstance) {
-		cout << "StartKernel" << endl;
+		cout << "StartKernel " << whichInstance << endl;
 		cl_int err;
 		err = m_queue[whichInstance].enqueueTask(m_kernel);
 	}
 
-	void WaitForKernel(uint32_t whichInstance) {
-		cout << "WaitForKernel" << endl;
-		cl_int err = m_queue[whichInstance].finish();
+	uint32_t GetQueueCount(uint32_t whichInstance) {
+		uint32_t count = 1;
+		m_queue[whichInstance].getInfo(CL_QUEUE_REFERENCE_COUNT, &count);
+		cout << "count: " << count << endl;
+		return count;
 	}
+
+	// void WaitForKernel(uint32_t whichInstance) {
+	// 	cout << "WaitForKernel" << endl;
+	// 	cl_int err = m_queue[whichInstance].finish();
+	// }
 #endif
 };

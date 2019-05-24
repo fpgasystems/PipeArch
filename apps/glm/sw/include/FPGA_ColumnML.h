@@ -320,6 +320,17 @@ public:
 		return countCL;
 	}
 
+	bool CheckMemoryFit(uint32_t requestedSize, uint32_t onchipSize, const char* name) {
+		if (requestedSize > onchipSize) {
+			cout << "requestedSize for memory " << name << " (" << requestedSize << ")";
+			cout << " is larger than onchipSize (" << onchipSize << ")" << endl;
+			return false;
+		}
+		else {
+			return true;
+		}
+	}
+
 	bool fSGD(
 		ModelType type,
 		uint32_t numEpochs,
@@ -364,6 +375,6 @@ public:
 		return avgModel;
 	}
 
-	void ReadBandwidth(uint32_t numIterations);
-	void Correctness();
+	bool ReadBandwidth(uint32_t numLinesToRead, uint32_t numLinesToWrite, uint32_t numIterations);
+	bool Correctness();
 };

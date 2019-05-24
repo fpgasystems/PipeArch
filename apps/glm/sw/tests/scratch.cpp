@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) {
 	minibatchSize = atoi(argv[4]);
 	numEpochs = atoi(argv[5]);
 
-	uint32_t partitionSize = 1024;
+	uint32_t partitionSize = 10400;
 
 #ifdef FPGA
 	Server server(false, true);
@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
 	ModelType type;
 	if ( strcmp(pathToDataset, "syn") == 0) {
 		columnML.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
-		type = logreg;
+		type = linreg;
 	}
 	else {
 		columnML.m_cstore->LoadRawData(pathToDataset, numSamples, numFeatures, true);
@@ -53,12 +53,13 @@ int main(int argc, char* argv[]) {
 	args.m_firstSample = 0;
 	args.m_numSamples = columnML.m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
+	args.m_useOnehotLabels = false;
 
 	// Set memory format / decide on SGD or SCD
-	MemoryFormat format = ColumnStore;
+	MemoryFormat format = RowStore;
 
 	if (format == RowStore) {
-		stepSize = 0.01;
+		stepSize = 0.001;
 		columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 
 #ifdef FPGA
@@ -84,6 +85,11 @@ int main(int argc, char* argv[]) {
 #ifdef FPGA
 	FThread* fthread = server.Request(&columnML);
 	fthread->WaitUntilFinished();
+
+	double total = fthread->GetResponseTime();
+	cout << "Time per epoch: " << total/numEpochs << endl;
+	cout << "Processing rate: " << ((float)columnML.m_cstore->m_numSamples*(float)columnML.m_cstore->m_numFeatures*4*numEpochs)/total/1e9;
+	cout << " GB/s" << endl;
 
 	// Verify
 	if (format == RowStore) {

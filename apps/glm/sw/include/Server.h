@@ -180,7 +180,7 @@ public:
 #ifdef XILINX
 		vector<cl::Memory> buffersToCopy;
 		for (FThread* t: m_runningThreads) {
-			if (t->m_outputCopyRequested == false && (t->GetState() == running || t->GetState() == to_be_paused) ) {
+			if (t->m_outputCopyRequested == false && (t->GetState() == running || t->GetState() == to_be_paused) /*&& m_ifpga->GetQueueCount(m_id) == 0*/) {
 				buffersToCopy.push_back(m_ifpga->CastToPtr(t->m_cML->m_outputHandle));
 				t->m_outputCopyRequested = true;
 			}

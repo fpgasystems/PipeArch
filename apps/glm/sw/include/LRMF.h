@@ -157,7 +157,7 @@ public:
 		return m_LB.size()*sizeof(LabelB);
 	}
 
-	void ReadNetflixData(char* pathToFile, int Mdim) {
+	void ReadNetflixData(char* pathToFile, int Mdim, int Udim) {
 		FILE* f = fopen(pathToFile, "r");
 		if (f == NULL) {
 			cout << "Can't find files at pathToFile" << endl;
@@ -188,7 +188,6 @@ public:
 
 			// cout << "Mindex: " << Mindex << endl;
 			// cout << "numEntries: " << numEntries << endl;
-			totalNumEntries += numEntries;
 
 			Label* temp = (Label*)malloc(sizeof(Label)*numEntries);
 			readsize = fread(temp, sizeof(Label), numEntries, f);
@@ -197,6 +196,11 @@ public:
 			tempV.reserve(numEntries);
 
 			for (uint32_t j = 0; j < numEntries; j++) {
+				if (Udim != -1 && temp[j].m_Uindex > Udim) {
+					continue;
+				}
+
+				totalNumEntries++;
 				tempV.push_back(temp[j]);
 				// cout << j << " User: " << m_L[i][j].m_Uindex << ", Rating: " << m_L[i][j].m_value << endl;
 
@@ -231,12 +235,14 @@ public:
 		m_Mdim = Mdim;
 		m_Udim = Udim;
 
+		uint32_t totalNumEntries = 0;
 		m_L.reserve(m_Mdim);
 		for (uint32_t i = 0; i < m_Mdim; i++) {
 
-			uint32_t numEntries = RandRange(m_Udim*0.1);
+			uint32_t numEntries = RandRange(m_Udim*0.2);
 			// cout << "Mindex: " << i << endl;
 			// cout << "numEntries: " << numEntries << endl;
+			totalNumEntries += numEntries;
 
 			vector<Label> tempV;
 			tempV.reserve(numEntries);
@@ -258,6 +264,7 @@ public:
 
 		cout << "m_Mdim: " << m_Mdim << endl;
 		cout << "m_Udim: " << m_Udim << endl;
+		cout << "totalNumEntries: " << totalNumEntries << endl;
 
 		m_M = (float*)aligned_alloc(64, m_Mdim*m_numFeatures*sizeof(float));
 		m_U = (float*)aligned_alloc(64, m_Udim*m_numFeatures*sizeof(float));
