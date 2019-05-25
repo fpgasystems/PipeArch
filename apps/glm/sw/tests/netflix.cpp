@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 	float lambda = 0;
 
 #ifdef FPGA
-	Server server(false, false);
+	Server server(false, false, 0);
 	vector<FPGA_LRMF*> lrmf;
 	lrmf.reserve(numInstances*numInstances);
 

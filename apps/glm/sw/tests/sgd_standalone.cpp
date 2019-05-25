@@ -61,10 +61,14 @@ int main(int argc, char* argv[]) {
 	uint32_t partitionSize = 10400;
 
 #ifdef FPGA
-	Server server(false, true);
+	xDevice xdevice;
+	Server* server[iFPGA::MAX_NUM_BANKS];
+	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+		server[i] = new Server(false, false, i, &xdevice);
+	}
 	vector<FPGA_ColumnML*> columnML;
 	for (uint32_t c = 0; c < numClasses; c++) {
-		columnML.push_back(new FPGA_ColumnML(&server));
+		columnML.push_back(new FPGA_ColumnML(server[c%iFPGA::MAX_NUM_BANKS]));
 	}
 #else
 	vector<ColumnML*> columnML;
@@ -113,7 +117,7 @@ int main(int argc, char* argv[]) {
 	MemoryFormat format = RowStore;
 
 	if (sw0hw1 == 0) {
-		if (numClasses < 2) {
+		if (numClasses <= 2) {
 #ifdef AVX2
 			columnML[0]->AVXrowwise_SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 #else
@@ -185,7 +189,7 @@ int main(int argc, char* argv[]) {
 	}
 	else {
 #ifdef FPGA
-		if (numClasses < 2) {
+		if (numClasses <= 2) {
 			columnML[0]->CreateMemoryLayout(format, partitionSize, false);
 			if (minibatchSize == 1) {
 				columnML[0]->fSGD(type, numEpochs, stepSize, lambda, 0);
@@ -195,7 +199,7 @@ int main(int argc, char* argv[]) {
 			}
 
 			double start = get_time();
-			FThread* fthread = server.Request(columnML[0]);
+			FThread* fthread = server[0]->Request(columnML[0]);
 			fthread->WaitUntilFinished();
 			double total = get_time() - start;
 			cout << "Avg time per epoch: " << total/numEpochs << endl;
@@ -229,12 +233,11 @@ int main(int argc, char* argv[]) {
 			double start = get_time();
 			vector<FThread*> fthreads(numClasses);
 			for (uint32_t c = 0; c < numClasses; c++) {
-				fthreads[c] = server.Request(columnML[c]);
+				fthreads[c] = server[c%iFPGA::MAX_NUM_BANKS]->Request(columnML[c]);
+			}
+			for (uint32_t c = 0; c < numClasses; c++) {
 				fthreads[c]->WaitUntilFinished();
 			}
-			// for (uint32_t c = 0; c < numClasses; c++) {
-			// 	fthreads[c]->WaitUntilFinished();
-			// }
 			double total = get_time() - start;
 			cout << "Avg time per epoch: " << total/numEpochs << endl;
 			cout << "Processing rate: " << (numClasses*numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;

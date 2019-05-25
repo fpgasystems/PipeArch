@@ -18,7 +18,7 @@ LOCAL_DEPS=$(wildcard $(sw_path)/include/*.h)
 host_SRCS=$(LOCAL_SRCS) $(LOCAL_TESTS) $(xcl2_SRCS)
 host_HDRS=$(LOCAL_DEPS) $(xcl2_HDRS)
 host_CXXFLAGS=-I$(sw_path)/include $(opencl_CXXFLAGS) $(xcl2_CXXFLAGS) -march=native -DXILINX -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
-host_CXXFLAGS+=-DMAKEFILE_MAX_NUM_INSTANCES=1 -DMAKEFILE_MAX_NUM_BANKS=1
+host_CXXFLAGS+=-DMAKEFILE_MAX_NUM_INSTANCES=1 -DMAKEFILE_MAX_NUM_BANKS=4
 host_LDFLAGS=$(opencl_LDFLAGS)
 EXES=host
 

@@ -27,7 +27,8 @@ int main(int argc, char* argv[]) {
 	uint32_t partitionSize = 10400;
 
 #ifdef FPGA
-	Server server(false, true);
+	xDevice xdevice;
+	Server server(false, true, 0, &xdevice);
 	FPGA_ColumnML columnML(&server);
 #else
 	ColumnML columnML;

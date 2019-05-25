@@ -477,7 +477,9 @@ private:
 
 public:
 	Server(bool enableContextSwitch,
-		bool enableThreadMigration) : iFPGA(iFPGA::MAX_NUM_INSTANCES)
+		bool enableThreadMigration,
+		uint32_t whichBank,
+		xDevice* xdevice) : iFPGA(iFPGA::MAX_NUM_INSTANCES, whichBank, xdevice)
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;
@@ -487,7 +489,9 @@ public:
 
 	Server(bool enableContextSwitch,
 		bool enableThreadMigration,
-		uint32_t numInstances) : iFPGA(numInstances)
+		uint32_t numInstances,
+		uint32_t whichBank,
+		xDevice* xdevice) : iFPGA(numInstances, whichBank, xdevice)
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;

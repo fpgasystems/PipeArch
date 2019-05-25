@@ -24,34 +24,19 @@
 	typedef shared_buffer::ptr_t iFPGA_ptr;
 #endif
 
-class iFPGA {
+
+class xDevice {
 public:
-	static const uint32_t PREFETCH_BUFFER_SIZE_IN_CL = (1 << 10);
-	static const uint32_t MEMORY_SIZE_IN_CL = (1 << 10);
-	static const uint32_t MAX_NUM_INSTANCES = MAKEFILE_MAX_NUM_INSTANCES;
-	static const uint32_t NUM_INSTANCES_PER_BANK = MAKEFILE_NUM_INSTANCES_PER_BANK;
-
-protected:
-	uint32_t m_numInstances;
-
-private:
 #ifdef XILINX
 	std::vector<cl::Device> m_devices;
 	cl::Device m_device;
 	cl::Context m_context;
 	cl::Program m_program;
-	cl::CommandQueue m_queue[MAX_NUM_INSTANCES];
-	cl::Kernel m_kernel;
-#else
-	OPAE_SVC_WRAPPER* m_fpga;
-	CSR_MGR* m_csrs;
+	cl::Program::Binaries m_bins;
 #endif
-
-public:
-
-	iFPGA(uint32_t numInstances) {
-		m_numInstances = numInstances;
+	xDevice() {
 #ifdef XILINX
+		cout << "xDevice constructor" << endl;
 		cl_int err;
 		m_devices = xcl::get_xil_devices();
 		m_device = m_devices[0];
@@ -59,13 +44,59 @@ public:
 		std::string device_name = m_device.getInfo<CL_DEVICE_NAME>(&err);
 		// Create Program and Kernel
 		std::string binaryFile = xcl::find_binary_file(device_name, "mytop");
-		cl::Program::Binaries bins = xcl::import_binary_file(binaryFile);
+		m_bins = xcl::import_binary_file(binaryFile);
 		m_devices.resize(1);
-		m_program = cl::Program(m_context, m_devices, bins, NULL, &err);
-		m_kernel = cl::Kernel(m_program, "xilinx_top", &err);
+		m_program = cl::Program(m_context, m_devices, m_bins, NULL, &err);
+#endif
+	}
+};
+
+class iFPGA {
+public:
+	static const uint32_t PREFETCH_BUFFER_SIZE_IN_CL = (1 << 10);
+	static const uint32_t MEMORY_SIZE_IN_CL = (1 << 10);
+	static const uint32_t MAX_NUM_INSTANCES = MAKEFILE_MAX_NUM_INSTANCES;
+	static const uint32_t MAX_NUM_BANKS = MAKEFILE_MAX_NUM_BANKS;
+
+protected:
+	uint32_t m_numInstances;
+
+private:
+#ifdef XILINX
+	xDevice* m_xdevice;
+	cl::CommandQueue m_queue[MAX_NUM_INSTANCES];
+	cl::Kernel m_kernel;
+	uint32_t m_whichBank;
+#else
+	OPAE_SVC_WRAPPER* m_fpga;
+	CSR_MGR* m_csrs;
+#endif
+
+public:
+
+	iFPGA(uint32_t numInstances, uint32_t whichBank, xDevice* xdevice) {
+		m_numInstances = numInstances;
+#ifdef XILINX
+		m_xdevice = xdevice;
+		m_whichBank = whichBank;
+		cout << "m_whichBank: " << m_whichBank << endl;
+		cl_int err;
+		if (m_whichBank == 0) {
+			m_kernel = cl::Kernel(m_xdevice->m_program, "xilinx_top", &err);
+			cout << "err: " << err << endl;
+		}
+		else if (m_whichBank == 1) {
+			m_kernel = cl::Kernel(m_xdevice->m_program, "xilinx_top_i", &err);
+		}
+		else if (m_whichBank == 2) {
+			m_kernel = cl::Kernel(m_xdevice->m_program, "xilinx_top_ii", &err);
+		}
+		else if (m_whichBank == 3) {
+			m_kernel = cl::Kernel(m_xdevice->m_program, "xilinx_top_iii", &err);
+		}
 
 		for (uint32_t i = 0; i < m_numInstances; i++) {
-			m_queue[i] = cl::CommandQueue(m_context, m_device, CL_QUEUE_PROFILING_ENABLE, &err);
+			m_queue[i] = cl::CommandQueue(m_xdevice->m_context, m_xdevice->m_device, CL_QUEUE_PROFILING_ENABLE, &err);
 		}
 #else
 		if ( !(strcmp(AFU_ACCEL_UUID,"") == 0) ) {
@@ -92,10 +123,17 @@ public:
 		char* temp = (char*)aligned_alloc(4096, size);
 		cl_int err;
 		cl_mem_ext_ptr_t ext_ptr;
-		ext_ptr.flags = XCL_MEM_DDR_BANK0;
+		if (m_whichBank == 0)
+			ext_ptr.flags = XCL_MEM_DDR_BANK0;
+		else if (m_whichBank == 1)
+			ext_ptr.flags = XCL_MEM_DDR_BANK1;
+		else if (m_whichBank == 2)
+			ext_ptr.flags = XCL_MEM_DDR_BANK2;
+		else if (m_whichBank == 3)
+			ext_ptr.flags = XCL_MEM_DDR_BANK3;
 		ext_ptr.obj = (void*)temp;
 		ext_ptr.param = 0;
-		cl::Buffer* buffer = new cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, size, &ext_ptr, &err);
+		cl::Buffer* buffer = new cl::Buffer(m_xdevice->m_context, CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, size, &ext_ptr, &err);
 		return buffer;
 #else
 		return m_fpga->allocBuffer(size);
@@ -150,34 +188,34 @@ public:
 #endif
 
 #ifdef XILINX
-	void UpdateBank(iFPGA_ptr& handle, uint32_t whichInstance) {
-		uint32_t whichBank = (uint32_t)(whichInstance/NUM_INSTANCES_PER_BANK);
-		if (whichBank != 0) {
-			cl_int err;
-			cl_mem_ext_ptr_t ext_ptr;
-			switch(whichBank) {
-				case 3:
-					ext_ptr.flags = XCL_MEM_DDR_BANK3;
-					break;
-				case 2:
-					ext_ptr.flags = XCL_MEM_DDR_BANK2;
-					break;
-				case 1:
-					ext_ptr.flags = XCL_MEM_DDR_BANK1;
-					break;
-				default:
-					ext_ptr.flags = XCL_MEM_DDR_BANK0;
-					break;
-			}
-			void* handlePtr = NULL;
-			handle->getInfo(CL_MEM_HOST_PTR, &handlePtr);
-			ext_ptr.obj = handlePtr;
-			ext_ptr.param = 0;
-			size_t handleSize = 0;
-			handle->getInfo(CL_MEM_SIZE, &handleSize);
-			handle = new cl::Buffer(m_context, CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, handleSize, &ext_ptr, &err);
-		}
-	}
+	// void UpdateBank(iFPGA_ptr& handle, uint32_t whichInstance) {
+	// 	uint32_t whichBank = (uint32_t)(whichInstance/NUM_INSTANCES_PER_BANK);
+	// 	if (whichBank != 0) {
+	// 		cl_int err;
+	// 		cl_mem_ext_ptr_t ext_ptr;
+	// 		switch(whichBank) {
+	// 			case 3:
+	// 				ext_ptr.flags = XCL_MEM_DDR_BANK3;
+	// 				break;
+	// 			case 2:
+	// 				ext_ptr.flags = XCL_MEM_DDR_BANK2;
+	// 				break;
+	// 			case 1:
+	// 				ext_ptr.flags = XCL_MEM_DDR_BANK1;
+	// 				break;
+	// 			default:
+	// 				ext_ptr.flags = XCL_MEM_DDR_BANK0;
+	// 				break;
+	// 		}
+	// 		void* handlePtr = NULL;
+	// 		handle->getInfo(CL_MEM_HOST_PTR, &handlePtr);
+	// 		ext_ptr.obj = handlePtr;
+	// 		ext_ptr.param = 0;
+	// 		size_t handleSize = 0;
+	// 		handle->getInfo(CL_MEM_SIZE, &handleSize);
+	// 		handle = new cl::Buffer(m_xdevice->m_context, CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, handleSize, &ext_ptr, &err);
+	// 	}
+	// }
 
 	static cl::Buffer CastToPtr(iFPGA_ptr handle) {
 		return *handle;
