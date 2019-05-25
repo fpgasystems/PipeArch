@@ -33,11 +33,12 @@ int main(int argc, char* argv[]) {
 	numInstances = atoi(argv[9]);
 	sw0hw1 = atoi(argv[10]);
 
-	float stepSize = 0.0001;
+	float stepSize = 0.01;
 	float lambda = 0;
 
 #ifdef FPGA
-	Server server(false, false, 0);
+	xDevice xdevice;
+	Server server(false, false, 0, &xdevice);
 	vector<FPGA_LRMF*> lrmf;
 	lrmf.reserve(numInstances*numInstances);
 

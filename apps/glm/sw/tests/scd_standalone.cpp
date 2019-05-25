@@ -29,7 +29,8 @@ int main(int argc, char* argv[]) {
 	sw0hw1 = atoi(argv[7]);
 
 #ifdef FPGA
-	Server server(false, false);
+	xDevice xdevice;
+	Server server(false, false, 0, &xdevice);
 	vector<FPGA_ColumnML*> columnML;
 	for (uint32_t i = 0; i < numInstances; i++) {
 		columnML.push_back( new FPGA_ColumnML(&server) );

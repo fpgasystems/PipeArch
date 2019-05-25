@@ -68,10 +68,15 @@ public:
 	uint32_t m_restInCL;
 	uint32_t m_numEpochs;
 
+	uint32_t m_inputSizeInCL;
 	uint32_t m_outputSizeInCL;
 
 	Instruction m_inst[Instruction::MAX_NUM_INSTRUCTIONS];
 	uint32_t m_numInstructions;
+
+	uint32_t GetBank() {
+		return m_ifpga->GetBank();
+	}
 
 	void UseCreatedMemoryLayout(FPGA_ColumnML* baseObj) {
 		if (m_inputHandle != NULL) {
@@ -79,9 +84,20 @@ public:
 			return;
 		}
 
-		m_base = baseObj->GetBase();
-
-		m_inputHandle = baseObj->m_inputHandle;
+		if (baseObj->GetBank() == GetBank()) {
+			m_inputSizeInCL = baseObj->m_inputSizeInCL;
+			m_inputHandle = baseObj->m_inputHandle;
+			m_base = baseObj->GetBase();
+		}
+		else {
+			m_inputSizeInCL = baseObj->m_inputSizeInCL;
+			m_ifpga->Realloc(m_inputHandle, m_inputSizeInCL*64);
+			m_base = iFPGA::CastToFloat(m_inputHandle);
+			memcpy((void*)m_base, (void*)baseObj->GetBase(), 64*m_inputSizeInCL);
+#ifdef XILINX
+			CopyInputHandleToFPGA();
+#endif
+		}
 
 		m_modelChunk = baseObj->m_modelChunk;
 		m_labelsChunk = baseObj->m_labelsChunk;
@@ -138,6 +154,7 @@ public:
 
 #ifdef XILINX
 	void CopyInputHandleToFPGA() {
+		cout << "Copying " << m_inputSizeInCL*64/1e9 << " GBs to bank " << GetBank() << endl;
 		vector<cl::Memory> buffersToCopy;
 		buffersToCopy.push_back(iFPGA::CastToPtr(m_inputHandle));
 		m_ifpga->CopyToFPGA(buffersToCopy);
@@ -314,6 +331,7 @@ public:
 				}
 			}
 		}
+		m_inputSizeInCL = countCL;
 #ifdef XILINX
 		CopyInputHandleToFPGA();
 #endif

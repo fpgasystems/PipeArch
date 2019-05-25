@@ -22,10 +22,14 @@ int main(int argc, char* argv[]) {
 	numIterations = atoi(argv[3]);
 	numInstances = atoi(argv[4]);
 
-	Server server(false, false);
+	xDevice xdevice;
+	Server* server[iFPGA::MAX_NUM_BANKS];
+	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+		server[i] = new Server(false, false, i, &xdevice);
+	}
 	vector<FPGA_ColumnML*> columnMLs;
 	for (uint32_t i = 0; i < numInstances; i++) {
-		FPGA_ColumnML* temp = new FPGA_ColumnML(&server);
+		FPGA_ColumnML* temp = new FPGA_ColumnML(server[i%iFPGA::MAX_NUM_BANKS]);
 		temp->ReadBandwidth(numLinesToRead, numLinesToWrite, numIterations);
 		columnMLs.push_back(temp);
 	}
@@ -33,7 +37,7 @@ int main(int argc, char* argv[]) {
 	vector<FThread*> fthreads;
 	double start = get_time();
 	for (uint32_t i = 0; i < numInstances; i++) {
-		FThread* temp = server.Request(columnMLs[i]);
+		FThread* temp = server[i%iFPGA::MAX_NUM_BANKS]->Request(columnMLs[i]);
 		fthreads.push_back(temp);
 	}
 	for (uint32_t i = 0; i < numInstances; i++) {
@@ -80,6 +84,9 @@ int main(int argc, char* argv[]) {
 		delete columnMLs[i];
 	}
 	columnMLs.clear();
+	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+		delete server[i];
+	}
 
 	return 0;
 }

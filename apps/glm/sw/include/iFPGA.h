@@ -83,7 +83,6 @@ public:
 		cl_int err;
 		if (m_whichBank == 0) {
 			m_kernel = cl::Kernel(m_xdevice->m_program, "xilinx_top", &err);
-			cout << "err: " << err << endl;
 		}
 		else if (m_whichBank == 1) {
 			m_kernel = cl::Kernel(m_xdevice->m_program, "xilinx_top_i", &err);
@@ -96,7 +95,9 @@ public:
 		}
 
 		for (uint32_t i = 0; i < m_numInstances; i++) {
-			m_queue[i] = cl::CommandQueue(m_xdevice->m_context, m_xdevice->m_device, CL_QUEUE_PROFILING_ENABLE, &err);
+			// m_queue[i] = cl::CommandQueue(m_xdevice->m_context, m_xdevice->m_device, CL_QUEUE_PROFILING_ENABLE, &err);
+			// m_queue[i] = cl::CommandQueue(m_xdevice->m_context, m_xdevice->m_device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+			m_queue[i] = cl::CommandQueue(m_xdevice->m_context, m_xdevice->m_device);
 		}
 #else
 		if ( !(strcmp(AFU_ACCEL_UUID,"") == 0) ) {
@@ -123,14 +124,18 @@ public:
 		char* temp = (char*)aligned_alloc(4096, size);
 		cl_int err;
 		cl_mem_ext_ptr_t ext_ptr;
-		if (m_whichBank == 0)
+		if (m_whichBank == 0) {
 			ext_ptr.flags = XCL_MEM_DDR_BANK0;
-		else if (m_whichBank == 1)
+		}
+		else if (m_whichBank == 1) {
 			ext_ptr.flags = XCL_MEM_DDR_BANK1;
-		else if (m_whichBank == 2)
+		}
+		else if (m_whichBank == 2) {
 			ext_ptr.flags = XCL_MEM_DDR_BANK2;
-		else if (m_whichBank == 3)
+		}
+		else if (m_whichBank == 3) {
 			ext_ptr.flags = XCL_MEM_DDR_BANK3;
+		}
 		ext_ptr.obj = (void*)temp;
 		ext_ptr.param = 0;
 		cl::Buffer* buffer = new cl::Buffer(m_xdevice->m_context, CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, size, &ext_ptr, &err);
@@ -138,6 +143,10 @@ public:
 #else
 		return m_fpga->allocBuffer(size);
 #endif
+	}
+
+	uint32_t GetBank() {
+		return m_whichBank;
 	}
 
 	void Realloc(iFPGA_ptr& handle, size_t size) {
@@ -287,21 +296,24 @@ public:
 
 #ifdef XILINX
 	void CopyToFPGA(vector<cl::Memory>& buffersToCopy) {
+		cl_int err;
 		cout << "CopyToFPGA" << endl;
-		cl_int err = m_queue[0].enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
+		err = m_queue[0].enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
 		err = m_queue[0].finish();
 	}
 
 	void CopyFromFPGA(vector<cl::Memory>& buffersToCopy, uint32_t whichInstance) {
-		cl_int err = m_queue[whichInstance].finish();
+		cl_int err;
+		err = m_queue[whichInstance].finish();
 		cout << "CopyFromFPGA" << endl;
 
 		err = m_queue[whichInstance].enqueueMigrateMemObjects(buffersToCopy, CL_MIGRATE_MEM_OBJECT_HOST);
-		// err = m_queue[whichInstance].finish();
+		err = m_queue[whichInstance].finish();
 	}
 
 	void CopyFromFPGA(iFPGA_ptr& bufferToCopy, uint32_t whichInstance) {
-		cl_int err = m_queue[whichInstance].finish();
+		cl_int err;
+		err = m_queue[whichInstance].finish();
 		cout << "CopyFromFPGA single buffer" << endl;
 
 		vector<cl::Memory> temp;
@@ -311,9 +323,13 @@ public:
 	}
 
 	void StartKernel(uint32_t whichInstance) {
-		cout << "StartKernel " << whichInstance << endl;
 		cl_int err;
+		cout << "StartKernel " << whichInstance << endl;
+		double start = get_time();
 		err = m_queue[whichInstance].enqueueTask(m_kernel);
+		err = m_queue[whichInstance].finish();
+		double end = get_time();
+		cout << "Kernel time: " << end - start << endl;
 	}
 
 	uint32_t GetQueueCount(uint32_t whichInstance) {

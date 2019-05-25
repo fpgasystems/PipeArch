@@ -218,7 +218,10 @@ int main(int argc, char* argv[]) {
 		else {
 			columnML[0]->CreateMemoryLayout(format, partitionSize, true);
 			for (uint32_t c = 1; c < numClasses; c++) {
-				columnML[c]->UseCreatedMemoryLayout(columnML[0]);
+				if (c < iFPGA::MAX_NUM_BANKS) // Copy to new banks
+					columnML[c]->UseCreatedMemoryLayout(columnML[0]);
+				else // Use already copied data
+					columnML[c]->UseCreatedMemoryLayout(columnML[c%iFPGA::MAX_NUM_BANKS]);
 			}
 
 			for (uint32_t c = 0; c < numClasses; c++) {
@@ -239,8 +242,12 @@ int main(int argc, char* argv[]) {
 				fthreads[c]->WaitUntilFinished();
 			}
 			double total = get_time() - start;
+			cout << "Total time: " << total << endl;
 			cout << "Avg time per epoch: " << total/numEpochs << endl;
 			cout << "Processing rate: " << (numClasses*numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;
+			for (uint32_t c = 0; c < numClasses; c++) {
+				cout << "fthread " << c << " total time: " << fthreads[c]->GetResponseTime() << endl;
+			}
 
 			// Verify
 			vector<thread*> threads(numClasses);
@@ -275,6 +282,9 @@ int main(int argc, char* argv[]) {
 
 	for (uint32_t c = 0; c < numClasses; c++) {
 		delete columnML[c];
+	}
+	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+		delete server[i];
 	}
 
 	return 0;
