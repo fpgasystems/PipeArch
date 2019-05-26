@@ -9,6 +9,7 @@ intel_dma/pipearch_dma_write.sv
 
 memory/bram.sv
 memory/fifo.sv
+memory/fifo_reg.sv
 memory/fifobram.sv
 memory/fifo_replicate.sv
 memory/read_region.sv
@@ -16,7 +17,6 @@ memory/read_region2fifo.sv
 memory/region.sv
 memory/region_exclusive.sv
 memory/region_exclusive_replicate.sv
-memory/region_replicate.sv
 memory/bram_replicate.sv
 memory/write_region.sv
 

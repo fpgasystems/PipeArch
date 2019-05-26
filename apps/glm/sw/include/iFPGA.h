@@ -62,11 +62,11 @@ protected:
 	uint32_t m_numInstances;
 
 private:
+	uint32_t m_whichBank;
 #ifdef XILINX
 	xDevice* m_xdevice;
 	cl::CommandQueue m_queue[MAX_NUM_INSTANCES];
 	cl::Kernel m_kernel;
-	uint32_t m_whichBank;
 #else
 	OPAE_SVC_WRAPPER* m_fpga;
 	CSR_MGR* m_csrs;
@@ -76,9 +76,9 @@ public:
 
 	iFPGA(uint32_t numInstances, uint32_t whichBank, xDevice* xdevice) {
 		m_numInstances = numInstances;
+		m_whichBank = whichBank;
 #ifdef XILINX
 		m_xdevice = xdevice;
-		m_whichBank = whichBank;
 		cout << "m_whichBank: " << m_whichBank << endl;
 		cl_int err;
 		if (m_whichBank == 0) {

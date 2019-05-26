@@ -58,7 +58,7 @@ module glm_delta
 
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_REGION_left_read();
     read_region2fifo
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
+    #(.WIDTH(CLDATA_WIDTH))
     read_REGION_left_read (
         .clk, .reset,
         .op_start(read_trigger),
@@ -71,7 +71,7 @@ module glm_delta
 
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_REGION_right_read();
     read_region2fifo
-    #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6))
+    #(.WIDTH(CLDATA_WIDTH))
     read_REGION_right_read (
         .clk, .reset,
         .op_start(read_trigger),

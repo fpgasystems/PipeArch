@@ -58,6 +58,7 @@ module glm_l2reg
 
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_REGION_modelold_read();
     read_region2fifo
+    #(.WIDTH(CLDATA_WIDTH))
     read_REGION_modelold_read (
         .clk, .reset,
         .op_start(read_trigger),
@@ -71,6 +72,7 @@ module glm_l2reg
     logic FIFO_REGION_modelnew_read_re;
     fifobram_interface #(.WIDTH(CLDATA_WIDTH), .LOG2_DEPTH(6)) FIFO_REGION_modelnew_read();
     read_region2fifo
+    #(.WIDTH(CLDATA_WIDTH))
     read_REGION_modelnew_read (
         .clk, .reset,
         .op_start(read_trigger),

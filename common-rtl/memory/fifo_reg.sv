@@ -1,9 +1,9 @@
 `include "pipearch_common.vh"
 
-module fifo
+module fifo_reg
 #(
 	parameter WIDTH = 8,
-	parameter LOG2_DEPTH = 5
+	parameter LOG2_DEPTH = 3
 )
 (
 	input logic clk,
@@ -26,20 +26,18 @@ logic internal_empty;
 
 assign access.count = count;
 assign access.empty = empty | internal_empty;
+assign access.almostfull = (count > 4) ? 1'b1 : 1'b0;
 
 always_ff @(negedge clk)
 begin
-	access.almostfull <= (count > 2**LOG2_DEPTH-20) ? 1'b1 : 1'b0;
 
 	if (access.we && !(access.re && empty == 1'b0))
 	begin
 		empty <= 1'b0;
 		count <= count + 1;
 // synthesis translate_off
-		if (raddr != 0) // has been read at some point
-		begin
-			assert ( count < 2**LOG2_DEPTH-1 ) else $fatal("Write to fifo when it is full!");
-		end
+		assert ( count < 2**LOG2_DEPTH-1 )
+			else $fatal("Write to fifo_reg when it is full!");
 // synthesis translate_on
 	end
 

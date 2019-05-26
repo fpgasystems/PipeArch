@@ -2,8 +2,7 @@
 
 module read_region2fifo
 #(
-    parameter WIDTH = 512,
-    parameter LOG2_DEPTH = 6
+    parameter WIDTH = 512
 )
 (
     input logic clk,
@@ -30,9 +29,9 @@ module read_region2fifo
         .outfrom_read(to_FIFO.commonread_source)
     );
 
-    fifobram_interface #(.WIDTH(WIDTH), .LOG2_DEPTH(LOG2_DEPTH)) at_FIFO();
-    fifo
-    #(.WIDTH(WIDTH), .LOG2_DEPTH(LOG2_DEPTH))
+    fifobram_interface #(.WIDTH(WIDTH), .LOG2_DEPTH(3)) at_FIFO();
+    fifo_reg
+    #(.WIDTH(WIDTH), .LOG2_DEPTH(3))
     FIFO_input (
         .clk, .reset,
         .access(at_FIFO.fifo_source)
