@@ -77,7 +77,8 @@ endif
 # Kernel assignments
 LDCLFLAGS+=--nk $(mytop_KERNEL):1 --nk $(mytop_KERNELi):1 --nk $(mytop_KERNELii):1 --nk $(mytop_KERNELiii):1
 LDCLFLAGS+=--sp $(mytop_KERNEL)_1.m_axi_gmem:bank0 --sp $(mytop_KERNELi)_1.m_axi_gmem:bank1 --sp $(mytop_KERNELii)_1.m_axi_gmem:bank2 --sp $(mytop_KERNELiii)_1.m_axi_gmem:bank3
-LDCLFLAGS+=--slr $(mytop_KERNEL)_1:SLR0 --slr $(mytop_KERNELi)_1:SLR1 --slr $(mytop_KERNELii)_1:SLR1 --slr $(mytop_KERNELiii)_1:SLR2
+# LDCLFLAGS+=--slr $(mytop_KERNEL)_1:SLR0 --slr $(mytop_KERNELi)_1:SLR1 --slr $(mytop_KERNELii)_1:SLR1 --slr $(mytop_KERNELiii)_1:SLR2
+LDCLFLAGS+=--xp param:compiler.userPostSysLinkTcl=$(PWD)/userPostSysLink.tcl
 
 include $(COMMON_REPO)/utility/rules.mk
 
