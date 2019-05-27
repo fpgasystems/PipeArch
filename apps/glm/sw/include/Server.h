@@ -29,8 +29,8 @@
 
 using namespace std;
 
-// #define SERVER_PRINT_STATUS
-// #define SERVER_VERBOSE
+#define SERVER_PRINT_STATUS
+#define SERVER_VERBOSE
 
 static const struct timespec PAUSE {.tv_sec = 0, .tv_nsec = 1000};
 static const struct timespec MSPAUSE {.tv_sec = 0, .tv_nsec = 1000000};
@@ -105,6 +105,13 @@ public:
 	bool IsPaused() {
 		auto output = iFPGA::CastToInt(m_cML->m_outputHandle);
 		if (1 == output[0] && (output[4] & 0xFF) > 0) {
+
+			// cout << "Paused fthread " << m_id << endl;
+			// cout << "output[1]: " << output[1] << endl;
+			// cout << "output[2]: " << output[2] << endl;
+			// cout << "output[3]: " << output[3] << endl;
+			// cout << "output[4]: " << output[4] << endl;
+
 			m_state = paused;
 			m_outputCopyRequested = false;
 			return true;

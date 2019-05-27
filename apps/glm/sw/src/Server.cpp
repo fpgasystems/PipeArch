@@ -135,6 +135,10 @@ void Server::ResumeThread(FThread* fthread, uint32_t whichInstance) {
 #endif
 
 #ifdef XILINX // On sdaccel we have to trigger context switch already while starting the kernel
+	vector<cl::Memory> buffersToCopy;
+	buffersToCopy.push_back(outputMemory);
+	CopyToFPGA(buffersToCopy);
+
 	uint64_t triggerContextSwitch = m_enableContextSwitch;
 	iFPGA::WriteConfigReg(0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
 	iFPGA::WriteConfigReg(1, programMemory);
@@ -264,7 +268,7 @@ void Server::ProcessRequests() {
 #ifdef SERVER_PRINT_STATUS
 		i++;
 		if (i == 50000) {
-			cout << "------------------------ (Server " << GetBank() << " ) Running threads: " << endl;
+			cout << "------------------------ (Server " << GetBank() << ") Running threads: " << endl;
 			for (uint32_t k = 0; k < m_numInstances; k++) {
 				cout << "---- On instance: " << k << endl;
 				m_instance[k]->PrintStatus();

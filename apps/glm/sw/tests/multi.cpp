@@ -21,8 +21,10 @@ int main(int argc, char* argv[]) {
 
 	uint32_t partitionSize = 16000;
 
-	const uint32_t NUM_JOBS = 4;
-	Server server(true, true);
+	const uint32_t NUM_JOBS = 2;
+
+	xDevice xdevice;
+	Server server(false, false, 0, &xdevice);
 
 	FPGA_ColumnML* columnML[NUM_JOBS];
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
@@ -30,7 +32,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	float stepSize = 0.01;
-	float lambda = 0;
+	float lambda = 0.0001;
 
 	ModelType type = linreg;
 
@@ -42,6 +44,7 @@ int main(int argc, char* argv[]) {
 	args.m_firstSample = 0;
 	args.m_numSamples = columnML[0]->m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
+	args.m_useOnehotLabels = false;
 
 	MemoryFormat format = RowStore;
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
@@ -50,24 +53,25 @@ int main(int argc, char* argv[]) {
 
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
 		if (i%2 == 0) {
-			if (i == 0) {
-				columnML[i]->SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
-			}
-			columnML[i]->fSGD(type, numEpochs, stepSize, lambda);
+			// if (i == 0) {
+			// 	columnML[i]->SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
+			// }
+			columnML[i]->fSGD(type, numEpochs, stepSize, lambda, 0);
 		}
 		else {
-			if (i == 1) {
-				columnML[i]->SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
-			}
-			columnML[i]->fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda);
+			// if (i == 1) {
+			// 	columnML[i]->SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+			// }
+			columnML[i]->fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda, 0);
 		}
+		server.PreCopy(columnML[i]);
 	}
+
 
 	FThread* thread[NUM_JOBS];
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
 		thread[i] = server.Request(columnML[i]);
 	}
-
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
 		thread[i]->WaitUntilFinished();
 	}
