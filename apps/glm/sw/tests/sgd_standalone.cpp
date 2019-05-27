@@ -233,6 +233,10 @@ int main(int argc, char* argv[]) {
 				}
 			}
 
+			for (uint32_t c = 0; c < numClasses; c++) {
+				server[c%iFPGA::MAX_NUM_BANKS]->PreCopy(columnML[c]);
+			}
+
 			double start = get_time();
 			vector<FThread*> fthreads(numClasses);
 			for (uint32_t c = 0; c < numClasses; c++) {

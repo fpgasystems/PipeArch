@@ -30,10 +30,13 @@ int main(int argc, char* argv[]) {
 
 #ifdef FPGA
 	xDevice xdevice;
-	Server server(false, false, 0, &xdevice);
+	Server* server[iFPGA::MAX_NUM_BANKS];
+	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+		server[i] = new Server(false, false, i, &xdevice);
+	}
 	vector<FPGA_ColumnML*> columnML;
 	for (uint32_t i = 0; i < numInstances; i++) {
-		columnML.push_back( new FPGA_ColumnML(&server) );
+		columnML.push_back( new FPGA_ColumnML(server[i%iFPGA::MAX_NUM_BANKS]) );
 	}
 #else
 	vector<ColumnML*> columnML;
@@ -56,7 +59,6 @@ int main(int argc, char* argv[]) {
 		columnML[0]->m_cstore->NormalizeLabels(ZeroToOne, true, 1);
 		type = logreg;
 	}
-	columnML[0]->m_cstore->PrintSamples(2);
 
 	AdditionalArguments args;
 	args.m_firstSample = 0;
@@ -73,11 +75,7 @@ int main(int argc, char* argv[]) {
 	}
 	else {
 #ifdef FPGA
-		if (numInstances > iFPGA::MAX_NUM_INSTANCES) {
-			cout << "numInstances is larger than iFPGA::MAX_NUM_INSTANCES (" << iFPGA::MAX_NUM_INSTANCES << ")" << endl;
-			return 1;
-		}
-		
+
 		columnML[0]->CreateMemoryLayout(format, partitionSize, 1);
 		for (uint32_t i = 1; i < numInstances; i++) {
 			columnML[i]->UseCreatedMemoryLayout(columnML[0]);
@@ -101,6 +99,10 @@ int main(int argc, char* argv[]) {
 		vector<vector<float> > modelsPerEpoch;
 		modelsPerEpoch.reserve(numEpochs);
 
+		for (uint32_t i = 0; i < numInstances; i++) {
+			server[i%iFPGA::MAX_NUM_BANKS]->PreCopy(columnML[i]);
+		}
+
 		vector<FThread*> fthreads(numInstances);
 
 		double total = 0.0;
@@ -108,7 +110,7 @@ int main(int argc, char* argv[]) {
 			double start = get_time();
 			for (uint32_t i = 0; i < numInstances; i++) {
 				if (numPartitionsPerInstance[i] > 0) {
-					fthreads[i] = server.Request(columnML[i]);
+					fthreads[i] = server[i%iFPGA::MAX_NUM_BANKS]->Request(columnML[i]);
 				}
 			}
 			for (uint32_t i = 0; i < numInstances; i++) {
@@ -118,10 +120,20 @@ int main(int argc, char* argv[]) {
 			}
 			double end = get_time();
 			total += end - start;
+			vector<float> avgModel(columnML[0]->m_alignedNumFeatures, 0);
+			for (uint32_t i = 0; i < numInstances; i++) {
 #ifdef XILINX
-			columnML[0]->CopyInputHandleFromFPGA();
+				server[i%iFPGA::MAX_NUM_BANKS]->GetInputHandleFromFPGA(columnML[i]);
 #endif
-			modelsPerEpoch.push_back(columnML[0]->GetModelSCD(0));
+				vector<float> temp = columnML[i]->GetModelSCD(0, i*(columnML[0]->m_numPartitions/numInstances), numPartitionsPerInstance[i]);
+				for (uint32_t j = 0; j < columnML[0]->m_alignedNumFeatures; j++) {
+					avgModel[j] += temp[j];
+				}
+			}
+			for (uint32_t j = 0; j < columnML[0]->m_alignedNumFeatures; j++) {
+				avgModel[j] /= numInstances;
+			}
+			modelsPerEpoch.push_back(avgModel);
 		}
 		cout << "Avg time per epoch: " << total/numEpochs << endl;
 		cout << "Processing rate: " << (numEpochs*columnML[0]->GetDataSize())/total/1e9 << "GB/s" << endl;
@@ -132,6 +144,13 @@ int main(int argc, char* argv[]) {
 			cout << loss << endl;
 		}
 #endif
+	}
+
+	for (uint32_t i = 0; i < numInstances; i++) {
+		delete columnML[i];
+	}
+	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+		delete server[i];
 	}
 
 	return 0;

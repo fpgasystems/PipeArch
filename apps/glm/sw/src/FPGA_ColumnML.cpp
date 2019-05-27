@@ -1,4 +1,222 @@
+// Copyright (C) 2018 Kaan Kara - Systems Group, ETH Zurich
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+//*************************************************************************
+
 #include "FPGA_ColumnML.h"
+
+void FPGA_ColumnML::UseCreatedMemoryLayout(FPGA_ColumnML* baseObj) {
+	if (m_inputHandle != NULL) {
+		cout << "m_inputHandle of FPGA_ColumnML object created as clone is not NULL" << endl;
+		return;
+	}
+
+	if (baseObj->GetBank() == GetBank()) {
+		m_base = baseObj->GetBase();
+		m_inputHandle = baseObj->m_inputHandle;
+		m_inputSizeInCL = baseObj->m_inputSizeInCL;
+	}
+	else {
+		m_inputSizeInCL = baseObj->m_inputSizeInCL;
+		m_ifpga->Realloc(m_inputHandle, m_inputSizeInCL*64);
+		m_base = iFPGA::CastToFloat(m_inputHandle);
+		memcpy((void*)m_base, (void*)baseObj->GetBase(), 64*m_inputSizeInCL);
+	}
+
+	m_modelChunk = baseObj->m_modelChunk;
+	m_labelsChunk = baseObj->m_labelsChunk;
+	m_samplesChunk = baseObj->m_samplesChunk;
+	m_residualChunk = baseObj->m_residualChunk;
+	m_accesspropsChunk = baseObj->m_accesspropsChunk;
+
+	m_numSamples = baseObj->m_numSamples;
+	m_numFeatures = baseObj->m_numFeatures;
+	m_numSamplesInCL = baseObj->m_numSamplesInCL;
+	m_numFeaturesInCL = baseObj->m_numFeaturesInCL;
+	m_partitionSize = baseObj->m_partitionSize;
+	m_partitionSizeInCL = baseObj->m_partitionSizeInCL;
+	m_alignedNumSamples = baseObj->m_alignedNumSamples;
+	m_alignedNumFeatures = baseObj->m_alignedNumFeatures;
+	m_alignedPartitionSize = baseObj->m_alignedPartitionSize;
+	m_numPartitions = baseObj->m_numPartitions;
+	m_rest = baseObj->m_rest;
+	m_restInCL = baseObj->m_restInCL;
+	m_numEpochs = baseObj->m_numEpochs;
+}
+
+uint32_t FPGA_ColumnML::CreateMemoryLayout(MemoryFormat format, uint32_t partitionSize, uint32_t numEpochs, bool useOnehotLabels) {
+	m_currentMemoryFormat = format;
+
+	m_numSamples = m_cstore->m_numSamples;
+	m_numFeatures = m_cstore->m_numFeatures;
+	m_numSamplesInCL = (m_numSamples >> 4) + ((m_numSamples&0xF) > 0);
+	m_numFeaturesInCL = (m_numFeatures >> 4) + ((m_numFeatures&0xF) > 0);
+	m_partitionSize = (partitionSize > m_numSamples) ? m_numSamples : partitionSize;
+	m_partitionSizeInCL = (m_partitionSize >> 4) + ((m_partitionSize & 0xF) > 0);
+	m_alignedNumSamples = m_numSamplesInCL*16;
+	m_alignedNumFeatures = m_numFeaturesInCL*16;
+	m_alignedPartitionSize = m_partitionSizeInCL*16;
+	m_numPartitions = m_numSamples/m_partitionSize;
+	m_rest = m_numSamples % m_partitionSize;
+	m_restInCL = (m_rest >> 4) + ((m_rest&0xF) > 0);
+	m_numEpochs = numEpochs;
+
+	cout << "m_numSamplesInCL: " << m_numSamplesInCL << endl;
+	cout << "m_numFeaturesInCL: " << m_numFeaturesInCL << endl;
+	cout << "m_partitionSize: " << m_partitionSize << endl;
+	cout << "m_partitionSizeInCL: " << m_partitionSizeInCL << endl;
+	cout << "m_alignedNumSamples: " << m_alignedNumSamples << endl;
+	cout << "m_alignedNumFeatures: " << m_alignedNumFeatures << endl;
+	cout << "m_alignedPartitionSize: " << m_alignedPartitionSize << endl;
+	cout << "m_numPartitions: " << m_numPartitions << endl;
+	cout << "m_rest: " << m_rest << endl;
+	cout << "m_restInCL: " << m_restInCL << endl;
+	cout << "m_numEpochs: " << m_numEpochs << endl;
+
+	uint32_t countCL = 0;
+
+	if (format == RowStore) {
+		// Model
+		m_modelChunk.m_offsetInCL = countCL;
+		countCL += m_numFeaturesInCL;
+		m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
+
+		// Labels
+		m_labelsChunk.m_offsetInCL = countCL;
+		countCL += useOnehotLabels ? m_cstore->m_onehotLabels.size()*m_numSamplesInCL : m_numSamplesInCL;
+		m_labelsChunk.m_lengthInCL = countCL - m_labelsChunk.m_offsetInCL;
+
+		// Samples
+		m_samplesChunk.m_offsetInCL = countCL;
+		countCL += m_numSamples*m_numFeaturesInCL;
+		m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
+
+		m_ifpga->Realloc(m_inputHandle, countCL*64);
+		m_base = iFPGA::CastToFloat(m_inputHandle);
+		memset((void*)m_base, 0, 16*countCL*sizeof(float));
+
+		m_model = m_base + m_modelChunk.m_offsetInCL*16;
+		m_labels = m_base + m_labelsChunk.m_offsetInCL*16;
+		m_samples = m_base + m_samplesChunk.m_offsetInCL*16;
+
+		for (uint32_t j = 0; j < m_numFeatures; j++) {
+			m_model[j] = 0;
+		}
+		for (uint32_t i = 0; i < m_numSamples; i++) {
+			
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
+				m_samples[i*m_alignedNumFeatures + j] = m_cstore->m_samples[j][i];
+			}
+		}
+		if (useOnehotLabels) {
+			for (uint32_t c = 0; c < m_cstore->m_onehotLabels.size(); c++) {
+				for (uint32_t i = 0; i < m_numSamples; i++) {
+					m_labels[c*m_alignedNumSamples + i] = m_cstore->m_onehotLabels[c][i];
+				}
+			}
+		}
+		else {
+			for (uint32_t i = 0; i < m_numSamples; i++) {
+				m_labels[i] = m_cstore->m_labels[i];
+			}
+		}
+	}
+	else if (format == ColumnStore) {
+		// Residual
+		m_residualChunk.m_offsetInCL = countCL;
+		countCL += m_numSamplesInCL;
+		m_residualChunk.m_lengthInCL = countCL - m_residualChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+		cout << "m_residualChunk.m_offsetInCL: " << m_residualChunk.m_offsetInCL << endl;
+		cout << "m_residualChunk.m_lengthInCL: " << m_residualChunk.m_lengthInCL << endl;
+#endif
+		// Labels
+		m_labelsChunk.m_offsetInCL = countCL;
+		countCL += m_numSamplesInCL;
+		m_labelsChunk.m_lengthInCL = countCL - m_labelsChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+		cout << "m_labelsChunk.m_offsetInCL: " << m_labelsChunk.m_offsetInCL << endl;
+		cout << "m_labelsChunk.m_lengthInCL: " << m_labelsChunk.m_lengthInCL << endl;
+#endif
+		// Model
+		m_modelChunk.m_offsetInCL = countCL;
+		countCL += m_numEpochs*m_numPartitions*m_numFeaturesInCL;
+		m_modelChunk.m_lengthInCL = countCL - m_modelChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+		cout << "m_modelChunk.m_offsetInCL: " << m_modelChunk.m_offsetInCL << endl;
+		cout << "m_modelChunk.m_lengthInCL: " << m_modelChunk.m_lengthInCL << endl;
+#endif
+		// Offsets
+		m_accesspropsChunk.m_offsetInCL = countCL;
+		countCL += m_numPartitions*m_numFeaturesInCL*2; // *2, because offset and length
+		m_accesspropsChunk.m_lengthInCL = countCL - m_accesspropsChunk.m_offsetInCL;
+#ifdef DEBUG_COPY
+		cout << "m_accesspropsChunk.m_offsetInCL: " << m_accesspropsChunk.m_offsetInCL << endl;
+		cout << "m_accesspropsChunk.m_lengthInCL: " << m_accesspropsChunk.m_lengthInCL << endl;
+#endif
+		// Columns
+		m_columnsChunks.resize(m_numFeatures*m_numPartitions);
+		for (uint32_t j = 0; j < m_numFeatures; j++) {
+			for (uint32_t p = 0; p < m_numPartitions; p++) {
+				m_columnsChunks[j*m_numPartitions+p].m_offsetInCL = countCL;
+				countCL += m_partitionSizeInCL;
+				m_columnsChunks[j*m_numPartitions+p].m_lengthInCL = countCL - m_columnsChunks[j*m_numPartitions+p].m_offsetInCL;
+#ifdef DEBUG_COPY
+				cout << "m_columnsChunks[" << j << "," << p << "].m_offsetInCL: " << m_columnsChunks[j*m_numPartitions+p].m_offsetInCL << endl;
+				cout << "m_columnsChunks[" << j << "," << p << "].m_lengthInCL: " << m_columnsChunks[j*m_numPartitions+p].m_lengthInCL << endl;
+#endif
+			}
+		}
+
+		m_ifpga->Realloc(m_inputHandle, countCL*64);
+		m_base = iFPGA::CastToFloat(m_inputHandle);
+		memset((void*)m_base, 0, 16*countCL*sizeof(float));
+
+		m_residual = m_base + m_residualChunk.m_offsetInCL*16;
+		m_labels = m_base + m_labelsChunk.m_offsetInCL*16;
+		m_model = m_base + m_modelChunk.m_offsetInCL*16;
+		m_accessprops = (uint32_t*)(m_base + m_accesspropsChunk.m_offsetInCL*16);
+		m_columns.resize(m_numFeatures);
+		for (uint32_t j = 0; j < m_numFeatures; j++) {
+			m_columns[j] = m_base + m_columnsChunks[j*m_numPartitions].m_offsetInCL*16;
+		}
+
+		for (uint32_t i = 0; i < m_numSamples; i++) {
+			m_residual[i] = 0;
+			m_labels[i] = m_cstore->m_labels[i];
+		}
+		for (uint32_t e = 0; e < m_numEpochs; e++) {
+			for (uint32_t p = 0; p < m_numPartitions; p++) {
+				for (uint32_t j = 0; j < m_alignedNumFeatures; j++) {
+					m_model[e*m_numPartitions*m_alignedNumFeatures + p*m_alignedNumFeatures + j] = 0;
+				}
+			}
+		}
+		for (uint32_t p = 0; p < m_numPartitions; p++) {
+			for (uint32_t j = 0; j < m_numFeatures; j++) {
+				m_accessprops[p*m_alignedNumFeatures*2 + 2*j] = m_columnsChunks[j*m_numPartitions+p].m_offsetInCL;
+				m_accessprops[p*m_alignedNumFeatures*2 + 2*j+1] = m_columnsChunks[j*m_numPartitions+p].m_lengthInCL;
+				for (uint32_t i = 0; i < m_partitionSize; i++) {
+					m_columns[j][p*m_alignedPartitionSize + i] = m_cstore->m_samples[j][p*m_alignedPartitionSize + i];
+				}
+			}
+		}
+	}
+	m_inputSizeInCL = countCL;
+
+	return countCL;
+}
 
 bool FPGA_ColumnML::fSGD(
 	ModelType type,
@@ -526,148 +744,6 @@ bool FPGA_ColumnML::fSCD(
 	return true;
 }
 
-/*
-bool FPGA_ColumnML::fSGD_blocking(
-	ModelType type,
-	uint32_t numEpochs,
-	float stepSize,
-	float lambda)
-{
-	if (m_base == nullptr) {
-		cout << "m_base is nullptr!" << endl;
-		return false;
-	}
-
-	uint32_t modelOffsetInBRAM = 0;
-	uint32_t labelOffsetInBRAM = 0;
-
-	AccessProperties accessModel(5);
-	accessModel.Set(2, modelOffsetInBRAM, m_modelChunk.m_lengthInCL);
-
-	AccessProperties accessLabels(5);
-	accessLabels.Set(3, labelOffsetInBRAM, m_partitionSizeInCL);
-
-	AccessProperties accessSamples(5);
-	accessSamples.Set(0, 0, m_numFeaturesInCL);
-	accessSamples.Set(1, 0, m_numFeaturesInCL);
-
-	AccessProperties writebackModel(2);
-	writebackModel.Set(0, modelOffsetInBRAM, m_numFeaturesInCL);
-
-	// *************************************************************************
-	//
-	//   START Program
-	//
-	// *************************************************************************
-	uint32_t pc = 0;
-
-	// Load model
-	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, accessModel);
-	m_inst[pc].ResetIndex(0);
-	m_inst[pc].ResetIndex(1);
-	m_inst[pc].ResetIndex(2);
-	pc++;
-
-	// Load labels in partition
-	m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_partitionSizeInCL, 0, m_partitionSizeInCL, 0, accessLabels);
-	uint32_t pcLabels = pc;
-	pc++;
-
-	// Start---Innermost loop
-	m_inst[pc].Load(m_samplesChunk.m_offsetInCL, m_numFeaturesInCL, m_numFeaturesInCL, m_numFeaturesInCL*m_partitionSize, 0, accessSamples);
-	m_inst[pc].MakeNonBlocking();
-	uint32_t pcSamples = pc;
-	pc++;
-
-	m_inst[pc].Copy(modelOffsetInBRAM, modelOffsetInBRAM, m_numFeaturesInCL);
-	pc++;
-
-	m_inst[pc].Dot(m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
-	pc++;
-
-	m_inst[pc].Modify(labelOffsetInBRAM, type, 0, stepSize, lambda);
-	pc++;
-
-	m_inst[pc].Update(modelOffsetInBRAM, m_numFeaturesInCL, false);
-	m_inst[pc].Jump(0, m_partitionSize-1, pcSamples, pc+1);
-	m_inst[pc].IncrementIndex(0);
-	pc++;
-	// End---Innermost loop
-
-	m_inst[pc].Jump(1, m_numPartitions-1, pcLabels, pc+1);
-	m_inst[pc].ResetIndex(0);
-	m_inst[pc].IncrementIndex(1);
-	pc++;
-
-	if ( m_rest > 0 ) {
-		accessLabels.Set(3, labelOffsetInBRAM, m_restInCL);
-		m_inst[pc].Load(m_labelsChunk.m_offsetInCL, m_restInCL, 0, m_partitionSizeInCL, 0, accessLabels);
-		pc++;
-
-		// Start---Innermost loop
-		m_inst[pc].Load(m_samplesChunk.m_offsetInCL, m_numFeaturesInCL, m_numFeaturesInCL, m_numFeaturesInCL*m_partitionSize, 0, accessSamples);
-		m_inst[pc].MakeNonBlocking();
-		uint32_t pcRestSamples = pc;
-		pc++;
-
-		m_inst[pc].Dot(m_numFeaturesInCL, false, false, modelOffsetInBRAM, 0xFFFF);
-		pc++;
-
-		m_inst[pc].Modify(labelOffsetInBRAM, type, 0, stepSize, lambda);
-		pc++;
-
-		m_inst[pc].Update(modelOffsetInBRAM, m_numFeaturesInCL, false);
-		m_inst[pc].Jump(0, m_rest-1, pcRestSamples, pc+1);
-		m_inst[pc].IncrementIndex(0);
-		pc++;
-		// End---Innermost loop
-	}
-
-	// WriteBack
-	m_inst[pc].WriteBack(false, 1, m_numFeaturesInCL,
-		0, 0, m_numFeaturesInCL,
-		0, true, writebackModel);
-	pc++;
-
-	m_inst[pc].Jump(2, numEpochs-1, pcLabels, 0xFFFFFFFF);
-	m_inst[pc].ResetIndex(0);
-	m_inst[pc].ResetIndex(1);
-	m_inst[pc].IncrementIndex(2);
-	pc++;
-
-	// Context Store Instructions
-	uint32_t pcContextStore = pc;
-	m_inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
-		0, 0, 0,
-		0, true, writebackModel);
-	pc++;
-
-	m_inst[pc].Jump(2, 0, 0xFFFFFFF0, 0xFFFFFFF0);
-	pc++;
-
-	// Context Load Instructions
-	uint32_t pcContextLoad = pc;
-	m_inst[pc].Load(m_modelChunk.m_offsetInCL, m_modelChunk.m_lengthInCL, 0, 0, 0, accessModel);
-	pc++;
-
-	m_inst[pc].Jump(2, 0, 0xFFFFFFF1, 0xFFFFFFF1);
-	pc++;
-	// *************************************************************************
-	//
-	//   END Program
-	//
-	// *************************************************************************
-
-	m_outputSizeInCL = (numEpochs*m_numFeaturesInCL+1);
-	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
-
-	m_numInstructions = pc;
-	WriteProgramMemory(pcContextStore, pcContextLoad);
-
-	return true;
-}
-*/
-
 bool FPGA_ColumnML::ReadBandwidth(uint32_t numLinesToRead, uint32_t numLinesToWrite, uint32_t numIterations) {
 
 	bool fit = true;
@@ -685,10 +761,6 @@ bool FPGA_ColumnML::ReadBandwidth(uint32_t numLinesToRead, uint32_t numLinesToWr
 	for (uint32_t i = 0; i < numIterations*numLinesToWrite*16; i++) {
 		m_base[offset+i] = 0;
 	}
-
-#ifdef XILINX
-	CopyInputHandleToFPGA();
-#endif
 
 	// *************************************************************************
 	//

@@ -1,3 +1,19 @@
+// Copyright (C) 2018 Kaan Kara - Systems Group, ETH Zurich
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+//*************************************************************************
+
 #pragma once
 
 #include <iostream> 
@@ -9,14 +25,15 @@
 #include <condition_variable>
 #include <limits>
 
-#include "FPGA_ColumnML.h"
+#include "FPGA_Program.h"
 
 using namespace std;
 
-// #define PRINT_STATUS
-// #define VERBOSE
+// #define SERVER_PRINT_STATUS
+// #define SERVER_VERBOSE
 
 static const struct timespec PAUSE {.tv_sec = 0, .tv_nsec = 1000};
+static const struct timespec MSPAUSE {.tv_sec = 0, .tv_nsec = 1000000};
 
 enum FThreadState {idle, running, to_be_paused, paused, finished};
 
@@ -31,9 +48,9 @@ private:
 
 public:
 	bool m_outputCopyRequested;
-	FPGA_ColumnML* m_cML;
+	FPGA_Program* m_cML;
 
-	FThread(FPGA_ColumnML* cML, uint32_t id, uint32_t priority) {
+	FThread(FPGA_Program* cML, uint32_t id, uint32_t priority) {
 		m_state = idle;
 		m_cML = cML;
 		m_id = id;
@@ -131,30 +148,19 @@ public:
 		m_ifpga = ifpga;
 	}
 
+	void PrintStatus() {
+		for (FThread* t: m_runningThreads) {
+			cout << "------ FThread with id: " << t->GetId();
+			cout << ", state: " << t->GetStateString() << endl;
+		}
+	}
+
 	uint32_t GetId() {
 		return m_id;
 	}
 
 	static bool CompareNumThreads (Instance* first, Instance* second) {
 		return first->GetNumThreads() < second->GetNumThreads();
-	}
-
-	void AddThread(FThread* fthread) {
-#ifdef XILINX
-		// m_ifpga->UpdateBank(fthread->m_cML->m_inputHandle, m_id);
-		// m_ifpga->UpdateBank(fthread->m_cML->m_outputHandle, m_id);
-		// m_ifpga->UpdateBank(fthread->m_cML->m_programMemoryHandle, m_id);
-		vector<cl::Memory> buffersToCopy;
-		// buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_inputHandle));
-		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_outputHandle));
-		buffersToCopy.push_back(iFPGA::CastToPtr(fthread->m_cML->m_programMemoryHandle));
-		m_ifpga->CopyToFPGA(buffersToCopy);
-#endif
-		m_runningThreads.push_back(fthread);
-	}
-
-	uint32_t GetNumThreads() {
-		return m_runningThreads.size();
 	}
 
 	uint32_t GetNumWaitingThreads() {
@@ -173,110 +179,15 @@ public:
 		return result;
 	}
 
-	void UpdateStates() {
-		vector<uint32_t> toErase;
-		uint32_t pos = 0;
-
-#ifdef XILINX
-		vector<cl::Memory> buffersToCopy;
-		for (FThread* t: m_runningThreads) {
-			if (t->m_outputCopyRequested == false && (t->GetState() == running || t->GetState() == to_be_paused) /*&& m_ifpga->GetQueueCount(m_id) == 0*/) {
-				buffersToCopy.push_back(m_ifpga->CastToPtr(t->m_cML->m_outputHandle));
-				t->m_outputCopyRequested = true;
-			}
-		}
-		if (buffersToCopy.size() > 0) {
-			m_ifpga->CopyFromFPGA(buffersToCopy, m_id);
-		}
-#endif
-
-		for (FThread* t: m_runningThreads) {
-			if (t->IsFinished()) {
-#ifdef VERBOSE
-				cout << "------ FThread with id: " << t->GetId() << " is finished" << endl;
-#endif
-				toErase.push_back(pos);
-			}
-			t->IsPaused();
-			pos++;
-		}
-		for (uint32_t p: toErase) {
-			m_runningThreads.erase(m_runningThreads.begin() + p);
-		}
+	uint32_t GetNumThreads() {
+		return m_runningThreads.size();
 	}
 
-	void PrintStatus() {
-		for (FThread* t: m_runningThreads) {
-			cout << "------ FThread with id: " << t->GetId();
-			cout << ", state: " << t->GetStateString() << endl;
-		}
-	}
-
-	FThread* GetThreadToPause() {
-		FThread* threadToPause = NULL;
-
-		if (GetNumWaitingThreads() > 0) {
-			for (FThread* t: m_runningThreads) {
-				if (t->GetState() == running && t->GetPriority() == 0) {
-					threadToPause = t;
-				}
-			}
-		}
-
-		return threadToPause;
-	}
-
-	FThread* GetThreadToResume() {
-		FThread* threadToResume = NULL;
-
-		uint32_t minimum = numeric_limits<uint32_t>::max();
-		for (FThread* t: m_runningThreads) {
-			if (t->GetState() == idle || t->GetState() == paused) {
-
-				if (t->GetPriority() > 0) {
-					threadToResume = t;
-					return threadToResume;
-				}
-
-				if (t->GetNumTimesResumed() < minimum) {
-					minimum = t->GetNumTimesResumed();
-					threadToResume = t;
-				}
-
-			}
-		}
-
-		return threadToResume;
-	}
-
-	FThread* GetThreadToMigrate() {
-		FThread* threadToMigrate = NULL;
-
-		uint32_t i = 0;
-		int pos = -1;
-		for (FThread* t: m_runningThreads) {
-			uint32_t minimum = numeric_limits<uint32_t>::max();
-#ifdef VERBOSE
-			cout << "t->GetNumTimesResumed(): " << t->GetNumTimesResumed() << endl;
-#endif
-			if ((t->GetState() == idle || t->GetState() == paused) && t->GetNumTimesResumed() < minimum) {
-				minimum = t->GetNumTimesResumed();
-				threadToMigrate = t;
-				pos = i;
-			}
-#ifdef VERBOSE
-			cout << "pos: " << pos << endl;
-#endif
-			i++;
-		}
-
-		if (pos != -1) {
-			m_runningThreads.erase(m_runningThreads.begin()+pos);
-		}
-
-		return threadToMigrate;
-	}
-
+	void AddThread(FThread* fthread);
+	void UpdateStates();
+	FThread* GetThreadToPause();
+	FThread* GetThreadToResume();
+	FThread* GetThreadToMigrate();
 };
 
 class Server : public iFPGA {
@@ -294,175 +205,11 @@ private:
 	bool m_enableContextSwitch;
 	bool m_enableThreadMigration;
 
-	void ResumeThread(FThread* fthread, uint32_t whichInstance) {
-		if (fthread == NULL) {
-			return;
-		}
-#ifdef VERBOSE
-		if (fthread->GetPriority() > 0) {
-			cout << "-----------------ResumeThread with id: " << fthread->GetId() << endl;
-		}
-#endif
-
-#ifdef PRINT_STATUS
-		cout << "ResumeThread with id: " << fthread->GetId() << endl;
-#endif
-		fthread->Resume();
-
-		auto output = iFPGA::CastToInt(fthread->m_cML->m_outputHandle);
-		output[0] = 0;
-#ifdef VERBOSE
-		cout << "output resetted" << endl;
-#endif
-		auto programMemory = iFPGA::CastToPtr(fthread->m_cML->m_programMemoryHandle);
-		auto inputMemory = iFPGA::CastToPtr(fthread->m_cML->m_inputHandle);
-		auto outputMemory = iFPGA::CastToPtr(fthread->m_cML->m_outputHandle);
-#ifdef VERBOSE
-		cout << "Writing args" << endl;
-#endif
-
-#ifdef XILINX // On sdaccel we have to trigger context switch already while starting the kernel
-		uint64_t triggerContextSwitch = m_enableContextSwitch;
-		iFPGA::WriteConfigReg(0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
-		iFPGA::WriteConfigReg(1, programMemory);
-		iFPGA::WriteConfigReg(2, inputMemory);
-		iFPGA::WriteConfigReg(3, outputMemory);
-		iFPGA::StartKernel(whichInstance);
-#else // On opae we can write the config registers dynamically to trigger context switch only when necessary
-		uint64_t triggerContextSwitch = 0;
-		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
-		iFPGA::WriteConfigReg(whichInstance*4 + 1, programMemory);
-		iFPGA::WriteConfigReg(whichInstance*4 + 2, inputMemory);
-		iFPGA::WriteConfigReg(whichInstance*4 + 3, outputMemory);
-#endif
-	}
-
-	void PauseThread(FThread* fthread, uint32_t whichInstance) {
-		if (fthread == NULL) {
-			return;
-		}
-
-#ifdef VERBOSE
-		if (fthread->GetPriority() > 0) {
-			cout << "-----------------PauseThread with id: " << fthread->GetId() << endl;
-		}
-#endif
-
-#ifdef PRINT_STATUS
-		cout << "PauseThread with id: " << fthread->GetId() << endl;
-#endif
-#ifndef XILINX // We cannot write config registers while a kernel is running in sdaccel
-		iFPGA::WriteConfigReg(whichInstance*4 + 0, (vc_select << 30) | (1 << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
-#endif
-		fthread->Pause();
-	}
-
-	void ScheduleThreads() {
-		for (uint32_t k = 0; k < m_numInstances; k++) {
-			FThread* threadToPause = m_instance[k]->GetThreadToPause();
-			FThread* threadToResume = m_instance[k]->GetThreadToResume();
-
-			if (m_instance[k]->GetNumRunningThreads() == 0) {
-				ResumeThread(threadToResume, k);
-			}
-			if (m_enableContextSwitch) {
-				PauseThread(threadToPause, k);
-			}
-		}
-	}
-
-	void RedistributeThreads() {
-		vector<Instance*> temp;
-		for (uint32_t i = 0; i < m_numInstances; i++) {
-			temp.push_back(m_instance[i]);
-		}
-		stable_sort(temp.begin(), temp.end(), Instance::CompareNumThreads);
-
-		if (temp.front()->GetNumThreads() < temp.back()->GetNumThreads()-1) {
-			FThread* fthread = temp.back()->GetThreadToMigrate();
-			if (fthread != NULL) {
-#ifdef VERBOSE
-				cout << "Migrate thread with id: " << fthread->GetId() << endl;
-				cout << "temp.front()->GetNumThreads(): " << temp.front()->GetNumThreads() << endl;
-				cout << "temp.back()->GetNumThreads(): " << temp.back()->GetNumThreads() << endl;
-#endif
-				temp.front()->AddThread(fthread);
-			}
-		}
-	}
-
-	void ProcessRequests() {
-		unique_lock<mutex> lck(m_mtx);
-
-		m_run = true;
-		cout << "Start server thread..." << endl;
-		bool thereAreRunningThreads = true;
-		m_cv.notify_one();
-		lck.unlock();
-
-		uint32_t i = 0;
-		while(m_run || !m_requestQueue.empty() || thereAreRunningThreads) {
-
-			lck.lock();
-			if (!m_requestQueue.empty()) {
-				FThread* fthread = m_requestQueue.front();
-
-				if ( fthread != nullptr ) {
-					int whichInstance = -1;
-					uint32_t minimumLoad = numeric_limits<uint32_t>::max();
-					for (uint32_t k = 0; k < m_numInstances; k++) {
-						if (m_instance[k]->GetNumThreads() < minimumLoad) {
-							minimumLoad = m_instance[k]->GetNumThreads();
-							whichInstance = k;
-						}
-					}
-
-					if (whichInstance != -1) {
-#ifdef VERBOSE
-						cout << "Putting fthread " << fthread->GetId() << " to instance " << whichInstance << endl;
-#endif
-						m_instance[whichInstance]->AddThread(fthread);
-						m_requestQueue.pop();
-					}
-				}
-				else {
-					cout << "Request is nullptr" << endl;
-					m_requestQueue.pop();
-				}
-			}
-#ifndef XILINX
-			if (m_numInstances > 1 && m_enableThreadMigration) {
-				RedistributeThreads();
-			}
-#endif
-			ScheduleThreads();
-			lck.unlock();
-
-			nanosleep(&PAUSE, NULL);
-
-			thereAreRunningThreads = false;
-			for (uint32_t k = 0; k < m_numInstances; k++) {
-				m_instance[k]->UpdateStates();
-				if (m_instance[k]->GetNumThreads() > 0) {
-					thereAreRunningThreads = true;
-				}
-			}
-
-#ifdef PRINT_STATUS
-			i++;
-			if (i == 50000) {
-				cout << "------------------------ Running threads: " << endl;
-				for (uint32_t k = 0; k < m_numInstances; k++) {
-					cout << "---- On instance: " << k << endl;
-					m_instance[k]->PrintStatus();
-				}
-				i = 0;
-			}
-#endif
-		}
-
-		cout << "Finishing server thread..." << endl;
-	}
+	void ResumeThread(FThread* fthread, uint32_t whichInstance);
+	void PauseThread(FThread* fthread, uint32_t whichInstance);
+	void ScheduleThreads();
+	void RedistributeThreads();
+	void ProcessRequests();
 
 	inline void ConstructorCommon() {
 		unique_lock<mutex> lck(m_mtx);
@@ -512,20 +259,35 @@ public:
 		m_numThreads = 0;
 	}
 
-	FThread* Request(FPGA_ColumnML* cML) {
+	FThread* Request(FPGA_Program* cML) {
+		PreCopy(cML);
 		unique_lock<mutex> lck(m_mtx);
-		// cout << "Push" << endl;
 		FThread* fthread = new FThread(cML, m_numThreads++, 0);
 		m_requestQueue.push(fthread);
 		return fthread;
 	}
 
-	FThread* Request(FPGA_ColumnML* cML, uint32_t priority) {
+	FThread* Request(FPGA_Program* cML, uint32_t priority) {
+		PreCopy(cML);
 		unique_lock<mutex> lck(m_mtx);
-		// cout << "Push" << endl;
 		FThread* fthread = new FThread(cML, m_numThreads++, priority);
 		m_requestQueue.push(fthread);
 		return fthread;
+	}
+
+	void PreCopy(FPGA_Program* cML) {
+#ifdef XILINX
+		while(!DoesInputHandleFitDRAM(cML->m_inputHandle, cML->GetNumCLsAllocated())) {
+			nanosleep(&MSPAUSE, NULL);
+		}
+		if( HandleNeedsCopying(cML->m_inputHandle) ) {
+			CopyInputHandleToFPGA(cML->m_inputHandle, cML->GetNumCLsAllocated());
+		}
+#endif
+	}
+
+	void GetInputHandleFromFPGA(FPGA_Program* cML) {
+		CopyFromFPGASingle(cML->m_inputHandle, 0);
 	}
 };
  

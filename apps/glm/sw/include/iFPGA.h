@@ -9,6 +9,9 @@
 #include <atomic>
 #include <vector>
 #include <memory>
+#include <unordered_map>
+
+// #define IFPGA_VERBOSE
 
 #ifdef XILINX
 	#include "xcl2.hpp"
@@ -57,14 +60,18 @@ public:
 	static const uint32_t MEMORY_SIZE_IN_CL = (1 << 10);
 	static const uint32_t MAX_NUM_INSTANCES = MAKEFILE_MAX_NUM_INSTANCES;
 	static const uint32_t MAX_NUM_BANKS = MAKEFILE_MAX_NUM_BANKS;
+	const uint32_t MAX_NUM_CLS_DRAM = 268435456; // 16 GB
 
 protected:
 	uint32_t m_numInstances;
 
 private:
 	uint32_t m_whichBank;
+	uint32_t m_numCLsAllocated;
+	unordered_map<iFPGA_ptr, bool> m_copiedBuffers;
+
 #ifdef XILINX
-	xDevice* m_xdevice;
+	xDevice* m_xdevice = nullptr;
 	cl::CommandQueue m_queue[MAX_NUM_INSTANCES];
 	cl::Kernel m_kernel;
 #else
@@ -77,6 +84,8 @@ public:
 	iFPGA(uint32_t numInstances, uint32_t whichBank, xDevice* xdevice) {
 		m_numInstances = numInstances;
 		m_whichBank = whichBank;
+		m_numCLsAllocated = 0;
+		m_copiedBuffers = unordered_map<iFPGA_ptr, bool>();
 #ifdef XILINX
 		m_xdevice = xdevice;
 		cout << "m_whichBank: " << m_whichBank << endl;
@@ -197,35 +206,6 @@ public:
 #endif
 
 #ifdef XILINX
-	// void UpdateBank(iFPGA_ptr& handle, uint32_t whichInstance) {
-	// 	uint32_t whichBank = (uint32_t)(whichInstance/NUM_INSTANCES_PER_BANK);
-	// 	if (whichBank != 0) {
-	// 		cl_int err;
-	// 		cl_mem_ext_ptr_t ext_ptr;
-	// 		switch(whichBank) {
-	// 			case 3:
-	// 				ext_ptr.flags = XCL_MEM_DDR_BANK3;
-	// 				break;
-	// 			case 2:
-	// 				ext_ptr.flags = XCL_MEM_DDR_BANK2;
-	// 				break;
-	// 			case 1:
-	// 				ext_ptr.flags = XCL_MEM_DDR_BANK1;
-	// 				break;
-	// 			default:
-	// 				ext_ptr.flags = XCL_MEM_DDR_BANK0;
-	// 				break;
-	// 		}
-	// 		void* handlePtr = NULL;
-	// 		handle->getInfo(CL_MEM_HOST_PTR, &handlePtr);
-	// 		ext_ptr.obj = handlePtr;
-	// 		ext_ptr.param = 0;
-	// 		size_t handleSize = 0;
-	// 		handle->getInfo(CL_MEM_SIZE, &handleSize);
-	// 		handle = new cl::Buffer(m_xdevice->m_context, CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR, handleSize, &ext_ptr, &err);
-	// 	}
-	// }
-
 	static cl::Buffer CastToPtr(iFPGA_ptr handle) {
 		return *handle;
 	}
@@ -295,27 +275,75 @@ public:
 #endif
 
 #ifdef XILINX
+	bool DoesInputHandleFitDRAM(iFPGA_ptr handle, uint32_t totalSizeInCL) {
+#ifdef IFPGA_VERBOSE
+		cout << "DoesThreadFitDRAM" << endl;
+#endif
+		if( m_copiedBuffers.find(handle) != m_copiedBuffers.end() ) {
+#ifdef IFPGA_VERBOSE
+			cout << "handle already copied" << endl;
+#endif
+			return true;
+		}
+		else {
+#ifdef IFPGA_VERBOSE
+			cout << "Need to copy handle. Size: " << totalSizeInCL << endl;
+			cout << "m_numCLsAllocated: " << m_numCLsAllocated << endl;
+#endif
+			return (totalSizeInCL < MAX_NUM_CLS_DRAM - m_numCLsAllocated);
+		}
+	}
+
+	bool HandleNeedsCopying(iFPGA_ptr handle) {
+		return (m_copiedBuffers.find(handle) == m_copiedBuffers.end());
+	}
+
+	void CopyInputHandleToFPGA(iFPGA_ptr handle, uint32_t totalSizeInCL) {
+		cout << "Copying " << totalSizeInCL*64/1e9 << " GBs to bank " << GetBank() << endl;
+		vector<cl::Memory> buffersToCopy;
+		buffersToCopy.push_back(iFPGA::CastToPtr(handle));
+		CopyToFPGA(buffersToCopy);
+		m_copiedBuffers.insert({handle, true});
+		m_numCLsAllocated += totalSizeInCL;
+		cout << "Allocated: " << m_numCLsAllocated*64/1e9 << " GBs" << endl;
+	}
+
+	void RemoveCopiedHandle(iFPGA_ptr handle, uint32_t totalSizeInCL) {
+		m_copiedBuffers.erase(handle);
+		m_numCLsAllocated -= totalSizeInCL;
+	}
+#endif
+
+#ifdef XILINX
 	void CopyToFPGA(vector<cl::Memory>& buffersToCopy) {
 		cl_int err;
+#ifdef IFPGA_VERBOSE
 		cout << "CopyToFPGA" << endl;
+		double start = get_time();
+#endif
 		err = m_queue[0].enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
 		err = m_queue[0].finish();
+#ifdef IFPGA_VERBOSE
+		double end = get_time();
+		cout << "Copy time: " << end - start << endl;
+#endif
 	}
 
 	void CopyFromFPGA(vector<cl::Memory>& buffersToCopy, uint32_t whichInstance) {
 		cl_int err;
+#ifdef IFPGA_VERBOSE
 		err = m_queue[whichInstance].finish();
 		cout << "CopyFromFPGA" << endl;
-
+#endif
 		err = m_queue[whichInstance].enqueueMigrateMemObjects(buffersToCopy, CL_MIGRATE_MEM_OBJECT_HOST);
-		err = m_queue[whichInstance].finish();
 	}
 
-	void CopyFromFPGA(iFPGA_ptr& bufferToCopy, uint32_t whichInstance) {
+	void CopyFromFPGASingle(iFPGA_ptr& bufferToCopy, uint32_t whichInstance) {
 		cl_int err;
+#ifdef IFPGA_VERBOSE
 		err = m_queue[whichInstance].finish();
 		cout << "CopyFromFPGA single buffer" << endl;
-
+#endif
 		vector<cl::Memory> temp;
 		temp.push_back(CastToPtr(bufferToCopy));
 		err = m_queue[whichInstance].enqueueMigrateMemObjects(temp, CL_MIGRATE_MEM_OBJECT_HOST);
@@ -324,12 +352,16 @@ public:
 
 	void StartKernel(uint32_t whichInstance) {
 		cl_int err;
+#ifdef IFPGA_VERBOSE
 		cout << "StartKernel " << whichInstance << endl;
 		double start = get_time();
+#endif
 		err = m_queue[whichInstance].enqueueTask(m_kernel);
+#ifdef IFPGA_VERBOSE
 		err = m_queue[whichInstance].finish();
 		double end = get_time();
 		cout << "Kernel time: " << end - start << endl;
+#endif
 	}
 
 	uint32_t GetQueueCount(uint32_t whichInstance) {
@@ -339,9 +371,11 @@ public:
 		return count;
 	}
 
-	// void WaitForKernel(uint32_t whichInstance) {
-	// 	cout << "WaitForKernel" << endl;
-	// 	cl_int err = m_queue[whichInstance].finish();
-	// }
+	void WaitForKernel(uint32_t whichInstance) {
+#ifdef IFPGA_VERBOSE
+		cout << "WaitForKernel" << endl;
+#endif
+		cl_int err = m_queue[whichInstance].finish();
+	}
 #endif
 };

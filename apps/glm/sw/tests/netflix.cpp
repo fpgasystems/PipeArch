@@ -100,12 +100,16 @@ int main(int argc, char* argv[]) {
 
 		for (uint32_t i = 0; i < numInstances; i++) {
 			for (uint32_t j = 0; j < numInstances; j++) {
-				lrmf[i*numInstances+j]->fOptimizeRound2(
+				bool fit = lrmf[i*numInstances+j]->fOptimizeRound(
 					MtileToStart[i*numInstances+j], numTilesM[i*numInstances+j],
 					UtileToStart[i*numInstances+j], numTilesU[i*numInstances+j],
 					stepSize, lambda, asyncUpdate, staleRead, 1);
+				if (!fit)
+					return 1;
 			}
 		}
+
+		server.PreCopy(lrmf[0]);
 
 		double total = 0.0;
 
@@ -127,7 +131,7 @@ int main(int argc, char* argv[]) {
 
 			// Verify
 #ifdef XILINX
-			lrmf[0]->CopyInputHandleFromFPGA();
+			server.GetInputHandleFromFPGA(lrmf[0]);
 #endif
 			lrmf[0]->CopyModel();
 			cout << lrmf[0]->RMSE() << endl;
@@ -138,9 +142,7 @@ int main(int argc, char* argv[]) {
 #endif
 	}
 
-	for (uint32_t i = 0; i < lrmf.size(); i++) {
-		delete lrmf[i];
-	}
+	delete lrmf[0];
 	lrmf.clear();
 
 	return 0;
