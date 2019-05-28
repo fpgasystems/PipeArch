@@ -30,6 +30,7 @@ void FPGA_ColumnML::UseCreatedMemoryLayout(FPGA_ColumnML* baseObj) {
 	else {
 		m_inputSizeInCL = baseObj->m_inputSizeInCL;
 		m_ifpga->Realloc(m_inputHandle, m_inputSizeInCL*64);
+		m_inputHandleAllocated = true;
 		m_base = iFPGA::CastToFloat(m_inputHandle);
 		memcpy((void*)m_base, (void*)baseObj->GetBase(), 64*m_inputSizeInCL);
 	}
@@ -103,6 +104,7 @@ uint32_t FPGA_ColumnML::CreateMemoryLayout(MemoryFormat format, uint32_t partiti
 		m_samplesChunk.m_lengthInCL = countCL - m_samplesChunk.m_offsetInCL;
 
 		m_ifpga->Realloc(m_inputHandle, countCL*64);
+		m_inputHandleAllocated = true;
 		m_base = iFPGA::CastToFloat(m_inputHandle);
 		memset((void*)m_base, 0, 16*countCL*sizeof(float));
 
@@ -180,6 +182,7 @@ uint32_t FPGA_ColumnML::CreateMemoryLayout(MemoryFormat format, uint32_t partiti
 		}
 
 		m_ifpga->Realloc(m_inputHandle, countCL*64);
+		m_inputHandleAllocated = true;
 		m_base = iFPGA::CastToFloat(m_inputHandle);
 		memset((void*)m_base, 0, 16*countCL*sizeof(float));
 
@@ -753,6 +756,7 @@ bool FPGA_ColumnML::ReadBandwidth(uint32_t numLinesToRead, uint32_t numLinesToWr
 	}
 
 	m_ifpga->Realloc(m_inputHandle, numIterations*(numLinesToRead+numLinesToWrite)*64);
+	m_inputHandleAllocated = true;
 	m_base = iFPGA::CastToFloat(m_inputHandle);
 	for (uint32_t i = 0; i < numIterations*numLinesToRead*16; i++) {
 		m_base[i] = i;

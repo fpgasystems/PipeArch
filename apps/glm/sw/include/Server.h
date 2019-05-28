@@ -29,8 +29,8 @@
 
 using namespace std;
 
-#define SERVER_PRINT_STATUS
-#define SERVER_VERBOSE
+// #define SERVER_PRINT_STATUS
+// #define SERVER_VERBOSE
 
 static const struct timespec PAUSE {.tv_sec = 0, .tv_nsec = 1000};
 static const struct timespec MSPAUSE {.tv_sec = 0, .tv_nsec = 1000000};
@@ -94,6 +94,7 @@ public:
 	bool IsFinished() {
 		auto output = iFPGA::CastToInt(m_cML->m_outputHandle);
 		if (1 == output[0] && (output[6] & 0xFF) == 0) { // output[6]&0xFF is pc
+			output[4] = output[6]; // We added reg[3] and reg[4] later on... Need to fix this in HW.
 			m_state = finished;
 			m_stopTime = get_time();
 			m_outputCopyRequested = false;
@@ -293,4 +294,55 @@ public:
 #endif
 	}
 };
- 
+
+class ServerWrapper {
+private:
+	xDevice* m_xdevice;
+	Server* m_server[iFPGA::MAX_NUM_BANKS];
+	uint32_t m_currentServer;
+public:
+	ServerWrapper(bool enableContextSwitch, bool enableThreadMigration)
+	{
+		m_xdevice = new xDevice();
+		for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+			m_server[i] = new Server(enableContextSwitch, enableThreadMigration, i, m_xdevice);
+		}
+		m_currentServer = 0;
+	}
+
+	~ServerWrapper() {
+		cout << "delete ServerWrapper" << endl;
+		delete m_xdevice;
+		for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+			delete m_server[i];
+		}
+	}
+
+	Server* GetServer() {
+		Server* temp = m_server[m_currentServer];
+		m_currentServer = (m_currentServer == iFPGA::MAX_NUM_BANKS-1) ? 0 : m_currentServer+1;
+		return temp;
+	}
+
+	void ResetNumThreads() {
+		for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
+			m_server[i]->ResetNumThreads();
+		}
+	}
+
+	FThread* Request(FPGA_Program* cML) {
+		return m_server[cML->GetBank()]->Request(cML);
+	}
+
+	FThread* Request(FPGA_Program* cML, uint32_t priority) {
+		return m_server[cML->GetBank()]->Request(cML, priority);
+	}
+
+	void PreCopy(FPGA_Program* cML) {
+		m_server[cML->GetBank()]->PreCopy(cML);
+	}
+
+	void GetInputHandleFromFPGA(FPGA_Program* cML) {
+		m_server[cML->GetBank()]->GetInputHandleFromFPGA(cML);
+	}
+};

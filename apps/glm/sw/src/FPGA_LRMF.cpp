@@ -99,6 +99,7 @@ uint32_t FPGA_LRMF::CreateMemoryLayout() {
 	m_minibatchSizesChunk.m_lengthInCL = countCL - m_minibatchSizesChunk.m_offsetInCL;
 
 	m_ifpga->Realloc(m_inputHandle, countCL*64);
+	m_inputHandleAllocated = true;
 	m_base = iFPGA::CastToFloat(m_inputHandle);
 	memset((void*)m_base, 0, 16*countCL*sizeof(float));
 

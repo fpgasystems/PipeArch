@@ -10,6 +10,7 @@ protected:
 	iFPGA* m_ifpga;
 	volatile float* m_base = nullptr;
 	bool m_useContextSwitch;
+	bool m_inputHandleAllocated;
 
 	Instruction m_inst[Instruction::MAX_NUM_INSTRUCTIONS];
 
@@ -46,6 +47,7 @@ public:
 	uint32_t m_programSizeInCL;
 
 	FPGA_Program(iFPGA* ifpga, bool useContextSwitch) {
+		m_inputHandleAllocated = false;
 		m_inputHandle = NULL;
 		m_outputHandle = NULL;
 		m_programMemoryHandle = NULL;
@@ -54,7 +56,9 @@ public:
 	}
 
 	~FPGA_Program() {
-		m_ifpga->Free(m_inputHandle);
+		if (m_inputHandleAllocated) {
+			m_ifpga->Free(m_inputHandle);
+		}
 		m_ifpga->Free(m_outputHandle);
 		m_ifpga->Free(m_programMemoryHandle);
 #ifdef XILINX

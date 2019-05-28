@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) {
 	minibatchSize = atoi(argv[3]);
 	numEpochs = atoi(argv[4]);
 
-	uint32_t partitionSize = 64;
+	uint32_t partitionSize = 16000;
 
 	const uint32_t NUM_JOBS = 2;
 

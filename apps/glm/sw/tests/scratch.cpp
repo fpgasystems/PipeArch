@@ -24,14 +24,14 @@ int main(int argc, char* argv[]) {
 	minibatchSize = atoi(argv[4]);
 	numEpochs = atoi(argv[5]);
 
-	uint32_t partitionSize = 10400;
+	uint32_t partitionSize = 16000;
 
 #ifdef FPGA
 	xDevice xdevice;
 	Server server(false, true, 0, &xdevice);
-	FPGA_ColumnML columnML(&server);
+	FPGA_ColumnML* columnML = new FPGA_ColumnML(&server);
 #else
-	ColumnML columnML;
+	ColumnML* columnML = new ColumnML();
 #endif
 
 	float stepSize;
@@ -39,78 +39,81 @@ int main(int argc, char* argv[]) {
 
 	ModelType type;
 	if ( strcmp(pathToDataset, "syn") == 0) {
-		columnML.m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
+		columnML->m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
 		type = linreg;
 	}
 	else {
-		columnML.m_cstore->LoadRawData(pathToDataset, numSamples, numFeatures, true);
-		columnML.m_cstore->NormalizeSamples(ZeroToOne, column);
-		columnML.m_cstore->NormalizeLabels(ZeroToOne, true, 1);
+		columnML->m_cstore->LoadRawData(pathToDataset, numSamples, numFeatures, true);
+		columnML->m_cstore->NormalizeSamples(ZeroToOne, column);
+		columnML->m_cstore->NormalizeLabels(ZeroToOne, true, 1);
 		type = logreg;
 	}
-	columnML.m_cstore->PrintSamples(2);
 
 	AdditionalArguments args;
 	args.m_firstSample = 0;
-	args.m_numSamples = columnML.m_cstore->m_numSamples;
+	args.m_numSamples = columnML->m_cstore->m_numSamples;
 	args.m_constantStepSize = true;
 	args.m_useOnehotLabels = false;
 
 	// Set memory format / decide on SGD or SCD
-	MemoryFormat format = RowStore;
+	MemoryFormat format = ColumnStore;
 
 	if (format == RowStore) {
 		stepSize = 0.001;
-		columnML.SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+		columnML->SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
 
 #ifdef FPGA
-		columnML.CreateMemoryLayout(format, partitionSize);
+		columnML->CreateMemoryLayout(format, partitionSize);
+		server.PreCopy(columnML);
 		if (minibatchSize == 1) {
-			columnML.fSGD(type, numEpochs, stepSize, lambda, 0);
+			columnML->fSGD(type, numEpochs, stepSize, lambda, 0);
 		}
 		else {
-			columnML.fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda, 0);
+			columnML->fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda, 0);
 		}
 #endif
 	}
 	else {
 		stepSize = 1;
-		columnML.SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
+		columnML->SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
 
 #ifdef FPGA
-		columnML.CreateMemoryLayout(format, partitionSize, numEpochs, false);
-		columnML.fSCD(0, columnML.m_numPartitions, type, numEpochs, stepSize, lambda);
+		columnML->CreateMemoryLayout(format, partitionSize, numEpochs, false);
+		server.PreCopy(columnML);
+		columnML->fSCD(0, columnML->m_numPartitions, type, numEpochs, stepSize, lambda);
 #endif
 	}
 
 #ifdef FPGA
-	FThread* fthread = server.Request(&columnML);
+	FThread* fthread = server.Request(columnML);
 	fthread->WaitUntilFinished();
 
 	double total = fthread->GetResponseTime();
 	cout << "Time per epoch: " << total/numEpochs << endl;
-	cout << "Processing rate: " << ((float)columnML.m_cstore->m_numSamples*(float)columnML.m_cstore->m_numFeatures*4*numEpochs)/total/1e9;
+	cout << "Processing rate: " << ((float)columnML->m_cstore->m_numSamples*(float)columnML->m_cstore->m_numFeatures*4*numEpochs)/total/1e9;
 	cout << " GB/s" << endl;
 
 	// Verify
 	if (format == RowStore) {
-		auto output = iFPGA::CastToFloat(columnML.m_outputHandle);
+		auto output = iFPGA::CastToFloat(columnML->m_outputHandle);
 		float* xHistory = (float*)(output + 16);
 		for (uint32_t e = 0; e < numEpochs; e++) {
-			float loss = columnML.Loss(type, xHistory + e*columnML.m_alignedNumFeatures, lambda, &args);
+			float loss = columnML->Loss(type, xHistory + e*columnML->m_alignedNumFeatures, lambda, &args);
 			cout << "loss " << e << ": " << loss << endl;
 		}
 	}
 	else {
 #ifdef XILINX
-		columnML.CopyInputHandleFromFPGA();
+		server.GetInputHandleFromFPGA(columnML);
 #endif
 		for (uint32_t e = 0; e < numEpochs; e++) {
-			float loss = columnML.Loss(type, columnML.GetModelSCD(e).data(), lambda, &args);
+			float loss = columnML->Loss(type, columnML->GetModelSCD(e).data(), lambda, &args);
 			cout << "loss " << e << ": " << loss << endl;
 		}
 	}
 #endif
+
+	delete columnML;
 
 	return 0;
 }

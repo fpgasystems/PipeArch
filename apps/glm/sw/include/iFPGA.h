@@ -280,16 +280,16 @@ public:
 		cout << "DoesThreadFitDRAM" << endl;
 #endif
 		if( m_copiedBuffers.find(handle) != m_copiedBuffers.end() ) {
-#ifdef IFPGA_VERBOSE
-			cout << "handle already copied" << endl;
-#endif
+// #ifdef IFPGA_VERBOSE
+			cout << "----Handle already copied" << endl;
+// #endif
 			return true;
 		}
 		else {
-#ifdef IFPGA_VERBOSE
-			cout << "Need to copy handle. Size: " << totalSizeInCL << endl;
+// #ifdef IFPGA_VERBOSE
+			cout << "----Need to copy handle. Size: " << totalSizeInCL << endl;
 			cout << "m_numCLsAllocated: " << m_numCLsAllocated << endl;
-#endif
+// #endif
 			return (totalSizeInCL < MAX_NUM_CLS_DRAM - m_numCLsAllocated);
 		}
 	}

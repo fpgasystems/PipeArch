@@ -61,14 +61,10 @@ int main(int argc, char* argv[]) {
 	uint32_t partitionSize = 10400;
 
 #ifdef FPGA
-	xDevice xdevice;
-	Server* server[iFPGA::MAX_NUM_BANKS];
-	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
-		server[i] = new Server(false, false, i, &xdevice);
-	}
+	ServerWrapper server(false, false);
 	vector<FPGA_ColumnML*> columnML;
 	for (uint32_t c = 0; c < numClasses; c++) {
-		columnML.push_back(new FPGA_ColumnML(server[c%iFPGA::MAX_NUM_BANKS]));
+		columnML.push_back(new FPGA_ColumnML(server.GetServer()));
 	}
 #else
 	vector<ColumnML*> columnML;
@@ -199,7 +195,7 @@ int main(int argc, char* argv[]) {
 			}
 
 			double start = get_time();
-			FThread* fthread = server[0]->Request(columnML[0]);
+			FThread* fthread = server.Request(columnML[0]);
 			fthread->WaitUntilFinished();
 			double total = get_time() - start;
 			cout << "Avg time per epoch: " << total/numEpochs << endl;
@@ -234,13 +230,13 @@ int main(int argc, char* argv[]) {
 			}
 
 			for (uint32_t c = 0; c < numClasses; c++) {
-				server[c%iFPGA::MAX_NUM_BANKS]->PreCopy(columnML[c]);
+				server.PreCopy(columnML[c]);
 			}
 
 			double start = get_time();
 			vector<FThread*> fthreads(numClasses);
 			for (uint32_t c = 0; c < numClasses; c++) {
-				fthreads[c] = server[c%iFPGA::MAX_NUM_BANKS]->Request(columnML[c]);
+				fthreads[c] = server.Request(columnML[c]);
 			}
 			for (uint32_t c = 0; c < numClasses; c++) {
 				fthreads[c]->WaitUntilFinished();
@@ -286,9 +282,6 @@ int main(int argc, char* argv[]) {
 
 	for (uint32_t c = 0; c < numClasses; c++) {
 		delete columnML[c];
-	}
-	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
-		delete server[i];
 	}
 
 	return 0;
