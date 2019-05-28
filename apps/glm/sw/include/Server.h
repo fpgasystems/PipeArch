@@ -93,7 +93,7 @@ public:
 
 	bool IsFinished() {
 		auto output = iFPGA::CastToInt(m_cML->m_outputHandle);
-		if (1 == output[0] && (output[4] & 0xFF) == 0) {
+		if (1 == output[0] && (output[6] & 0xFF) == 0) { // output[6]&0xFF is pc
 			m_state = finished;
 			m_stopTime = get_time();
 			m_outputCopyRequested = false;
@@ -104,14 +104,8 @@ public:
 
 	bool IsPaused() {
 		auto output = iFPGA::CastToInt(m_cML->m_outputHandle);
-		if (1 == output[0] && (output[4] & 0xFF) > 0) {
-
-			// cout << "Paused fthread " << m_id << endl;
-			// cout << "output[1]: " << output[1] << endl;
-			// cout << "output[2]: " << output[2] << endl;
-			// cout << "output[3]: " << output[3] << endl;
-			// cout << "output[4]: " << output[4] << endl;
-
+		if (1 == output[0] && (output[6] & 0xFF) > 0) { // output[6]&0xFF is pc
+			output[4] = output[6]; // We added reg[3] and reg[4] later on... Need to fix this in HW.
 			m_state = paused;
 			m_outputCopyRequested = false;
 			return true;
@@ -294,7 +288,9 @@ public:
 	}
 
 	void GetInputHandleFromFPGA(FPGA_Program* cML) {
+#ifdef XILINX
 		CopyFromFPGASingle(cML->m_inputHandle, 0);
+#endif
 	}
 };
  

@@ -19,12 +19,12 @@ int main(int argc, char* argv[]) {
 	minibatchSize = atoi(argv[3]);
 	numEpochs = atoi(argv[4]);
 
-	uint32_t partitionSize = 16000;
+	uint32_t partitionSize = 64;
 
 	const uint32_t NUM_JOBS = 2;
 
 	xDevice xdevice;
-	Server server(false, false, 0, &xdevice);
+	Server server(true, false, 0, &xdevice);
 
 	FPGA_ColumnML* columnML[NUM_JOBS];
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
@@ -53,15 +53,15 @@ int main(int argc, char* argv[]) {
 
 	for (uint32_t i = 0; i < NUM_JOBS; i++) {
 		if (i%2 == 0) {
-			// if (i == 0) {
-			// 	columnML[i]->SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
-			// }
+			if (i == 0) {
+				columnML[i]->SGD(type, nullptr, numEpochs, 1, stepSize, lambda, &args);
+			}
 			columnML[i]->fSGD(type, numEpochs, stepSize, lambda, 0);
 		}
 		else {
-			// if (i == 1) {
-			// 	columnML[i]->SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
-			// }
+			if (i == 1) {
+				columnML[i]->SGD(type, nullptr, numEpochs, minibatchSize, stepSize, lambda, &args);
+			}
 			columnML[i]->fSGD_minibatch(type, numEpochs, minibatchSize, stepSize, lambda, 0);
 		}
 		server.PreCopy(columnML[i]);
