@@ -17,7 +17,12 @@ begin
     internal_reset <= reset;
 end
 
-logic [WIDTH-1:0] memory [2**LOG2_DEPTH-1:0];
+`ifdef XILINX
+(* ram_style = "registers" *) logic [WIDTH-1:0] memory [2**LOG2_DEPTH-1:0];
+`else
+(* ram_style = "MLAB" *) reg [WIDTH-1:0] memory [2**LOG2_DEPTH-1:0];
+`endif
+
 logic [LOG2_DEPTH-1:0] waddr;
 logic [LOG2_DEPTH-1:0] raddr;
 logic [LOG2_DEPTH-1:0] count;
@@ -80,6 +85,9 @@ begin
 	// Reset
 	if (internal_reset)
 	begin
+		for (int i = 0; i < 2**LOG2_DEPTH; i++) begin // to ensure implementation as reg
+			memory[i] <= 0;
+		end
 		waddr <= 0;
 		raddr <= 0;
 	end
