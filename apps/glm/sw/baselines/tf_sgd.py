@@ -7,85 +7,46 @@ import os
 import sys
 from random import shuffle
 import time
+import threading
 
 import numpy as np
 import tensorflow as tf
 
-# tf.enable_eager_execution()
-# tfe = tf.contrib.eager
+# config = tf.ConfigProto(log_device_placement=True)
+config = tf.ConfigProto()
+config.gpu_options.per_process_gpu_memory_fraction = 0.8
 
-# class LogReg(tf.keras.layers.Layer):
-# 	def __init__(self, num_features):
-# 		super(LogReg, self).__init__()
-# 		self.tf_w = self.add_variable("kernel", shape=[num_features,1], dtype=tf.float32, initializer='zeros')
+def tf_logreg(num_features, num_classes, which_gpu):
+	with tf.device('/device:GPU:'+str(which_gpu)):
+		tf.set_random_seed(7)
 
-# 	def call(self, x):
-# 		return tf.nn.sigmoid(tf.matmul(x, self.tf_w))
+		learning_rate = tf.placeholder("float", name='learning_rate')
+		regularization = tf.placeholder("float", name='regularization')
 
-# def loss(model, x, y):
-# 	num_samples = y.shape[0]
-# 	ones = np.ones((num_samples,1)).astype(np.float32)
+		tf_x = tf.placeholder("float", [None, num_features], name='x')
+		tf_y = tf.placeholder("int32", [None], name='y')
 
-# 	predictions = model(x)
+		x = tf.reshape(tf_x, [-1, num_features])
+		y = tf.one_hot(tf_y, depth=num_classes, on_value=1.0, off_value=0.0)
+		y = tf.reshape(y, [-1, num_classes])
 
-# 	positiveLoss = tf.multiply( y, tf.log(predictions) )
-# 	negativeLoss = tf.multiply( tf.subtract(ones, y), tf.log(tf.subtract(ones, predictions)) )
+		tf_w = tf.get_variable("model", [num_features, num_classes], dtype=tf.float32, initializer=tf.zeros_initializer)
 
-# 	loss = -tf.reduce_sum( tf.add(positiveLoss, negativeLoss) )
-# 	loss = tf.divide(loss, num_samples)
-# 	return loss
+		logits = tf.nn.sigmoid(tf.matmul(x, tf_w))
 
-# def grad(model, x, y):
-# 	with tf.GradientTape() as tape:
-# 		loss_value = loss(model, x, y)
-# 	return loss_value, tape.gradient(loss_value, model.trainable_variables)
+		# loss = tf.losses.softmax_cross_entropy(y, tf.log(logits))
 
-# def train(model, x, y, num_epochs, minibatch_size, learning_rate, regularization):
-# 	num_samples = y.shape[0]
-# 	optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
-# 	global_step = tf.train.get_or_create_global_step()
+		positiveLoss = tf.log(logits)
+		negativeLoss = tf.log(1-logits)
+		loss = tf.reduce_sum( tf.add(tf.multiply(y, positiveLoss), tf.multiply((1-y), negativeLoss)) )
+		loss = -loss/(num_classes* tf.cast(tf.shape(y)[0], dtype=tf.float32) )
 
-# 	initial_loss = loss(model, x, y)
-# 	print('initial_loss: ' + str(initial_loss))
+		loss = loss + regularization*tf.reduce_sum(tf.abs(tf_w))
+		loss = tf.identity(loss, name="loss")
 
-# 	for epoch in range(0, num_epochs):
-# 		for i in range(0, int(num_samples/minibatch_size)):
-# 			_, grads = grad(model, x[i*minibatch_size:(i+1)*minibatch_size,:], y[i*minibatch_size:(i+1)*minibatch_size,:])
-# 			optimizer.apply_gradients(zip(grads, model.variables), global_step)
+		optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
 
-# 		loss_value = loss(model, x, y)
-# 		print(loss_value)
-
-def tf_logreg(num_features, num_classes):
-	tf.set_random_seed(7)
-
-	learning_rate = tf.placeholder("float", name='learning_rate')
-	regularization = tf.placeholder("float", name='regularization')
-
-	tf_x = tf.placeholder("float", [None, num_features], name='x')
-	tf_y = tf.placeholder("int32", [None], name='y')
-
-	x = tf.reshape(tf_x, [-1, num_features])
-	y = tf.one_hot(tf_y, depth=num_classes, on_value=1.0, off_value=0.0)
-	y = tf.reshape(y, [-1, num_classes])
-
-	tf_w = tf.get_variable("model", [num_features, num_classes], dtype=tf.float32, initializer=tf.zeros_initializer)
-
-	logits = tf.nn.sigmoid(tf.matmul(x, tf_w))
-
-	# loss = tf.losses.softmax_cross_entropy(y, tf.log(logits))
-
-	positiveLoss = tf.log(logits)
-	negativeLoss = tf.log(1-logits)
-	loss = tf.reduce_sum( tf.add(tf.multiply(y, positiveLoss), tf.multiply((1-y), negativeLoss)) )
-	loss = -loss/(num_classes* tf.cast(tf.shape(y)[0], dtype=tf.float32) )
-
-	loss = loss + regularization*tf.reduce_sum(tf.abs(tf_w))
-	loss = tf.identity(loss, name="loss")
-
-	optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
-
-	return tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization
+		return tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization
 
 parser = argparse.ArgumentParser()
 
@@ -104,6 +65,16 @@ parser.add_argument(
 	type=int,
 	required=1,
 	help='num_classes')
+parser.add_argument(
+	'--mb',
+	type=int,
+	required=1,
+	help='minibatch size')
+parser.add_argument(
+	'--gpu',
+	type=int,
+	required=1,
+	help='which gpu?')
 
 args = parser.parse_args()
 
@@ -141,52 +112,44 @@ for i in range(0,2):
 	print('y[i]: ' + str(y[i]))
 
 num_epochs = 10
-minibatch_size = 512
+minibatch_size = args.mb
 lr = 0.8
 reg = 0.0001
 
 num_features = X_norm.shape[1]
 num_samples = y.shape[0]
 
-# tf_x = X_norm.astype(np.float32)
-# tf_y = np.reshape(y,(num_samples, 1)).astype(np.float32)
-# model = LogReg(num_features)
-# train(model, tf_x, tf_y, 10, minibatch_size, lr, reg)
+def train_job():
+	tf.reset_default_graph()
+	tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization = tf_logreg(X_norm.shape[1], args.num_classes, args.gpu)
+	init = tf.global_variables_initializer()
 
-tf.reset_default_graph()
-tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization = tf_logreg(X_norm.shape[1], args.num_classes)
-init = tf.global_variables_initializer()
+	total = 0.0
+	with tf.Session(config=config) as sess:
+		sess.run(init)
+		initial_loss = sess.run(loss, feed_dict={tf_x:X_norm, tf_y:y, learning_rate:0, regularization:reg})
+		print('Inital loss: ' + str(initial_loss))
 
-total = 0.0
-with tf.Session() as sess:
-	sess.run(init)
-	initial_loss = sess.run(loss, feed_dict={tf_x:X_norm, tf_y:y, learning_rate:0, regularization:reg})
-	print('Inital loss: ' + str(initial_loss))
+		for epoch in range(0, num_epochs):
+			start = time.time()
+			for i in range(0, int(y.shape[0]/minibatch_size) ):
+				_ = sess.run(optimizer, feed_dict={
+					tf_x:X_norm[i*minibatch_size:(i+1)*minibatch_size, :].reshape(minibatch_size,X_norm.shape[1]),
+					tf_y:y[i*minibatch_size:(i+1)*minibatch_size].reshape(minibatch_size), 
+					learning_rate:lr,
+					regularization:reg})
 
-	for epoch in range(0, num_epochs):
-		start = time.time()
-		for i in range(0, int(y.shape[0]/minibatch_size) ):
-			_ = sess.run(optimizer, feed_dict={
-				tf_x:X_norm[i*minibatch_size:(i+1)*minibatch_size, :].reshape(minibatch_size,X_norm.shape[1]),
-				tf_y:y[i*minibatch_size:(i+1)*minibatch_size].reshape(minibatch_size), 
-				learning_rate:lr,
+			end = time.time()
+			total += (end-start)
+
+			epoch_loss = sess.run(loss, feed_dict={
+				tf_x:X_norm,
+				tf_y:y,
+				learning_rate:0,
 				regularization:reg})
+			print(str(epoch_loss))
 
-		end = time.time()
-		total += (end-start)
+		print('avg time per epoch: ' + str(total/num_epochs))
 
-		epoch_loss = sess.run(loss, feed_dict={
-			tf_x:X_norm,
-			tf_y:y,
-			learning_rate:0,
-			regularization:reg})
-		print(str(epoch_loss))
-
-	print('avg time per epoch: ' + str(total/num_epochs))
-
-	# weights = sess.run(tf_w)
-	# print(weights)
-
-	# f_out = open('model_' + str(weights.shape[0]), 'w');
-	# weights.tofile(f_out)
-	# f_out.close()
+for thread in range(0, 1): # to see what the GPU does with multiple threads running
+	threading.Thread(target=train_job).start()
