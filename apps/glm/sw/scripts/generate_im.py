@@ -85,6 +85,10 @@ classes = [
 ,3		#'tiger shark, Galeocerdo cuvieri',
 ,4		#'hammerhead, hammerhead shark',
 ]
+if args.num_classes > 16: # complete the rest
+	for c in range(16, args.num_classes):
+		classes.append(c-11)
+
 for c in range(0, args.num_classes):
 	samples.extend( reformat_features(args.features_dir, [classes[c]], c, args.num_samples) )
 
