@@ -43,6 +43,11 @@ to SOMEWHERE/Tools/Mentor/questa-10.5a/questasim/modelsim.ini
 - export XCL_EMULATION_MODE=hw_emu
 - ./host [options]
 
+### Build xclbin
+- !!! make use `define XILINX is uncommented in common-rtl/pipearch_common.vh
+- cd xilinx_work
+- make TARGETS=hw all
+
 ## Set up postgresql (for MADLib baselines)
 - Install postgres-10.0 from source. Download postgresql-10.0.tar.gz. Extract.
 	- cd postgresql-10.0/
