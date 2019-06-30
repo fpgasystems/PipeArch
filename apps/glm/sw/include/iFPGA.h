@@ -45,9 +45,15 @@ public:
 		m_device = m_devices[0];
 		m_context = cl::Context(m_device, NULL, NULL, NULL, &err);
 		std::string device_name = m_device.getInfo<CL_DEVICE_NAME>(&err);
+
 		// Create Program and Kernel
-		std::string binaryFile = xcl::find_binary_file(device_name, "mytop");
-		m_bins = xcl::import_binary_file(binaryFile);
+		// std::string binaryFile = xcl::find_binary_file(device_name, "mytop");
+		// m_bins = xcl::import_binary_file(binaryFile);
+		std::string binaryFile = "xclbin/mytop.hw_emu.xilinx_vcu1525_xdma_201830_1.xclbin";
+		unsigned fileBufSize;
+		char* fileBuf = xcl::read_binary_file(binaryFile, fileBufSize);
+		m_bins = cl::Program::Binaries{{fileBuf, fileBufSize}};
+
 		m_devices.resize(1);
 		m_program = cl::Program(m_context, m_devices, m_bins, NULL, &err);
 #endif
