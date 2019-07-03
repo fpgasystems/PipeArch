@@ -6,7 +6,7 @@
 
 #define VALUE_TO_INT_SCALER 10
 
-#define FPGA
+//#define FPGA
 
 void thread_SGD(
 	uint32_t threadId,
@@ -44,21 +44,21 @@ int main(int argc, char* argv[]) {
 	uint32_t numFeatures = 0;
 	uint32_t numEpochs = 10;
 	uint32_t minibatchSize = 1;
+	uint32_t partitionSize = 10400;
 	uint32_t numClasses = 2;
 	uint32_t sw0hw1 = 0;
-	if (!(argc == 8)) {
-		cout << "Usage: ./app <pathToDataset> <numSamples> <numFeatures> <minibatchSize> <numEpochs> <numClasses> <sw0hw1>" << endl;
+	if (!(argc == 9)) {
+		cout << "Usage: ./app <pathToDataset> <numSamples> <numFeatures> <minibatchSize> <partitionSize> <numEpochs> <numClasses> <sw0hw1>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
 	numSamples = atoi(argv[2]);
 	numFeatures = atoi(argv[3]);
 	minibatchSize = atoi(argv[4]);
-	numEpochs = atoi(argv[5]);
-	numClasses = atoi(argv[6]);
-	sw0hw1 = atoi(argv[7]);
-
-	uint32_t partitionSize = 10400;
+	partitionSize = atoi(argv[5]);
+	numEpochs = atoi(argv[6]);
+	numClasses = atoi(argv[7]);
+	sw0hw1 = atoi(argv[8]);
 
 #ifdef FPGA
 	ServerWrapper server(false, false);
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
 	ModelType type;
 	if ( strcmp(pathToDataset, "syn") == 0) {
 		columnML[0]->m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
-		type = linreg;
+		type = logreg;
 	}
 	else {
 		if (numClasses > 2) {
@@ -95,13 +95,13 @@ int main(int argc, char* argv[]) {
 			type = logreg;
 		}
 		else {
-			columnML[0]->m_cstore->LoadLibsvmData(pathToDataset, numSamples, numFeatures, true);
+			columnML[0]->m_cstore->LoadRawData(pathToDataset, numSamples, numFeatures, true);
 			columnML[0]->m_cstore->PrintSamples(2);
 			columnML[0]->m_cstore->NormalizeSamples(ZeroToOne, column);
 			type = linreg;
 		}
-		columnML[0]->m_cstore->PopulateRowSamples();
 	}
+	columnML[0]->m_cstore->PopulateRowSamples();
 
 	AdditionalArguments args;
 	args.m_firstSample = 0;

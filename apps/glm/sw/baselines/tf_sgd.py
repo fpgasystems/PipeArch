@@ -16,55 +16,66 @@ import tensorflow as tf
 config = tf.ConfigProto()
 config.gpu_options.per_process_gpu_memory_fraction = 0.8
 
+def tf_logreg_model(num_features, num_classes, which_gpu):
+	tf.set_random_seed(7)
+
+	learning_rate = tf.placeholder("float", name='learning_rate')
+	regularization = tf.placeholder("float", name='regularization')
+
+	tf_x = tf.placeholder("float", [None, num_features], name='x')
+	tf_y = tf.placeholder("int32", [None], name='y')
+
+	x = tf.reshape(tf_x, [-1, num_features])
+	y = tf.one_hot(tf_y, depth=num_classes, on_value=1.0, off_value=0.0)
+	y = tf.reshape(y, [-1, num_classes])
+
+	tf_w = tf.get_variable("model", [num_features, num_classes], dtype=tf.float32, initializer=tf.zeros_initializer)
+
+	logits = tf.nn.sigmoid(tf.matmul(x, tf_w))
+
+	# loss = tf.losses.softmax_cross_entropy(y, tf.log(logits))
+
+	positiveLoss = tf.log(logits)
+	negativeLoss = tf.log(1-logits)
+	loss = tf.reduce_sum( tf.add(tf.multiply(y, positiveLoss), tf.multiply((1-y), negativeLoss)) )
+	loss = -loss/(num_classes* tf.cast(tf.shape(y)[0], dtype=tf.float32) )
+
+	loss = loss + regularization*tf.reduce_sum(tf.abs(tf_w))
+	loss = tf.identity(loss, name="loss")
+
+	optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
+
+	return tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization
+
 def tf_logreg(num_features, num_classes, which_gpu):
-	with tf.device('/device:GPU:'+str(which_gpu)):
-		tf.set_random_seed(7)
-
-		learning_rate = tf.placeholder("float", name='learning_rate')
-		regularization = tf.placeholder("float", name='regularization')
-
-		tf_x = tf.placeholder("float", [None, num_features], name='x')
-		tf_y = tf.placeholder("int32", [None], name='y')
-
-		x = tf.reshape(tf_x, [-1, num_features])
-		y = tf.one_hot(tf_y, depth=num_classes, on_value=1.0, off_value=0.0)
-		y = tf.reshape(y, [-1, num_classes])
-
-		tf_w = tf.get_variable("model", [num_features, num_classes], dtype=tf.float32, initializer=tf.zeros_initializer)
-
-		logits = tf.nn.sigmoid(tf.matmul(x, tf_w))
-
-		# loss = tf.losses.softmax_cross_entropy(y, tf.log(logits))
-
-		positiveLoss = tf.log(logits)
-		negativeLoss = tf.log(1-logits)
-		loss = tf.reduce_sum( tf.add(tf.multiply(y, positiveLoss), tf.multiply((1-y), negativeLoss)) )
-		loss = -loss/(num_classes* tf.cast(tf.shape(y)[0], dtype=tf.float32) )
-
-		loss = loss + regularization*tf.reduce_sum(tf.abs(tf_w))
-		loss = tf.identity(loss, name="loss")
-
-		optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
-
-		return tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization
+	if which_gpu != -1:
+		with tf.device('/device:GPU:'+str(which_gpu)):
+			return tf_logreg_model(num_features, num_classes, which_gpu)
+	else:
+		return tf_logreg_model(num_features, num_classes, which_gpu)
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
-	'--train_file',
+	'--tf',
 	type=str,
 	required=1,
 	help='Absolute path to the raw train file.')
 parser.add_argument(
-	'--num_features',
+	'--ns',
 	type=int,
 	required=1,
-	help='num_features')
+	help='num samples (only used if tf == syn)')
 parser.add_argument(
-	'--num_classes',
+	'--nf',
 	type=int,
 	required=1,
-	help='num_classes')
+	help='num features')
+parser.add_argument(
+	'--nc',
+	type=int,
+	required=1,
+	help='num classes')
 parser.add_argument(
 	'--mb',
 	type=int,
@@ -78,14 +89,17 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-samples = np.fromfile(args.train_file, dtype=float)
+if (args.tf == 'syn'):
+	samples = np.random.rand(args.ns, args.nf+1)
+else:
+	samples = np.fromfile(args.tf, dtype=float)
 
-print('len(samples): ' + str(len(samples)) )
-print('len(samples)/(args.num_features+1): ' + str(len(samples)/(args.num_features+1)) )
-num_samples = int(len(samples)/(args.num_features+1))
-print('num_samples: ' + str(num_samples))
+	print('len(samples): ' + str(len(samples)) )
+	print('len(samples)/(args.nf+1): ' + str(len(samples)/(args.nf+1)) )
+	num_samples = int(len(samples)/(args.nf+1))
+	print('num_samples: ' + str(num_samples))
 
-samples = np.reshape(samples, (num_samples, args.num_features+1))
+	samples = np.reshape(samples, (num_samples, args.nf+1))
 
 X = samples[:,1:]
 y = samples[:,0]
@@ -111,7 +125,7 @@ for i in range(0,2):
 	print('X_norm[i]: ' + str(X_norm[i,:]))
 	print('y[i]: ' + str(y[i]))
 
-num_epochs = 10
+num_epochs = 2
 minibatch_size = args.mb
 lr = 0.8
 reg = 0.0001
@@ -121,7 +135,7 @@ num_samples = y.shape[0]
 
 def train_job():
 	tf.reset_default_graph()
-	tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization = tf_logreg(X_norm.shape[1], args.num_classes, args.gpu)
+	tf_x, tf_y, tf_w, loss, optimizer, learning_rate, regularization = tf_logreg(X_norm.shape[1], args.nc, args.gpu)
 	init = tf.global_variables_initializer()
 
 	total = 0.0
