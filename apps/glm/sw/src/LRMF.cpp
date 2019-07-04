@@ -1,5 +1,7 @@
 #include "LRMF.h"
 
+// #define WRITE_LRMF_SYN_FILE
+
 void LRMF::ReadNetflixData(char* pathToFile, int Mdim, int Udim) {
 	FILE* f = fopen(pathToFile, "r");
 	if (f == NULL) {
@@ -78,13 +80,15 @@ void LRMF::GenerateSyntheticData(int Mdim, uint32_t Udim) {
 	m_Mdim = Mdim;
 	m_Udim = Udim;
 
+#ifdef WRITE_LRMF_SYN_FILE
+	ofstream ofs("syn.libmf");
+#endif
+
 	uint32_t totalNumEntries = 0;
 	m_L.reserve(m_Mdim);
 	for (uint32_t i = 0; i < m_Mdim; i++) {
 
-		uint32_t numEntries = RandRange(m_Udim*0.2);
-		// cout << "Mindex: " << i << endl;
-		// cout << "numEntries: " << numEntries << endl;
+		uint32_t numEntries = RandRange(m_Udim*0.05);
 		totalNumEntries += numEntries;
 
 		vector<Label> tempV;
@@ -100,10 +104,19 @@ void LRMF::GenerateSyntheticData(int Mdim, uint32_t Udim) {
 			tempB.m_Mindex = i;
 			tempB.m_value = tempLabel.m_value;
 			m_LB.push_back(tempB);
+#ifdef WRITE_LRMF_SYN_FILE
+			ofs << tempB.m_Mindex << " " << tempB.m_Uindex << " " << tempB.m_value << endl;
+#endif
 		}
-
+#ifdef WRITE_LRMF_SYN_FILE
+		cout << i << endl;
+#endif
 		m_L.push_back(tempV);
 	}
+
+#ifdef WRITE_LRMF_SYN_FILE
+	ofs.close();
+#endif
 
 	cout << "m_Mdim: " << m_Mdim << endl;
 	cout << "m_Udim: " << m_Udim << endl;

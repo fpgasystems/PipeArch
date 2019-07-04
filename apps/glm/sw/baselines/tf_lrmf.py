@@ -14,12 +14,12 @@ import tensorflow as tf
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
-	"--train_file",
+	"--tf",
 	type=str,
 	required=1,
 	help="Absolute path to the raw train file.")
 parser.add_argument(
-	"--num_features",
+	"--nf",
 	type=int,
 	required=1,
 	help="num_features")
@@ -28,43 +28,78 @@ parser.add_argument(
 	type=int,
 	required=1,
 	help="mdim")
+parser.add_argument(
+	"--f",
+	type=str,
+	required=1,
+	help="File format (raw) or (libmf)")
 
 args = parser.parse_args()
-
-L = np.fromfile(args.train_file, dtype=np.uint32)
-
-print("L.shape: " + str(L.shape))
-print("Mdim: " + str(L[0]))
-
-pos = 0
-Mdim = L[pos]
-pos += 1
-Udim = 0
 
 Mindex = []
 Uindex = []
 Value = []
-count = 0
-for i in range(0, Mdim):
-	tempMindex = L[pos]
-	pos += 1
-	numEntries = L[pos]
-	pos += 1
 
-	for j in range(0, numEntries):
+if args.f == 'raw':
+	L = np.fromfile(args.tf, dtype=np.uint32)
+
+	print("L.shape: " + str(L.shape))
+	print("Mdim: " + str(L[0]))
+
+	pos = 0
+	Mdim = L[pos]
+	pos += 1
+	Udim = 0
+	count = 0
+	for i in range(0, Mdim):
+		tempMindex = L[pos]
+		pos += 1
+		numEntries = L[pos]
+		pos += 1
+
+		for j in range(0, numEntries):
+			count += 1
+			Mindex.append( tempMindex )
+			tempUindex = L[pos]
+			Uindex.append( tempUindex )
+			pos += 1
+			Value.append ( L[pos] )
+			pos += 1
+			if (tempUindex+1 > Udim):
+				Udim = tempUindex+1
+
+		if (i == args.mdim-1):
+			Mdim = args.mdim
+			break
+elif args.f == 'libmf':
+	f = open(args.tf, 'r')
+
+	Mdim = 0
+	Udim = 0
+	count = 0
+	for line in f:
+		items = line.split(" ")
+		m = int(items[0])
+		u = int(items[1])
+		v = int(items[2])
+
+		Mindex.append(m)
+		Uindex.append(u)
+		Value.append(v)
+
 		count += 1
-		Mindex.append( tempMindex )
-		tempUindex = L[pos]
-		Uindex.append( tempUindex )
-		pos += 1
-		Value.append ( L[pos] )
-		pos += 1
-		if (tempUindex+1 > Udim):
-			Udim = tempUindex+1
-
-	if (i == args.mdim-1):
-		Mdim = args.mdim
-		break
+		if (m > Mdim):
+			Mdim = m
+		if (u > Udim):
+			Udim = u
+		if (Mdim == args.mdim):
+				Mdim = args.mdim
+				break
+	Mdim += 1
+	Udim += 1
+else:
+	print("Wrong format at --f")
+	sys.exit()
 
 print("count: " + str(count))
 print("Mdim: " + str(Mdim))
@@ -111,7 +146,7 @@ reg = 0
 minibatch_size = len(data)
 
 tf.reset_default_graph()
-learning_rate, regularization, m_indexes, u_indexes, values, loss, optimizer = tf_lrmf(Mdim, Udim, args.num_features)
+learning_rate, regularization, m_indexes, u_indexes, values, loss, optimizer = tf_lrmf(Mdim, Udim, args.nf)
 init = tf.global_variables_initializer()
 
 with tf.Session() as sess:
