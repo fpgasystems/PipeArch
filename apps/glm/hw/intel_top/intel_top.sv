@@ -118,7 +118,7 @@ module intel_top
 
     // Connect to the AFU
     intel_arbiter
-    #(.NUM_INSTANCES(3))
+    #(.NUM_INSTANCES(2))
     intel_arbiter_inst
     (
         .clk,

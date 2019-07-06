@@ -77,7 +77,7 @@ LDCLFLAGS+= -g
 # Kernel assignments
 LDCLFLAGS+=--nk $(mytop_KERNEL):1 --nk $(mytop_KERNELi):1 --nk $(mytop_KERNELii):1 --nk $(mytop_KERNELiii):1
 LDCLFLAGS+=--sp $(mytop_KERNEL)_1.m_axi_gmem:bank0 --sp $(mytop_KERNELi)_1.m_axi_gmem:bank1 --sp $(mytop_KERNELii)_1.m_axi_gmem:bank2 --sp $(mytop_KERNELiii)_1.m_axi_gmem:bank3
-LDCLFLAGS+=--xp param:compiler.userPostSysLinkTcl=$(PWD)/userPostSysLink.tcl
+#LDCLFLAGS+=--xp param:compiler.userPostSysLinkTcl=$(PWD)/userPostSysLink.tcl
 
 include rules.mk
 
