@@ -70,8 +70,8 @@ int main(int argc, char* argv[]) {
 	MemoryFormat format = ColumnStore;
 
 	if (sw0hw1 == 0) {
-		columnML[0]->SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
-		// columnML[0]->AVXmulti_SCD(type, false, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args, numInstances);
+		// columnML[0]->SCD(type, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args);
+		columnML[0]->AVXmulti_SCD(type, false, nullptr, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args, numInstances);
 	}
 	else {
 #ifdef FPGA

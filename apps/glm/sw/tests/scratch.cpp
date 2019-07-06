@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
 	args.m_useOnehotLabels = false;
 
 	// Set memory format / decide on SGD or SCD
-	MemoryFormat format = ColumnStore;
+	MemoryFormat format = RowStore;
 
 	if (format == RowStore) {
 		stepSize = 0.001;

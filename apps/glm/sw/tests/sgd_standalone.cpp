@@ -6,7 +6,7 @@
 
 #define VALUE_TO_INT_SCALER 10
 
-//#define FPGA
+#define FPGA
 
 void thread_SGD(
 	uint32_t threadId,
