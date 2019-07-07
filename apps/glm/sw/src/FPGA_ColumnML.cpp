@@ -732,6 +732,9 @@ bool FPGA_ColumnML::fSCD(
 
 	m_inst[pc].Jump(2, numEpochs-1, pcEpochStart, 0xFFFFFFFF);
 	m_inst[pc].IncrementIndex(2);
+	if (m_useContextSwitch) {
+		m_inst[pc].EnableContextSwitch();
+	}
 	pc++;
 	// *************************************************************************
 	//

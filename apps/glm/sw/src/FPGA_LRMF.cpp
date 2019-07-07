@@ -406,9 +406,14 @@ bool FPGA_LRMF::fOptimizeRound(
 	m_inst[pc].WriteBack(true, m_Mchunk.m_offsetInCL, m_tileSize*m_numFeaturesInCL,
 		0, m_tileSize*m_numFeaturesInCL, 0,
 		true, writebackMRead, Instruction::WRITEBACK_MODEL_CHANNEL);
+	pc++;
+
+	m_inst[pc].Jump(1, MtileToStart+numTilesM-1, loadMtile, pc+1);
 	m_inst[pc].SetIndex(0, UtileToStart);
 	m_inst[pc].IncrementIndex(1);
-	m_inst[pc].Jump(1, MtileToStart+numTilesM-1, loadMtile, pc+1);
+	if (m_useContextSwitch) {
+		m_inst[pc].EnableContextSwitch();
+	}
 	pc++;
 
 	m_inst[pc].Jump(2, numEpochs-1, loadMtile, 0xFFFFFFFF);

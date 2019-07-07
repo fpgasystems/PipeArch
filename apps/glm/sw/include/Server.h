@@ -263,7 +263,7 @@ public:
 
 	FThread* Request(FPGA_Program* cML) {
 		PreCopy(cML);
-		unique_lock<mutex> lck(m_mtx);
+		// unique_lock<mutex> lck(m_mtx);
 		FThread* fthread = new FThread(cML, m_numThreads++, 0);
 		m_requestQueue.push(fthread);
 		return fthread;
@@ -271,7 +271,7 @@ public:
 
 	FThread* Request(FPGA_Program* cML, uint32_t priority) {
 		PreCopy(cML);
-		unique_lock<mutex> lck(m_mtx);
+		// unique_lock<mutex> lck(m_mtx);
 		FThread* fthread = new FThread(cML, m_numThreads++, priority);
 		m_requestQueue.push(fthread);
 		return fthread;
