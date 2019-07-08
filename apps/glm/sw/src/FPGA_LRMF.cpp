@@ -422,6 +422,18 @@ bool FPGA_LRMF::fOptimizeRound(
 	m_inst[pc].IncrementIndex(2);
 	pc++;
 
+	// Context Store Instructions
+	uint32_t pcContextStore = pc;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF0, 0xFFFFFFF0);
+	pc++;
+
+	// Context Load Instructions
+	uint32_t pcContextLoad = pc;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF1, 0xFFFFFFF1);
+	pc++;
+
 	// *************************************************************************
 	//
 	//   END Program
@@ -431,7 +443,7 @@ bool FPGA_LRMF::fOptimizeRound(
 	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
-	WriteProgramMemory(0, 0);
+	WriteProgramMemory(pcContextStore, pcContextLoad);
 
 	return true;
 }

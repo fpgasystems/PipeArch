@@ -51,6 +51,7 @@ public:
 	uint32_t m_numAccessIndexesPerTileInCL;
 	uint32_t m_numLocalIndexesPerTileInCL;
 
+	FPGA_LRMF(iFPGA* ifpga, uint32_t numFeatures, bool useContextSwitch) : LRMF(numFeatures), FPGA_Program(ifpga, useContextSwitch) {}
 	FPGA_LRMF(iFPGA* ifpga, uint32_t numFeatures) : LRMF(numFeatures), FPGA_Program(ifpga, false) {}
 	FPGA_LRMF(iFPGA* ifpga) : LRMF(0), FPGA_Program(ifpga, false) {}
 

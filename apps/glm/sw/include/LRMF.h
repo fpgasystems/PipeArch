@@ -156,7 +156,7 @@ public:
 	}
 
 	void ReadNetflixData(char* pathToFile, int Mdim, int Udim);
-	void GenerateSyntheticData(int Mdim, uint32_t Udim);
+	void GenerateSyntheticData(int Mdim, uint32_t Udim, float sparsenessFactor);
 	void DivideLBIntoTiles(uint32_t tileSize);
 	float Loss(float lambda);
 	float RMSE();

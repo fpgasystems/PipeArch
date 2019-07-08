@@ -72,7 +72,7 @@ void LRMF::ReadNetflixData(char* pathToFile, int Mdim, int Udim) {
 	m_LBTiled.clear();
 }
 
-void LRMF::GenerateSyntheticData(int Mdim, uint32_t Udim) {
+void LRMF::GenerateSyntheticData(int Mdim, uint32_t Udim, float sparsenessFactor) {
 	srand(3);
 
 	deallocData();
@@ -88,7 +88,7 @@ void LRMF::GenerateSyntheticData(int Mdim, uint32_t Udim) {
 	m_L.reserve(m_Mdim);
 	for (uint32_t i = 0; i < m_Mdim; i++) {
 
-		uint32_t numEntries = RandRange(m_Udim*0.05);
+		uint32_t numEntries = RandRange((float)m_Udim*sparsenessFactor);
 		totalNumEntries += numEntries;
 
 		vector<Label> tempV;

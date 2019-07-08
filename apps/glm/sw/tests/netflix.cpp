@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
 #endif
 
 	if ( strcmp(pathToDataset, "syn") == 0) {
-		lrmf[0]->GenerateSyntheticData(Mdim, Udim);
+		lrmf[0]->GenerateSyntheticData(Mdim, Udim, 0.05);
 	}
 	else {
 		lrmf[0]->ReadNetflixData(pathToDataset, Mdim, Udim);

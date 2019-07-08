@@ -87,12 +87,14 @@ int main(int argc, char* argv[]) {
 				jobs[1].m_numFeatures = 784;
 				jobs[1].m_numEpochs = 80;
 				jobs[1].m_minibatchSize = 32;
+				break;
 			case 2:
 				jobs[2].m_type = logreg;
 				jobs[2].m_numSamples = 80000;
 				jobs[2].m_numFeatures = 2048;
 				jobs[2].m_numEpochs = 50;
 				jobs[2].m_minibatchSize = 1;
+				break;
 		}
 		jobs[i].m_totalSize = (((float)4*jobs[i].m_numSamples*jobs[i].m_numFeatures)/1e9)*jobs[i].m_numEpochs;
 	}

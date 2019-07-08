@@ -207,7 +207,7 @@ private:
 	bool m_enableContextSwitch;
 	bool m_enableThreadMigration;
 
-	void ResumeThread(FThread* fthread, uint32_t whichInstance);
+	void ResumeThread(FThread* fthread, uint32_t whichInstance, uint32_t runningThreadsOnThisInstance);
 	void PauseThread(FThread* fthread, uint32_t whichInstance);
 	void ScheduleThreads();
 	void RedistributeThreads();

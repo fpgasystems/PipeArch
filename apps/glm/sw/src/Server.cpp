@@ -107,7 +107,7 @@ FThread* Instance::GetThreadToMigrate() {
 	return threadToMigrate;
 }
 
-void Server::ResumeThread(FThread* fthread, uint32_t whichInstance) {
+void Server::ResumeThread(FThread* fthread, uint32_t whichInstance, uint32_t runningThreadsOnThisInstance) {
 	if (fthread == NULL) {
 		return;
 	}
@@ -139,7 +139,7 @@ void Server::ResumeThread(FThread* fthread, uint32_t whichInstance) {
 	buffersToCopy.push_back(outputMemory);
 	CopyToFPGA(buffersToCopy);
 
-	uint64_t triggerContextSwitch = m_enableContextSwitch;
+	uint64_t triggerContextSwitch = m_enableContextSwitch && (runningThreadsOnThisInstance > 1);
 	iFPGA::WriteConfigReg(0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
 	iFPGA::WriteConfigReg(1, programMemory);
 	iFPGA::WriteConfigReg(2, inputMemory);
@@ -180,7 +180,7 @@ void Server::ScheduleThreads() {
 		FThread* threadToResume = m_instance[k]->GetThreadToResume();
 
 		if (m_instance[k]->GetNumRunningThreads() == 0) {
-			ResumeThread(threadToResume, k);
+			ResumeThread(threadToResume, k, m_instance[k]->GetNumThreads());
 		}
 		if (m_enableContextSwitch) {
 			PauseThread(threadToPause, k);
