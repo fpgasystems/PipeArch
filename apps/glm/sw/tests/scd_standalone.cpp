@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
 	else {
 #ifdef FPGA
 
-		columnML[0]->CreateMemoryLayout(format, partitionSize, 1);
+		columnML[0]->CreateMemoryLayout(format, partitionSize);
 		for (uint32_t i = 1; i < numInstances; i++) {
 			columnML[i]->UseCreatedMemoryLayout(columnML[0]);
 		}

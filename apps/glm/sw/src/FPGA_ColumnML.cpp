@@ -726,15 +726,29 @@ bool FPGA_ColumnML::fSCD(
 	m_inst[pc].WriteBack(true, m_modelChunk.m_offsetInCL, m_numFeaturesInCL,
 		0, m_numFeaturesInCL, m_numPartitions*m_numFeaturesInCL,
 		true, writebackModelRead, Instruction::WRITEBACK_LABELS_CHANNEL);
+	pc++;
+
 	m_inst[pc].Jump(1, partitionToStart+numPartitions-1, pcPartitionStart, pc+1);
 	m_inst[pc].IncrementIndex(1);
+	if (m_useContextSwitch) {
+		m_inst[pc].EnableContextSwitch();
+	}
 	pc++;
 
 	m_inst[pc].Jump(2, numEpochs-1, pcEpochStart, 0xFFFFFFFF);
 	m_inst[pc].IncrementIndex(2);
-	if (m_useContextSwitch) {
-		m_inst[pc].EnableContextSwitch();
-	}
+	pc++;
+
+	// Context Store Instructions
+	uint32_t pcContextStore = pc;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF0, 0xFFFFFFF0);
+	pc++;
+
+	// Context Load Instructions
+	uint32_t pcContextLoad = pc;
+
+	m_inst[pc].Jump(2, 0, 0xFFFFFFF1, 0xFFFFFFF1);
 	pc++;
 	// *************************************************************************
 	//
@@ -745,7 +759,7 @@ bool FPGA_ColumnML::fSCD(
 	m_ifpga->Realloc(m_outputHandle, m_outputSizeInCL*64);
 
 	m_numInstructions = pc;
-	WriteProgramMemory(0, 0);
+	WriteProgramMemory(pcContextStore, pcContextLoad);
 
 	return true;
 }
