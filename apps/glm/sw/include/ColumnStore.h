@@ -122,6 +122,7 @@ public:
 	void LoadLibsvmData(char* pathToFile, uint32_t numSamples, uint32_t numFeatures, bool samplesBiased);
 	void LoadRawData(char* pathToFile, uint32_t numSamples, uint32_t numFeatures, bool labelPresent);
 	void GenerateSyntheticData(uint32_t numSamples, uint32_t numFeatures, bool labelBinary, NormType labelsNorm);
+	void CopyDataset(ColumnStore* cs);
 
 	// Normalization and data shaping
 	void NormalizeSamples(NormType norm, NormDirection direction);

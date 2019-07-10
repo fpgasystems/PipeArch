@@ -46,9 +46,13 @@ FThread* Instance::GetThreadToPause() {
 	FThread* threadToPause = NULL;
 
 	if (GetNumWaitingThreads() > 0) {
+		uint32_t maxPriority = GetHighestPriority();
 		for (FThread* t: m_runningThreads) {
-			if (t->GetState() == running && t->GetPriority() == 0) {
-				threadToPause = t;
+			if (t->GetState() == running) { // There is always one running thread
+				if (m_enablePriority && t->GetPriority() < maxPriority) // ShortestJobFirst
+					threadToPause = t;
+				else // RoundRobin
+					threadToPause = t;
 			}
 		}
 	}
@@ -59,20 +63,19 @@ FThread* Instance::GetThreadToPause() {
 FThread* Instance::GetThreadToResume() {
 	FThread* threadToResume = NULL;
 
+	uint32_t maxPriority = GetHighestPriority();
 	uint32_t minimum = numeric_limits<uint32_t>::max();
 	for (FThread* t: m_runningThreads) {
 		if (t->GetState() == idle || t->GetState() == paused) {
-
-			if (t->GetPriority() > 0) {
+			if (m_enablePriority && t->GetPriority() == maxPriority) {
 				threadToResume = t;
 				return threadToResume;
 			}
 
-			if (t->GetNumTimesResumed() < minimum) {
+			if (t->GetNumTimesResumed() < minimum) { // RoundRobin
 				minimum = t->GetNumTimesResumed();
 				threadToResume = t;
 			}
-
 		}
 	}
 
@@ -107,13 +110,13 @@ FThread* Instance::GetThreadToMigrate() {
 	return threadToMigrate;
 }
 
-void Server::ResumeThread(FThread* fthread, uint32_t whichInstance, uint32_t runningThreadsOnThisInstance) {
+void Server::ResumeThread(FThread* fthread, uint32_t whichInstance, bool initiateWithPause) {
 	if (fthread == NULL) {
 		return;
 	}
 #ifdef SERVER_VERBOSE
 	if (fthread->GetPriority() > 0) {
-		cout << "-----------------ResumeThread with id: " << fthread->GetId() << endl;
+		cout << "-----------------ResumeThread with id: " << fthread->GetId() << ", priority: " << fthread->GetPriority() << endl;
 	}
 #endif
 
@@ -139,7 +142,12 @@ void Server::ResumeThread(FThread* fthread, uint32_t whichInstance, uint32_t run
 	buffersToCopy.push_back(outputMemory);
 	CopyToFPGA(buffersToCopy);
 
-	uint64_t triggerContextSwitch = m_enableContextSwitch && (runningThreadsOnThisInstance > 1);
+	uint64_t triggerContextSwitch;
+	if (m_enablePriority)
+		triggerContextSwitch = m_enableContextSwitch && initiateWithPause && fthread->GetPriority() == 0;
+	else
+		triggerContextSwitch = m_enableContextSwitch && initiateWithPause;
+	// cout << "---------------------------------------triggerContextSwitch: " << (triggerContextSwitch ? 1 : 0) << endl;
 	iFPGA::WriteConfigReg(0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
 	iFPGA::WriteConfigReg(1, programMemory);
 	iFPGA::WriteConfigReg(2, inputMemory);
@@ -179,8 +187,8 @@ void Server::ScheduleThreads() {
 		FThread* threadToPause = m_instance[k]->GetThreadToPause();
 		FThread* threadToResume = m_instance[k]->GetThreadToResume();
 
-		if (m_instance[k]->GetNumRunningThreads() == 0) {
-			ResumeThread(threadToResume, k, m_instance[k]->GetNumThreads());
+		if (m_instance[k]->GetNumRunningThreads() == 0 && threadToResume != NULL) {
+			ResumeThread(threadToResume, k, m_instance[k]->GetNumThreads() > 1);
 		}
 		if (m_enableContextSwitch) {
 			PauseThread(threadToPause, k);

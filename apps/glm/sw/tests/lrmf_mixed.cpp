@@ -15,6 +15,7 @@ struct JobProperties {
 	float m_sparsenessFactor;
 	uint32_t m_numFeatures;
 	uint32_t m_numEpochs;
+	uint32_t m_priority;
 };
 
 int main(int argc, char* argv[]) {
@@ -26,18 +27,19 @@ int main(int argc, char* argv[]) {
 
 	char* pathToDataset;
 	uint32_t numJobsMultiplier = 0;
-	char config[3] = {'-', '-', '-'};
+	char config[4] = {'-', '-', '-', '-'};
 	bool enableContextSwitch = false;
 	bool enableThreadMigration = false;
+	bool enablePriority = false;
 	bool randomizeJobOrder = false;
 	uint32_t sw0hw1 = 0;
 	if (!(argc == 4)) {
-		cout << "Usage: ./app <pathToDataset> <numJobsMultiplier> <'e'nableContextSwitch 'e'nableThreadMigration 'r'andomizeJobOrder>" << endl;
+		cout << "Usage: ./app <pathToDataset> <numJobsMultiplier> <'e'nableContextSwitch 'e'nableThreadMigration 'e'nablePriority 'r'andomizeJobOrder>" << endl;
 		return 0;
 	}
 	pathToDataset = argv[1];
 	numJobsMultiplier = atoi(argv[2]);
-	for (uint32_t i = 0; i < 3; i++) {
+	for (uint32_t i = 0; i < 4; i++) {
 		if (argv[3][i] == '\0') {
 			break;
 		}
@@ -47,7 +49,8 @@ int main(int argc, char* argv[]) {
 	}
 	enableContextSwitch = config[0] == 'e';
 	enableThreadMigration = config[1] == 'e';
-	randomizeJobOrder = config[2] == 'r';
+	enablePriority = config[2] == 'e';
+	randomizeJobOrder = config[3] == 'r';
 
 	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
 		switch(i) {
@@ -58,6 +61,7 @@ int main(int argc, char* argv[]) {
 				jobs[0].m_numFeatures = 32;
 				jobs[0].m_sparsenessFactor = 0;
 				jobs[0].m_numEpochs = 10;
+				jobs[0].m_priority = 3;
 				break;
 			case 1: // SYN_LRMF1
 				jobs[1].m_pathToDataset = (char*)"syn";
@@ -66,6 +70,7 @@ int main(int argc, char* argv[]) {
 				jobs[1].m_numFeatures = 32;
 				jobs[1].m_sparsenessFactor = 0.05;
 				jobs[1].m_numEpochs = 10;
+				jobs[1].m_priority = 2;
 				break;
 			case 2: // SYN_LRMF2
 				jobs[2].m_pathToDataset = (char*)"syn";
@@ -74,6 +79,7 @@ int main(int argc, char* argv[]) {
 				jobs[2].m_numFeatures = 32;
 				jobs[2].m_sparsenessFactor = 0.1;
 				jobs[2].m_numEpochs = 10;
+				jobs[2].m_priority = 1;
 				break;
 		}
 	}
@@ -84,11 +90,14 @@ int main(int argc, char* argv[]) {
 	if (enableThreadMigration) {
 		cout << "-> enableThreadMigration" << endl;
 	}
+	if (enablePriority) {
+		cout << "-> enablePriority" << endl;
+	}
 	if (randomizeJobOrder) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
-	ServerWrapper server(enableContextSwitch, enableThreadMigration);
+	ServerWrapper server(enableContextSwitch, enableThreadMigration, enablePriority);
 
 	vector<FPGA_LRMF*> lrmf(numJobsMultiplier*NUM_JOB_TYPES);
 	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
@@ -119,7 +128,7 @@ int main(int argc, char* argv[]) {
 	double start = get_time();
 	vector<FThread*> fthreads;
 	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
-		fthreads.push_back( server.Request(lrmf[i]) );
+		fthreads.push_back( server.Request(lrmf[i], jobs[i%NUM_JOB_TYPES].m_priority) );
 	}
 	for (uint32_t i = 0; i < fthreads.size(); i++) {
 		fthreads[i]->WaitUntilFinished();

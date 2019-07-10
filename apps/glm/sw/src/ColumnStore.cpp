@@ -174,6 +174,27 @@ void ColumnStore::GenerateSyntheticData(uint32_t numSamples, uint32_t numFeature
 	cout << "m_numFeatures: " << m_numFeatures << endl;
 }
 
+void ColumnStore::CopyDataset(ColumnStore* cs) {
+
+	m_numSamples = cs->m_numSamples;
+	m_numFeatures = cs->m_numFeatures;
+	m_samplesBiased = cs->m_samplesBiased;
+	m_labelsNorm = cs->m_labelsNorm;
+
+	reallocData();
+
+	for (uint32_t i = 0; i < m_numSamples; i++) {
+		m_labels[i] = cs->m_labels[i];
+		for (uint32_t j = 0; j < m_numFeatures; j++) {
+			m_samples[j][i] = cs->m_samples[j][i];
+		}
+	}
+
+	cout << "m_numSamples: " << m_numSamples << endl;
+	cout << "m_numFeatures: " << m_numFeatures << endl;
+
+}
+
 void ColumnStore::NormalizeSamples(NormType norm, NormDirection direction) {
 	m_samplesNorm = norm;
 

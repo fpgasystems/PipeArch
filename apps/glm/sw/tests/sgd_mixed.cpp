@@ -8,24 +8,6 @@
 
 #define NUM_JOB_TYPES 4
 
-void thread_SGD(
-	uint32_t threadId,
-	ColumnML* columnML,
-	ModelType type, 
-	float* xHistory, 
-	uint32_t numEpochs, 
-	uint32_t minibatchSize, 
-	float stepSize, 
-	float lambda, 
-	AdditionalArguments args)
-{
-#ifdef AVX2
-	columnML->AVXrowwise_SGD(type, xHistory, numEpochs, minibatchSize, stepSize, lambda, &args);
-#else
-	columnML->SGD(type, xHistory, numEpochs, minibatchSize, stepSize, lambda, &args);
-#endif
-}
-
 void thread_Loss(
 	float* loss,
 	ColumnML* columnML,
@@ -45,6 +27,7 @@ struct JobProperties {
 	uint32_t m_numEpochs;
 	uint32_t m_minibatchSize;
 	uint32_t m_partitionSize;
+	uint32_t m_priority;
 	float m_totalSize;
 };
 
@@ -55,17 +38,18 @@ int main(int argc, char* argv[]) {
 	float lambda = 0.0001;
 
 	uint32_t numJobsMultiplier = 0;
-	char config[3] = {'-', '-', '-'};
+	char config[4] = {'-', '-', '-', '-'};
 	bool enableContextSwitch = false;
 	bool enableThreadMigration = false;
+	bool enablePriority = false;
 	bool randomizeJobOrder = false;
 	uint32_t sw0hw1 = 0;
-	if (!(argc == 3)) {
-		cout << "Usage: ./app <numJobsMultiplier> <'e'nableContextSwitch 'e'nableThreadMigration 'r'andomizeJobOrder>" << endl;
+	if (!(argc == 4)) {
+		cout << "Usage: ./app <numJobsMultiplier> <'e'nableContextSwitch 'e'nableThreadMigration 'e'nablePriority 'r'andomizeJobOrder> <sw0hw1>" << endl;
 		return 0;
 	}
 	numJobsMultiplier = atoi(argv[1]);
-	for (uint32_t i = 0; i < 3; i++) {
+	for (uint32_t i = 0; i < 4; i++) {
 		if (argv[2][i] == '\0') {
 			break;
 		}
@@ -75,7 +59,9 @@ int main(int argc, char* argv[]) {
 	}
 	enableContextSwitch = config[0] == 'e';
 	enableThreadMigration = config[1] == 'e';
-	randomizeJobOrder = config[2] == 'r';
+	enablePriority = config[2] == 'e';
+	randomizeJobOrder = config[3] == 'r';
+	sw0hw1 = atoi(argv[3]);
 
 	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
 		switch(i) {
@@ -87,6 +73,7 @@ int main(int argc, char* argv[]) {
 				jobs[0].m_numEpochs = 10;
 				jobs[0].m_minibatchSize = 32;
 				jobs[0].m_partitionSize = 10400;
+				jobs[0].m_priority = 1;
 				break;
 			case 1: // MNIST
 				jobs[1].m_type = logreg;
@@ -96,6 +83,7 @@ int main(int argc, char* argv[]) {
 				jobs[1].m_numEpochs = 10;
 				jobs[1].m_minibatchSize = 25;
 				jobs[1].m_partitionSize = 10000;
+				jobs[1].m_priority = 3;
 				break;
 			case 2: // MUSIC
 				jobs[2].m_type = linreg;
@@ -105,6 +93,7 @@ int main(int argc, char* argv[]) {
 				jobs[2].m_numEpochs = 20;
 				jobs[2].m_minibatchSize = 32;
 				jobs[2].m_partitionSize = 16000;
+				jobs[2].m_priority = 4;
 				break;
 			case 3:
 				jobs[3].m_type = logreg;
@@ -114,6 +103,7 @@ int main(int argc, char* argv[]) {
 				jobs[3].m_numEpochs = 10;
 				jobs[3].m_minibatchSize = 32;
 				jobs[3].m_partitionSize = 16384;
+				jobs[3].m_priority = 2;
 				break;
 		}
 		jobs[i].m_totalSize = (((float)4*jobs[i].m_numSamples*jobs[i].m_numFeatures*jobs[i].m_numClasses)/1e9)*jobs[i].m_numEpochs;
@@ -125,11 +115,14 @@ int main(int argc, char* argv[]) {
 	if (enableThreadMigration) {
 		cout << "-> enableThreadMigration" << endl;
 	}
+	if (enablePriority) {
+		cout << "-> enablePriority" << endl;
+	}
 	if (randomizeJobOrder) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
-	ServerWrapper server(enableContextSwitch, enableThreadMigration);
+	ServerWrapper server(enableContextSwitch, enableThreadMigration, enablePriority);
 	vector<vector<FPGA_ColumnML*> > columnML(numJobsMultiplier*NUM_JOB_TYPES);
 	AdditionalArguments args[NUM_JOB_TYPES];
 
@@ -137,7 +130,11 @@ int main(int argc, char* argv[]) {
 		for (uint32_t c = 0; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
 			columnML[i].push_back( new FPGA_ColumnML(server.GetServer()) );
 		}
-		columnML[i][0]->m_cstore->GenerateSyntheticData(jobs[i%NUM_JOB_TYPES].m_numSamples, jobs[i%NUM_JOB_TYPES].m_numFeatures, true, ZeroToOne);
+		if (i < NUM_JOB_TYPES)
+			columnML[i][0]->m_cstore->GenerateSyntheticData(jobs[i%NUM_JOB_TYPES].m_numSamples, jobs[i%NUM_JOB_TYPES].m_numFeatures, true, ZeroToOne);
+		else
+			columnML[i][0]->m_cstore->CopyDataset(columnML[i%NUM_JOB_TYPES][0]->m_cstore);
+
 		columnML[i][0]->CreateMemoryLayout(RowStore, jobs[i%NUM_JOB_TYPES].m_partitionSize, false);
 		for (uint32_t c = 1; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
 			if (c < iFPGA::MAX_NUM_BANKS) // Copy to new banks
@@ -171,7 +168,7 @@ int main(int argc, char* argv[]) {
 	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
 		cout << "columnML[" << i << "].size(): " << columnML[i].size() << endl;
 		for (uint32_t c = 0; c < columnML[i].size(); c++) {
-			fthreads.push_back( server.Request(columnML[i][c]) );
+			fthreads.push_back( server.Request(columnML[i][c], jobs[i%NUM_JOB_TYPES].m_priority) );
 		}
 		totalSize += jobs[i%NUM_JOB_TYPES].m_totalSize;
 	}
@@ -180,6 +177,7 @@ int main(int argc, char* argv[]) {
 	}
 	double total = get_time() - start;
 	cout << "Total time: " << total << endl;
+	cout << "Total size: " << totalSize << " GB" << endl;
 	cout << "Processing rate: " << totalSize/total << "GB/s" << endl;
 
 	for (uint32_t i = 0; i < fthreads.size(); i++) {

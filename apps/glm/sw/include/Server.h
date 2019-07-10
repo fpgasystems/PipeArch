@@ -142,12 +142,14 @@ private:
 	uint32_t m_id;
 	iFPGA* m_ifpga;
 	vector<FThread*> m_runningThreads;
+	bool m_enablePriority;
 
 public:
 
-	Instance(uint32_t id, iFPGA* ifpga) {
+	Instance(uint32_t id, iFPGA* ifpga, bool enablePriority) {
 		m_id = id;
 		m_ifpga = ifpga;
+		m_enablePriority = enablePriority;
 	}
 
 	void PrintStatus() {
@@ -169,6 +171,16 @@ public:
 		uint32_t result = 0;
 		for (FThread* t: m_runningThreads) {
 			result += (t->GetState() == idle || t->GetState() == paused) ? 1 : 0;
+		}
+		return result;
+	}
+
+	uint32_t GetHighestPriority() {
+		uint32_t result = 0;
+		for (FThread* t: m_runningThreads) {
+			if (t->GetPriority() > result) {
+				result = t->GetPriority();
+			}
 		}
 		return result;
 	}
@@ -206,8 +218,9 @@ private:
 	uint32_t m_numThreads;
 	bool m_enableContextSwitch;
 	bool m_enableThreadMigration;
+	bool m_enablePriority;
 
-	void ResumeThread(FThread* fthread, uint32_t whichInstance, uint32_t runningThreadsOnThisInstance);
+	void ResumeThread(FThread* fthread, uint32_t whichInstance, bool initiateWithPause);
 	void PauseThread(FThread* fthread, uint32_t whichInstance);
 	void ScheduleThreads();
 	void RedistributeThreads();
@@ -217,7 +230,7 @@ private:
 		unique_lock<mutex> lck(m_mtx);
 		m_numThreads = 0;
 		for (uint32_t k = 0; k < m_numInstances; k++) {
-			m_instance[k] = new Instance(k, this);
+			m_instance[k] = new Instance(k, this, m_enablePriority);
 		}
 		m_serverThread = thread(&Server::ProcessRequests, this);
 		cout << "Waiting..." << endl;
@@ -227,23 +240,27 @@ private:
 public:
 	Server(bool enableContextSwitch,
 		bool enableThreadMigration,
+		bool enablePriority,
 		uint32_t whichBank,
 		xDevice* xdevice) : iFPGA(iFPGA::MAX_NUM_INSTANCES, whichBank, xdevice)
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;
+		m_enablePriority = enablePriority;
 
 		ConstructorCommon();
 	}
 
 	Server(bool enableContextSwitch,
 		bool enableThreadMigration,
+		bool enablePriority,
 		uint32_t numInstances,
 		uint32_t whichBank,
 		xDevice* xdevice) : iFPGA(numInstances, whichBank, xdevice)
 	{
 		m_enableContextSwitch = enableContextSwitch;
 		m_enableThreadMigration = enableThreadMigration;
+		m_enablePriority = enablePriority;
 
 		ConstructorCommon();
 	}
@@ -295,17 +312,51 @@ public:
 	}
 };
 
+static void thread_SGD(
+	uint32_t threadId,
+	ColumnML* columnML,
+	ModelType type, 
+	float* xHistory, 
+	uint32_t numEpochs, 
+	uint32_t minibatchSize, 
+	float stepSize, 
+	float lambda, 
+	AdditionalArguments args)
+{
+#ifdef AVX2
+	columnML->AVXrowwise_SGD(type, xHistory, numEpochs, minibatchSize, stepSize, lambda, &args);
+#else
+	columnML->SGD(type, xHistory, numEpochs, minibatchSize, stepSize, lambda, &args);
+#endif
+}
+
+static void thread_SCD(
+	uint32_t threadId,
+	ColumnML* columnML,
+	ModelType type, 
+	float* xHistory, 
+	uint32_t numEpochs, 
+	uint32_t partitionSize, 
+	float stepSize, 
+	float lambda,
+	uint32_t numThreads,
+	AdditionalArguments args)
+{
+	uint32_t VALUE_TO_INT_SCALER = 10;
+	columnML->AVXmulti_SCD(type, false, xHistory, numEpochs, partitionSize, stepSize, lambda, 1000, false, false, VALUE_TO_INT_SCALER, &args, numThreads);
+}
+
 class ServerWrapper {
 private:
 	xDevice* m_xdevice;
 	Server* m_server[iFPGA::MAX_NUM_BANKS];
 	uint32_t m_currentServer;
 public:
-	ServerWrapper(bool enableContextSwitch, bool enableThreadMigration)
+	ServerWrapper(bool enableContextSwitch, bool enableThreadMigration, bool enablePriority)
 	{
 		m_xdevice = new xDevice();
 		for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
-			m_server[i] = new Server(enableContextSwitch, enableThreadMigration, i, m_xdevice);
+			m_server[i] = new Server(enableContextSwitch, enableThreadMigration, enablePriority, i, m_xdevice);
 		}
 		m_currentServer = 0;
 	}
