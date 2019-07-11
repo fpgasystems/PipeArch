@@ -4,7 +4,7 @@
 #include "Server.h"
 #include <thread>
 
-#define FPGA
+// #define FPGA
 
 #define NUM_JOB_TYPES 4
 
@@ -122,32 +122,26 @@ int main(int argc, char* argv[]) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
+#ifdef FPGA
 	ServerWrapper server(enableContextSwitch, enableThreadMigration, enablePriority);
 	vector<vector<FPGA_ColumnML*> > columnML(numJobsMultiplier*NUM_JOB_TYPES);
+#else
+	vector<vector<ColumnML*> > columnML(numJobsMultiplier*NUM_JOB_TYPES);
+#endif
 	AdditionalArguments args[NUM_JOB_TYPES];
 
 	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
 		for (uint32_t c = 0; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
+#ifdef FPGA
 			columnML[i].push_back( new FPGA_ColumnML(server.GetServer()) );
+#else
+			columnML[i].push_back( new ColumnML() );
+#endif
 		}
 		if (i < NUM_JOB_TYPES)
 			columnML[i][0]->m_cstore->GenerateSyntheticData(jobs[i%NUM_JOB_TYPES].m_numSamples, jobs[i%NUM_JOB_TYPES].m_numFeatures, true, ZeroToOne);
 		else
 			columnML[i][0]->m_cstore->CopyDataset(columnML[i%NUM_JOB_TYPES][0]->m_cstore);
-
-		columnML[i][0]->CreateMemoryLayout(RowStore, jobs[i%NUM_JOB_TYPES].m_partitionSize, false);
-		for (uint32_t c = 1; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
-			if (c < iFPGA::MAX_NUM_BANKS) // Copy to new banks
-				columnML[i][c]->UseCreatedMemoryLayout(columnML[i][0]);
-			else // Use already copied data
-				columnML[i][c]->UseCreatedMemoryLayout(columnML[i][c%iFPGA::MAX_NUM_BANKS]);
-		}
-		for (uint32_t c = 0; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
-			columnML[i][c]->fSGD_minibatch(
-				jobs[i%NUM_JOB_TYPES].m_type,
-				jobs[i%NUM_JOB_TYPES].m_numEpochs,
-				jobs[i%NUM_JOB_TYPES].m_minibatchSize, stepSize, lambda, 0);
-		}
 
 		args[i%NUM_JOB_TYPES].m_firstSample = 0;
 		args[i%NUM_JOB_TYPES].m_numSamples = jobs[i%NUM_JOB_TYPES].m_numSamples;
@@ -155,64 +149,121 @@ int main(int argc, char* argv[]) {
 		args[i%NUM_JOB_TYPES].m_useOnehotLabels = false;
 	}
 
-	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
-		for (uint32_t c = 0; c < columnML[i].size(); c++) {
-			server.PreCopy(columnML[i][c]);
-		}
-	}
+	if (sw0hw1 == 0) {
+		vector<thread*> cthreads;
 
-	float totalSize = 0;
-	double start = get_time();
-	vector<FThread*> fthreads;
+		float totalSize = 0;
+		double start = get_time();
+		for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
+			columnML[i][0]->m_cstore->PopulateRowSamples();
 
-	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
-		cout << "columnML[" << i << "].size(): " << columnML[i].size() << endl;
-		for (uint32_t c = 0; c < columnML[i].size(); c++) {
-			fthreads.push_back( server.Request(columnML[i][c], jobs[i%NUM_JOB_TYPES].m_priority) );
-		}
-		totalSize += jobs[i%NUM_JOB_TYPES].m_totalSize;
-	}
-	for (uint32_t i = 0; i < fthreads.size(); i++) {
-		fthreads[i]->WaitUntilFinished();
-	}
-	double total = get_time() - start;
-	cout << "Total time: " << total << endl;
-	cout << "Total size: " << totalSize << " GB" << endl;
-	cout << "Processing rate: " << totalSize/total << "GB/s" << endl;
-
-	for (uint32_t i = 0; i < fthreads.size(); i++) {
-		cout << "threadId " << fthreads[i]->GetId() << " " << fthreads[i]->GetResponseTime() << endl;
-	}
-
-	// Verify
-	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
-		cout << "Job " << i << " convergence: " << endl;
-		vector<thread*> threads(jobs[i].m_numClasses);
-		for (uint32_t e = 0; e < jobs[i].m_numEpochs; e++) {
-
-			vector<float> losses(jobs[i].m_numClasses);
-			for (uint32_t c = 0; c < jobs[i].m_numClasses; c++) {
-
-				auto output = iFPGA::CastToFloat(columnML[i][c]->m_outputHandle);
-				float* xHistory = (float*)(output + 16);
-				threads[c] =
+			for (uint32_t c = 0; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
+				cthreads.push_back(
 					new thread(
-						thread_Loss,
-						&losses[c],
+						thread_SGD,
+						0,
 						columnML[i][0],
-						jobs[i].m_type,
-						xHistory + e*columnML[i][0]->m_alignedNumFeatures,
+						jobs[i%NUM_JOB_TYPES].m_type,
+						nullptr,
+						jobs[i%NUM_JOB_TYPES].m_numEpochs,
+						jobs[i%NUM_JOB_TYPES].m_minibatchSize,
+						stepSize,
 						lambda,
-						args[i]);
+						args[i%NUM_JOB_TYPES])
+					);
 			}
-			float loss = 0.0;
-			for (uint32_t c = 0; c < jobs[i].m_numClasses; c++) {
-				threads[c]->join();
-				delete threads[c];
-				loss += losses[c];
-			}
-			cout << loss/jobs[i].m_numClasses << endl;
+			totalSize += jobs[i%NUM_JOB_TYPES].m_totalSize;
 		}
+
+		for (uint32_t c = 0; c < cthreads.size(); c++) {
+			cthreads[c]->join();
+		}
+		double total = get_time() - start;
+		cout << "Total time: " << total << endl;
+		cout << "Total size: " << totalSize << " GB" << endl;
+		cout << "Processing rate: " << totalSize/total << " GB/s" << endl;
+		for (uint32_t i = 0; i < cthreads.size(); i++) {
+			delete cthreads[i];
+		}
+	}
+	else {
+#ifdef FPGA
+		for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
+			columnML[i][0]->CreateMemoryLayout(RowStore, jobs[i%NUM_JOB_TYPES].m_partitionSize, false);
+			for (uint32_t c = 1; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
+				if (c < iFPGA::MAX_NUM_BANKS) // Copy to new banks
+					columnML[i][c]->UseCreatedMemoryLayout(columnML[i][0]);
+				else // Use already copied data
+					columnML[i][c]->UseCreatedMemoryLayout(columnML[i][c%iFPGA::MAX_NUM_BANKS]);
+			}
+			for (uint32_t c = 0; c < jobs[i%NUM_JOB_TYPES].m_numClasses; c++) {
+				columnML[i][c]->fSGD_minibatch(
+					jobs[i%NUM_JOB_TYPES].m_type,
+					jobs[i%NUM_JOB_TYPES].m_numEpochs,
+					jobs[i%NUM_JOB_TYPES].m_minibatchSize, stepSize, lambda, 0);
+			}
+		}
+
+		for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
+			for (uint32_t c = 0; c < columnML[i].size(); c++) {
+				server.PreCopy(columnML[i][c]);
+			}
+		}
+
+		float totalSize = 0;
+		double start = get_time();
+		vector<FThread*> fthreads;
+
+		for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
+			cout << "columnML[" << i << "].size(): " << columnML[i].size() << endl;
+			for (uint32_t c = 0; c < columnML[i].size(); c++) {
+				fthreads.push_back( server.Request(columnML[i][c], jobs[i%NUM_JOB_TYPES].m_priority) );
+			}
+			totalSize += jobs[i%NUM_JOB_TYPES].m_totalSize;
+		}
+		for (uint32_t i = 0; i < fthreads.size(); i++) {
+			fthreads[i]->WaitUntilFinished();
+		}
+		double total = get_time() - start;
+		cout << "Total time: " << total << endl;
+		cout << "Total size: " << totalSize << " GB" << endl;
+		cout << "Processing rate: " << totalSize/total << "GB/s" << endl;
+
+		for (uint32_t i = 0; i < fthreads.size(); i++) {
+			cout << "threadId " << fthreads[i]->GetId() << " " << fthreads[i]->GetResponseTime() << endl;
+		}
+
+		// Verify
+		for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
+			cout << "Job " << i << " convergence: " << endl;
+			vector<thread*> threads(jobs[i].m_numClasses);
+			for (uint32_t e = 0; e < jobs[i].m_numEpochs; e++) {
+
+				vector<float> losses(jobs[i].m_numClasses);
+				for (uint32_t c = 0; c < jobs[i].m_numClasses; c++) {
+
+					auto output = iFPGA::CastToFloat(columnML[i][c]->m_outputHandle);
+					float* xHistory = (float*)(output + 16);
+					threads[c] =
+						new thread(
+							thread_Loss,
+							&losses[c],
+							columnML[i][0],
+							jobs[i].m_type,
+							xHistory + e*columnML[i][0]->m_alignedNumFeatures,
+							lambda,
+							args[i]);
+				}
+				float loss = 0.0;
+				for (uint32_t c = 0; c < jobs[i].m_numClasses; c++) {
+					threads[c]->join();
+					delete threads[c];
+					loss += losses[c];
+				}
+				cout << loss/jobs[i].m_numClasses << endl;
+			}
+		}
+#endif
 	}
 
 	return 0;

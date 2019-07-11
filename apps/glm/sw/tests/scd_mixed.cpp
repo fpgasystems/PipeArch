@@ -5,7 +5,7 @@
 
 #define VALUE_TO_INT_SCALER 10
 
-#define FPGA
+// #define FPGA
 
 #define NUM_JOB_TYPES 4
 
@@ -107,12 +107,21 @@ int main(int argc, char* argv[]) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
+#ifdef FPGA
 	ServerWrapper server(enableContextSwitch, enableThreadMigration, enablePriority);
 	vector<FPGA_ColumnML*> columnML(numJobsMultiplier*NUM_JOB_TYPES);
+#else
+	vector<ColumnML*> columnML(numJobsMultiplier*NUM_JOB_TYPES);
+#endif
+	
 	AdditionalArguments args[NUM_JOB_TYPES];
 
 	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
+#ifdef FPGA
 		columnML[i] = new FPGA_ColumnML(server.GetServer());
+#else
+		columnML[i] = new ColumnML();
+#endif
 		if (i%NUM_JOB_TYPES == 0)
 			columnML[i]->m_cstore->GenerateSyntheticData(jobs[i/NUM_JOB_TYPES].m_numSamples, jobs[i/NUM_JOB_TYPES].m_numFeatures, true, ZeroToOne);
 		else
@@ -146,14 +155,18 @@ int main(int argc, char* argv[]) {
 		}
 		for (uint32_t i = 0; i < cthreads.size(); i++) {
 			cthreads[i]->join();
-			delete cthreads[i];
+			
 		}
 		double total = get_time() - start;
 		cout << "Total time: " << total << endl;
 		cout << "Total size: " << totalSize << " GB" << endl;
 		cout << "Processing rate: " << totalSize/total << "GB/s" << endl;
+		for (uint32_t i = 0; i < cthreads.size(); i++) {
+			delete cthreads[i];
+		}
 	}
 	else {
+#ifdef FPGA
 		for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
 			columnML[i]->CreateMemoryLayout(ColumnStore, jobs[i/NUM_JOB_TYPES].m_partitionSize, jobs[i/NUM_JOB_TYPES].m_numEpochs, false);
 
@@ -200,6 +213,7 @@ int main(int argc, char* argv[]) {
 		// 		cout << loss << endl;
 		// 	}
 		// }
+#endif
 	}
 
 	for (uint32_t i = 0; i < numJobsMultiplier*NUM_JOB_TYPES; i++) {
