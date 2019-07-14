@@ -27,6 +27,7 @@ void FPGA_LRMF::UseCreatedMemoryLayout(FPGA_LRMF* baseObj) {
 }
 
 uint32_t FPGA_LRMF::CreateMemoryLayout() {
+	cout << "-------------> FPGA_LRMF::CreateMemoryLayout" << endl;
 	if (LRMF::LRMF::m_numFeatures == 0) {
 		cout << "LRMF::m_numFeatures of FPGA_LRMF object created as main is equal to 0" << endl;
 		return 0;

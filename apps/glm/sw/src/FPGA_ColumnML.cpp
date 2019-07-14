@@ -73,6 +73,7 @@ uint32_t FPGA_ColumnML::CreateMemoryLayout(MemoryFormat format, uint32_t partiti
 	m_restInCL = (m_rest >> 4) + ((m_rest&0xF) > 0);
 	m_numEpochs = numEpochs;
 
+	cout << "-------------> FPGA_ColumnML::CreateMemoryLayout" << endl;
 	cout << "m_numSamplesInCL: " << m_numSamplesInCL << endl;
 	cout << "m_numFeaturesInCL: " << m_numFeaturesInCL << endl;
 	cout << "m_partitionSize: " << m_partitionSize << endl;

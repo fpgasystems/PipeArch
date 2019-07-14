@@ -181,14 +181,17 @@ void ColumnStore::CopyDataset(ColumnStore* cs) {
 	m_samplesBiased = cs->m_samplesBiased;
 	m_labelsNorm = cs->m_labelsNorm;
 
-	reallocData();
+	// reallocData();
 
-	for (uint32_t i = 0; i < m_numSamples; i++) {
-		m_labels[i] = cs->m_labels[i];
-		for (uint32_t j = 0; j < m_numFeatures; j++) {
-			m_samples[j][i] = cs->m_samples[j][i];
-		}
-	}
+	m_labels = cs->m_labels;
+	m_samples = cs->m_samples;
+
+	// for (uint32_t i = 0; i < m_numSamples; i++) {
+	// 	m_labels[i] = cs->m_labels[i];
+	// 	for (uint32_t j = 0; j < m_numFeatures; j++) {
+	// 		m_samples[j][i] = cs->m_samples[j][i];
+	// 	}
+	// }
 
 	cout << "m_numSamples: " << m_numSamples << endl;
 	cout << "m_numFeatures: " << m_numFeatures << endl;

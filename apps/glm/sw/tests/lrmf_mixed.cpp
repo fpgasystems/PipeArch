@@ -110,7 +110,6 @@ int main(int argc, char* argv[]) {
 			lrmf[i]->ReadNetflixData(jobs[i%NUM_JOB_TYPES].m_pathToDataset, jobs[i%NUM_JOB_TYPES].m_Mdim, jobs[i%NUM_JOB_TYPES].m_Udim);
 		}
 		lrmf[i]->DivideLBIntoTiles(tileSize);
-		lrmf[i]->RandInitMU();
 		lrmf[i]->CreateMemoryLayout();
 
 		bool fit = lrmf[i]->fOptimizeRound(

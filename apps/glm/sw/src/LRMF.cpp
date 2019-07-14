@@ -128,6 +128,25 @@ void LRMF::GenerateSyntheticData(int Mdim, uint32_t Udim, float sparsenessFactor
 	m_LBTiled.clear();
 }
 
+void LRMF::CopyDataset(LRMF* lrmf) {
+	m_Mdim = lrmf->m_Mdim;
+	m_Udim = lrmf->m_Udim;
+
+	m_tileSize = lrmf->m_tileSize;
+	m_numTilesM = lrmf->m_numTilesM;
+	m_numTilesU = lrmf->m_numTilesU;
+
+	m_L = lrmf->m_L;
+	m_LB = lrmf->m_LB;
+	m_LBTiled = lrmf->m_LBTiled;
+
+	deallocData();
+
+	m_M = (float*)aligned_alloc(64, m_numTilesM*m_tileSize*m_numFeatures*sizeof(float));
+	m_U = (float*)aligned_alloc(64, m_numTilesU*m_tileSize*m_numFeatures*sizeof(float));
+	RandInitMU();
+}
+
 void LRMF::DivideLBIntoTiles(uint32_t tileSize) {
 	srand(3);
 
@@ -159,6 +178,7 @@ void LRMF::DivideLBIntoTiles(uint32_t tileSize) {
 
 	m_M = (float*)aligned_alloc(64, m_numTilesM*m_tileSize*m_numFeatures*sizeof(float));
 	m_U = (float*)aligned_alloc(64, m_numTilesU*m_tileSize*m_numFeatures*sizeof(float));
+	RandInitMU();
 }
 
 float LRMF::Loss(float lambda) {

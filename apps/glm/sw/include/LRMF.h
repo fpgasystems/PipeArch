@@ -152,11 +152,12 @@ public:
 	}
 
 	size_t GetDataSize() {
-		return m_LB.size()*sizeof(LabelB);
+		return (m_Mdim+m_Udim)*m_numFeatures*sizeof(float) + m_LB.size()*sizeof(LabelB);
 	}
 
 	void ReadNetflixData(char* pathToFile, int Mdim, int Udim);
 	void GenerateSyntheticData(int Mdim, uint32_t Udim, float sparsenessFactor);
+	void CopyDataset(LRMF* lrmf);
 	void DivideLBIntoTiles(uint32_t tileSize);
 	float Loss(float lambda);
 	float RMSE();
