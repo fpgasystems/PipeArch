@@ -49,10 +49,12 @@ FThread* Instance::GetThreadToPause() {
 		uint32_t maxPriority = GetHighestPriority();
 		for (FThread* t: m_runningThreads) {
 			if (t->GetState() == running) { // There is always one running thread
-				if (m_enablePriority && t->GetPriority() < maxPriority) // ShortestJobFirst
+				if (m_enablePriority && t->GetPriority() < maxPriority) { // ShortestJobFirst
 					threadToPause = t;
-				else // RoundRobin
+				}
+				else if (!m_enablePriority) { // RoundRobin
 					threadToPause = t;
+				}
 			}
 		}
 	}
@@ -127,15 +129,10 @@ void Server::ResumeThread(FThread* fthread, uint32_t whichInstance, bool initiat
 
 	auto output = iFPGA::CastToInt(fthread->m_cML->m_outputHandle);
 	output[0] = 0;
-#ifdef SERVER_VERBOSE
-	cout << "output resetted" << endl;
-#endif
+
 	auto programMemory = iFPGA::CastToPtr(fthread->m_cML->m_programMemoryHandle);
 	auto inputMemory = iFPGA::CastToPtr(fthread->m_cML->m_inputHandle);
 	auto outputMemory = iFPGA::CastToPtr(fthread->m_cML->m_outputHandle);
-#ifdef SERVER_VERBOSE
-	cout << "Writing args" << endl;
-#endif
 
 #ifdef XILINX // On sdaccel we have to trigger context switch already while starting the kernel
 	vector<cl::Memory> buffersToCopy;

@@ -33,6 +33,7 @@ struct JobProperties {
 	uint32_t m_numFeatures;
 	uint32_t m_numEpochs;
 	uint32_t m_minibatchSize;
+	uint32_t m_priority;
 	float m_totalSize;
 };
 
@@ -45,17 +46,18 @@ int main(int argc, char* argv[]) {
 
 	uint32_t numJobs = 0;
 	uint32_t partitionSize = 16000;
-	char config[3] = {'-', '-', '-'};
+	char config[4] = {'-', '-', '-', '-'};
 	bool enableContextSwitch = false;
 	bool enableThreadMigration = false;
+	bool enablePriority = false;
 	bool randomizeJobOrder = false;
 	if (!(argc == 4)) {
-		cout << "Usage: ./app <numJobs> <partitionSize> <'e'nableContextSwitch 'e'nableThreadMigration 'r'andomizeJobOrder>" << endl;
+		cout << "Usage: ./app <numJobs> <partitionSize> <'e'nableContextSwitch 'e'nableThreadMigration 'e'nablePriority 'r'andomizeJobOrder>" << endl;
 		return 0;
 	}
 	numJobs = atoi(argv[1]);
 	partitionSize = atoi(argv[2]);
-	for (uint32_t i = 0; i < 3; i++) {
+	for (uint32_t i = 0; i < 4; i++) {
 		if (argv[3][i] == '\0') {
 			break;
 		}
@@ -65,7 +67,8 @@ int main(int argc, char* argv[]) {
 	}
 	enableContextSwitch = config[0] == 'e';
 	enableThreadMigration = config[1] == 'e';
-	randomizeJobOrder = config[2] == 'r';
+	enablePriority = config[2] == 'e';
+	randomizeJobOrder = config[3] == 'r';
 
 	if (numJobs > MAX_NUM_JOBS) {
 		cout << "numJobs is larger than MAX_NUM_JOBS" << endl;
@@ -75,25 +78,28 @@ int main(int argc, char* argv[]) {
 	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
 		switch(i) {
 			case 0:
-				jobs[0].m_type = linreg;
-				jobs[0].m_numSamples = 64000;
-				jobs[0].m_numFeatures = 126;
-				jobs[0].m_numEpochs = 50;
+				jobs[0].m_type = logreg;
+				jobs[0].m_numSamples = 131072;
+				jobs[0].m_numFeatures = 1024;
+				jobs[0].m_numEpochs = 3;
 				jobs[0].m_minibatchSize = 32;
+				jobs[0].m_priority = 3;
 				break;
 			case 1:
-				jobs[1].m_type = linreg;
-				jobs[1].m_numSamples = 64000;
-				jobs[1].m_numFeatures = 784;
-				jobs[1].m_numEpochs = 80;
+				jobs[1].m_type = logreg;
+				jobs[1].m_numSamples = 131072;
+				jobs[1].m_numFeatures = 1024;
+				jobs[1].m_numEpochs = 30;
 				jobs[1].m_minibatchSize = 32;
+				jobs[1].m_priority = 2;
 				break;
 			case 2:
 				jobs[2].m_type = logreg;
-				jobs[2].m_numSamples = 80000;
-				jobs[2].m_numFeatures = 2048;
-				jobs[2].m_numEpochs = 50;
-				jobs[2].m_minibatchSize = 1;
+				jobs[2].m_numSamples = 131072;
+				jobs[2].m_numFeatures = 1024;
+				jobs[2].m_numEpochs = 80;
+				jobs[2].m_minibatchSize = 32;
+				jobs[2].m_priority = 1;
 				break;
 		}
 		jobs[i].m_totalSize = (((float)4*jobs[i].m_numSamples*jobs[i].m_numFeatures)/1e9)*jobs[i].m_numEpochs;
@@ -105,11 +111,14 @@ int main(int argc, char* argv[]) {
 	if (enableThreadMigration) {
 		cout << "-> enableThreadMigration" << endl;
 	}
+	if (enablePriority) {
+		cout << "-> enablePriority" << endl;
+	}
 	if (randomizeJobOrder) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
-	ServerWrapper server(enableContextSwitch, enableThreadMigration);
+	ServerWrapper server(enableContextSwitch, enableThreadMigration, enablePriority);
 
 	FPGA_ColumnML* columnML[MAX_NUM_JOBS];
 	for (uint32_t i = 0; i < numJobs; i++) {
@@ -118,7 +127,7 @@ int main(int argc, char* argv[]) {
 
 	AdditionalArguments args[NUM_JOB_TYPES];
 	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
-		columnML[i]->m_cstore->GenerateSyntheticData(jobs[i].m_numSamples, jobs[i].m_numFeatures, false, MinusOneToOne);
+		columnML[i]->m_cstore->GenerateSyntheticData(jobs[i].m_numSamples, jobs[i].m_numFeatures, true, ZeroToOne);
 
 		args[i].m_firstSample = 0;
 		args[i].m_numSamples = columnML[i]->m_cstore->m_numSamples;
@@ -163,7 +172,7 @@ int main(int argc, char* argv[]) {
 	// Get standalone runtimes for each job type
 	start = get_time();
 	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
-		thread[i] = server.Request(columnML[i]);
+		thread[i] = server.Request(columnML[i], jobs[i%NUM_JOB_TYPES].m_priority);
 		thread[i]->WaitUntilFinished();
 		cout << "Standalone time job " << i << " is: " << thread[i]->GetResponseTime() << endl;
 		cout << "Processing rate: " << jobs[i].m_totalSize/thread[i]->GetResponseTime() << " GB/s" <<endl;
@@ -190,7 +199,7 @@ int main(int argc, char* argv[]) {
 	float totalSize = 0;
 	for (uint32_t i = 0; i < numJobs; i++) {
 		cout << "Starting job: " << order[i] << endl;
-		thread[i] = server.Request(columnML[order[i]]);
+		thread[i] = server.Request(columnML[order[i]], jobs[order[i]%NUM_JOB_TYPES].m_priority);
 	}
 	for (uint32_t i = 0; i < numJobs; i++) {
 		thread[i]->WaitUntilFinished();
