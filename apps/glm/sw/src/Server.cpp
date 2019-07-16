@@ -69,7 +69,7 @@ FThread* Instance::GetThreadToResume() {
 	uint32_t minimum = numeric_limits<uint32_t>::max();
 	for (FThread* t: m_runningThreads) {
 		if (t->GetState() == idle || t->GetState() == paused) {
-			if (m_enablePriority && t->GetPriority() == maxPriority) {
+			if (m_enablePriority && t->GetPriority() == maxPriority && t->GetPriority() > 0) {
 				threadToResume = t;
 				return threadToResume;
 			}
@@ -144,7 +144,9 @@ void Server::ResumeThread(FThread* fthread, uint32_t whichInstance, bool initiat
 		triggerContextSwitch = m_enableContextSwitch && initiateWithPause && fthread->GetPriority() == 0;
 	else
 		triggerContextSwitch = m_enableContextSwitch && initiateWithPause;
-	// cout << "---------------------------------------triggerContextSwitch: " << (triggerContextSwitch ? 1 : 0) << endl;
+#ifdef SERVER_PRINT_STATUS
+	cout << "---------------------------------------triggerContextSwitch: " << (triggerContextSwitch ? 1 : 0) << endl;
+#endif
 	iFPGA::WriteConfigReg(0, (vc_select << 30) | (triggerContextSwitch << 16) | (fthread->m_cML->m_numInstructions & 0xFF) );
 	iFPGA::WriteConfigReg(1, programMemory);
 	iFPGA::WriteConfigReg(2, inputMemory);

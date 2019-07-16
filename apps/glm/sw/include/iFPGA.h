@@ -49,7 +49,7 @@ public:
 		// Create Program and Kernel
 		// std::string binaryFile = xcl::find_binary_file(device_name, "mytop");
 		// m_bins = xcl::import_binary_file(binaryFile);
-		std::string binaryFile = "xclbin/mytop.hw_emu.xilinx_vcu1525_xdma_201830_1.xclbin";
+		std::string binaryFile = "xclbin/mytop.hw.xilinx_vcu1525_xdma_201830_1.xclbin";
 		unsigned fileBufSize;
 		char* fileBuf = xcl::read_binary_file(binaryFile, fileBufSize);
 		m_bins = cl::Program::Binaries{{fileBuf, fileBufSize}};
@@ -328,7 +328,7 @@ public:
 		double start = get_time();
 #endif
 		err = m_queue[0].enqueueMigrateMemObjects(buffersToCopy, 0/* 0 means from host*/);
-		err = m_queue[0].finish();
+		// err = m_queue[0].finish();
 #ifdef IFPGA_VERBOSE
 		double end = get_time();
 		cout << "Copy time: " << end - start << endl;

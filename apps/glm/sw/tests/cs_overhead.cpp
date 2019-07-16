@@ -14,7 +14,7 @@ that job running standalone on the server: How much is the overhead for differen
 #define VALUE_TO_INT_SCALER 10
 #define MAX_NUM_JOBS 100
 #define NUM_JOB_TYPES 3
-#define NUM_TIMES_TO_EXECUTE_HIGH_JOB 3
+#define NUM_TIMES_TO_EXECUTE_HIGH_JOB 5
 
 struct JobProperties {
 	ModelType m_type;
@@ -22,6 +22,7 @@ struct JobProperties {
 	uint32_t m_numFeatures;
 	uint32_t m_numEpochs;
 	uint32_t m_minibatchSize;
+	uint32_t m_priority;
 	float m_totalSize;
 };
 
@@ -29,26 +30,27 @@ int main(int argc, char* argv[]) {
 
 	double start, end;
 	JobProperties jobs[NUM_JOB_TYPES];
-	uint32_t partitionSize = 16000;
+	uint32_t partitionSize = 16384;
 	MemoryFormat format = RowStore;
 	float stepSize = 0.01;
 	float lambda = 0;
 
 	uint32_t numJobs = 0;
-	char config[3] = {'-', '-', '-'};
+	char config[4] = {'-', '-', '-', '-'};
 	bool enableContextSwitch = false;
 	bool enableThreadMigration = false;
+	bool enablePriority = false;
 	bool randomizeJobOrder = false;
 	uint32_t numSamples = 0;
 	uint32_t numFeatures = 0;
 	uint32_t numEpochs = 10;
 	uint32_t minibatchSize = 1;
 	if (!(argc == 7)) {
-		cout << "Usage: ./app <numJobs> <'e'nableContextSwitch 'e'nableThreadMigration 'r'andomizeJobOrder> <numSamples> <numFeatures> <minibatchSize> <numEpochs>" << endl;
+		cout << "Usage: ./app <numJobs> <'e'nableContextSwitch 'e'nableThreadMigration 'e'nablePriority 'r'andomizeJobOrder> <numSamples> <numFeatures> <minibatchSize> <numEpochs>" << endl;
 		return 0;
 	}
 	numJobs = atoi(argv[1]);
-	for (uint32_t i = 0; i < 3; i++) {
+	for (uint32_t i = 0; i < 4; i++) {
 		if (argv[2][i] == '\0') {
 			break;
 		}
@@ -58,7 +60,8 @@ int main(int argc, char* argv[]) {
 	}
 	enableContextSwitch = config[0] == 'e';
 	enableThreadMigration = config[1] == 'e';
-	randomizeJobOrder = config[2] == 'r';
+	enablePriority = config[2] == 'e';
+	randomizeJobOrder = config[3] == 'r';
 	numSamples = atoi(argv[3]);
 	numFeatures = atoi(argv[4]);
 	minibatchSize = atoi(argv[5]);
@@ -74,24 +77,29 @@ int main(int argc, char* argv[]) {
 	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
 		switch(i) {
 			case 0:
-				jobs[0].m_type = linreg;
-				jobs[0].m_numSamples = 32000;
-				jobs[0].m_numFeatures = 126;
-				jobs[0].m_numEpochs = 100;
+				jobs[0].m_type = logreg;
+				jobs[0].m_numSamples = 131072;
+				jobs[0].m_numFeatures = 1024;
+				jobs[0].m_numEpochs = 3;
 				jobs[0].m_minibatchSize = 32;
+				jobs[0].m_priority = 0;
 				break;
 			case 1:
-				jobs[1].m_type = linreg;
-				jobs[1].m_numSamples = 64000;
-				jobs[1].m_numFeatures = 784;
-				jobs[1].m_numEpochs = 80;
-				jobs[1].m_minibatchSize = 16;
+				jobs[1].m_type = logreg;
+				jobs[1].m_numSamples = 131072;
+				jobs[1].m_numFeatures = 1024;
+				jobs[1].m_numEpochs = 30;
+				jobs[1].m_minibatchSize = 32;
+				jobs[1].m_priority = 0;
+				break;
 			case 2:
-				jobs[2].m_type = linreg;
-				jobs[2].m_numSamples = 80000;
+				jobs[2].m_type = logreg;
+				jobs[2].m_numSamples = 131072;
 				jobs[2].m_numFeatures = 1024;
-				jobs[2].m_numEpochs = 100;
-				jobs[2].m_minibatchSize = 1;
+				jobs[2].m_numEpochs = 80;
+				jobs[2].m_minibatchSize = 32;
+				jobs[2].m_priority = 0;
+				break;
 		}
 		jobs[i].m_totalSize = (((float)4*jobs[i].m_numSamples*jobs[i].m_numFeatures)/1e9)*jobs[i].m_numEpochs;
 	}
@@ -102,38 +110,43 @@ int main(int argc, char* argv[]) {
 	if (enableThreadMigration) {
 		cout << "-> enableThreadMigration" << endl;
 	}
+	if (enablePriority) {
+		cout << "-> enablePriority" << endl;
+	}
 	if (randomizeJobOrder) {
 		cout << "-> randomizeJobOrder" << endl;
 	}
 
-	Server server(enableContextSwitch, enableThreadMigration, 1);
+	ServerWrapper server(enableContextSwitch, enableThreadMigration, enablePriority);
 
 	FPGA_ColumnML* columnML[MAX_NUM_JOBS];
 	for (uint32_t i = 0; i < numJobs; i++) {
-		columnML[i] = new FPGA_ColumnML(&server);
+		columnML[i] = new FPGA_ColumnML(server.GetServer());
 	}
 
 	AdditionalArguments args[NUM_JOB_TYPES];
 	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
-		columnML[i]->m_cstore->GenerateSyntheticData(jobs[i].m_numSamples, jobs[i].m_numFeatures, false, MinusOneToOne);
+		columnML[i]->m_cstore->GenerateSyntheticData(jobs[i].m_numSamples, jobs[i].m_numFeatures, true, ZeroToOne);
 
 		args[i].m_firstSample = 0;
 		args[i].m_numSamples = columnML[i]->m_cstore->m_numSamples;
 		args[i].m_constantStepSize = true;
 	}
-	for (uint32_t i = NUM_JOB_TYPES; i < numJobs; i++) {
-		columnML[i]->m_cstore = columnML[i%NUM_JOB_TYPES]->m_cstore;
-	}
-	for (uint32_t i = 0; i < numJobs; i++) {
+	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
 		columnML[i]->CreateMemoryLayout(format, partitionSize);
 	}
+	for (uint32_t i = NUM_JOB_TYPES; i < numJobs; i++) {
+		columnML[i]->UseCreatedMemoryLayout(columnML[i%NUM_JOB_TYPES]);
+	}
+
 	for (uint32_t i = 0; i < numJobs; i++) {
 		if (jobs[i%NUM_JOB_TYPES].m_minibatchSize == 1) {
 			columnML[i]->fSGD(
 				jobs[i%NUM_JOB_TYPES].m_type,
 				jobs[i%NUM_JOB_TYPES].m_numEpochs,
 				stepSize,
-				lambda);
+				lambda,
+				0);
 		}
 		else {
 			columnML[i]->fSGD_minibatch(
@@ -141,33 +154,20 @@ int main(int argc, char* argv[]) {
 				jobs[i%NUM_JOB_TYPES].m_numEpochs,
 				jobs[i%NUM_JOB_TYPES].m_minibatchSize,
 				stepSize, 
-				lambda);
+				lambda,
+				0);
 		}
 	}
 
-	FPGA_ColumnML* highColumnML = new FPGA_ColumnML(&server, false);
-	highColumnML->m_cstore->GenerateSyntheticData(numSamples, numFeatures, false, MinusOneToOne);
+	FPGA_ColumnML* highColumnML = new FPGA_ColumnML(server.GetServer());
+	highColumnML->m_cstore->GenerateSyntheticData(numSamples, numFeatures, true, ZeroToOne);
 	highColumnML->CreateMemoryLayout(format, partitionSize);
 	if (minibatchSize == 1) {
-		highColumnML->fSGD(linreg, numEpochs, stepSize, lambda);
+		highColumnML->fSGD(logreg, numEpochs, stepSize, lambda, 0);
 	}
 	else {
-		highColumnML->fSGD_minibatch(linreg, numEpochs, minibatchSize, stepSize, lambda);
+		highColumnML->fSGD_minibatch(logreg, numEpochs, minibatchSize, stepSize, lambda, 0);
 	}
-
-	FThread* thread[MAX_NUM_JOBS];
-
-	// Get standalone runtimes for each job type
-	start = get_time();
-	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
-		thread[i] = server.Request(columnML[i]);
-		thread[i]->WaitUntilFinished();
-		cout << "Standalone time job " << i << " is: " << thread[i]->GetResponseTime() << endl;
-		cout << "Size: " << jobs[i].m_totalSize << " GB" << endl;
-		cout << "Processing rate: " << jobs[i].m_totalSize/thread[i]->GetResponseTime() << " GB/s" <<endl;
-	}
-	end = get_time();
-	cout << "Total time: " << end-start << endl;
 
 	double highTime[NUM_TIMES_TO_EXECUTE_HIGH_JOB+1];
 	FThread* highThread = server.Request(highColumnML, 1);
@@ -193,15 +193,22 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	for (uint32_t i = 0; i < NUM_JOB_TYPES; i++) {
+		server.PreCopy(columnML[i]);
+	}
+
+	FThread* thread[MAX_NUM_JOBS];
 	start = get_time();
 	float totalSize = 0;
 	for (uint32_t i = 0; i < numJobs; i++) {
 		cout << "Starting job: " << order[i] << endl;
-		thread[i] = server.Request(columnML[order[i]]);
+		thread[i] = server.Request(columnML[order[i]], jobs[i%NUM_JOB_TYPES].m_priority);
 	}
+	thread[0]->WaitUntilFinished(); // Wait just for the first job to finish
 
 	for (uint32_t t = 0; t < NUM_TIMES_TO_EXECUTE_HIGH_JOB; t++) {
-		highThread = server.Request(highColumnML, 1);
+		cout << "Starting high job..." << endl;
+		highThread = server.Request(highColumnML, 4);
 		highThread->WaitUntilFinished();
 		double rt = highThread->GetResponseTime();
 		cout << "Busy time for high job is: " << rt << endl;
