@@ -22,22 +22,22 @@ int main(int argc, char* argv[]) {
 	numIterations = atoi(argv[3]);
 	numInstances = atoi(argv[4]);
 
-	xDevice xdevice;
-	Server* server[iFPGA::MAX_NUM_BANKS];
-	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
-		server[i] = new Server(false, false, i, &xdevice);
-	}
+	ServerWrapper server(false, false, false);
 	vector<FPGA_ColumnML*> columnMLs;
 	for (uint32_t i = 0; i < numInstances; i++) {
-		FPGA_ColumnML* temp = new FPGA_ColumnML(server[i%iFPGA::MAX_NUM_BANKS]);
+		FPGA_ColumnML* temp = new FPGA_ColumnML(server.GetServer());
 		temp->ReadBandwidth(numLinesToRead, numLinesToWrite, numIterations);
 		columnMLs.push_back(temp);
+	}
+
+	for (uint32_t i = 0; i < numInstances; i++) {
+		server.PreCopy(columnMLs[i]);
 	}
 
 	vector<FThread*> fthreads;
 	double start = get_time();
 	for (uint32_t i = 0; i < numInstances; i++) {
-		FThread* temp = server[i%iFPGA::MAX_NUM_BANKS]->Request(columnMLs[i]);
+		FThread* temp = server.Request(columnMLs[i]);
 		fthreads.push_back(temp);
 	}
 	for (uint32_t i = 0; i < numInstances; i++) {
@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
 	// Verify
 	for (uint32_t i = 0; i < numInstances; i++) {
 #ifdef XILINX
-		columnMLs[i]->CopyInputHandleFromFPGA();
+		server.GetInputHandleFromFPGA(columnMLs[i]);
 #endif
 
 		bool error = false;
@@ -84,9 +84,6 @@ int main(int argc, char* argv[]) {
 		delete columnMLs[i];
 	}
 	columnMLs.clear();
-	for (uint32_t i = 0; i < iFPGA::MAX_NUM_BANKS; i++) {
-		delete server[i];
-	}
 
 	return 0;
 }
